@@ -130,6 +130,11 @@ wss.on("connection", async (ws: WebSocket, request) => {
     filterComplex += `[0:v]scale=w=-2:h=${height}[v1out]`;
   }
 
+  // Strip trailing semicolon to prevent FFmpeg "No such filter: ''" syntax error
+  if (filterComplex.endsWith(";")) {
+    filterComplex = filterComplex.slice(0, -1);
+  }
+
   const ffmpegArgs = [
     "-f", "matroska", // Explicitly define input format as Matroska (WebM) to prevent probing errors
     "-i", "pipe:0", // Read input from standard input (WebSocket packets)
@@ -196,6 +201,11 @@ wss.on("connection", async (ws: WebSocket, request) => {
   // Spawn ffmpeg
   console.log("Spawning ffmpeg with arguments:", ffmpegArgs.join(" "));
   const ffmpegProcess = spawn("ffmpeg", ffmpegArgs);
+
+  // Handle unhandled EPIPE write errors if the ffmpeg process crashes/exits
+  ffmpegProcess.stdin.on("error", (err) => {
+    console.error(`[ffmpeg stdin error] for stream ${streamKey}:`, err.message);
+  });
 
   ffmpegProcess.stdout.on("data", (data) => {
     // console.log(`[ffmpeg stdout]: ${data}`);
