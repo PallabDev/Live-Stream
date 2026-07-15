@@ -136,16 +136,36 @@ html, body {
   background: linear-gradient(90deg, #6366f1, #4f46e5);
 }
 
-/* Fullscreen adjustments: player fills iframe viewport */
+/* Player layout centering and aspect ratio constraint */
+.sh-player {
+  width: 100%;
+  max-width: 100%;
+  max-height: 100dvh;
+  aspect-ratio: 16/9;
+  background: #000;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+  transition: all 0.3s ease;
+}
+
+@media (min-width: 1200px) {
+  .sh-player {
+    max-width: 1200px;
+    border-radius: 12px;
+  }
+}
+
+/* Fullscreen adjustments override */
 :fullscreen .sh-player,
 :-webkit-full-screen .sh-player,
 :-moz-full-screen .sh-player {
-  border-radius: 0;
-  width: 100vw;
-  height: 100vh;
-  max-width: none;
-  max-height: none;
-  background: #000;
+  border-radius: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
 }
 
 #sh-controls {
@@ -177,9 +197,9 @@ html, body {
 <body class="bg-[#000000] m-0 p-0 font-['Inter',system-ui,sans-serif] text-white">
   <!-- Full-screen container -->
   <div class="w-screen h-[100dvh] flex items-center justify-center bg-black relative overflow-hidden">
-    <!-- Player fills entire viewport -->
+    <!-- Player container -->
     <div
-      class="sh-player w-full h-full bg-black rounded-none overflow-hidden relative shadow-[0_4px_20px_rgba(0,0,0,0.8)] transition-all duration-300"
+      class="sh-player"
       id="sh-player"
     >
       <video
@@ -946,22 +966,20 @@ html, body {
   player.addEventListener('mousemove', () => {
     resetControlsTimer();
   });
-  player.addEventListener('touchstart', () => {
-    resetControlsTimer();
-  });
 
-  // Tap to show / hide controls on mobile
-  player.addEventListener('touchend', (e) => {
-    if (e.target === video || e.target === player) {
-      if (controlsHidden) {
-        resetControlsTimer();
-      } else {
-        clearTimeout(controlsTimeout);
-        controls.style.opacity = '0';
-        controls.style.transform = 'translateY(10px)';
-        controls.style.pointerEvents = 'none';
-        controlsHidden = true;
-      }
+  // Tap or click anywhere outside buttons to toggle controls
+  player.addEventListener('pointerdown', (e) => {
+    if (controls.contains(e.target)) {
+      return;
+    }
+    if (controlsHidden) {
+      resetControlsTimer();
+    } else {
+      clearTimeout(controlsTimeout);
+      controls.style.opacity = '0';
+      controls.style.transform = 'translateY(10px)';
+      controls.style.pointerEvents = 'none';
+      controlsHidden = true;
     }
   });
 
