@@ -147,11 +147,15 @@ html, body {
   max-height: none;
   background: #000;
 }
+
+#sh-controls {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 1.25rem) !important;
+}
 </style>
 </head>
 <body class="bg-[#000000] m-0 p-0 font-['Inter',system-ui,sans-serif] text-white">
   <!-- Full-screen container -->
-  <div class="w-screen h-screen relative overflow-hidden">
+  <div class="w-screen h-[100dvh] flex items-center justify-center bg-black relative overflow-hidden">
     <!-- Player fills entire viewport -->
     <div
       class="sh-player w-full h-full bg-black rounded-none overflow-hidden relative shadow-[0_4px_20px_rgba(0,0,0,0.8)] transition-all duration-300"
