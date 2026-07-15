@@ -131,6 +131,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
   }
 
   const ffmpegArgs = [
+    "-f", "matroska", // Explicitly define input format as Matroska (WebM) to prevent probing errors
     "-i", "pipe:0", // Read input from standard input (WebSocket packets)
     "-y", // Overwrite output files
     "-filter_complex", filterComplex
@@ -151,9 +152,6 @@ wss.on("connection", async (ws: WebSocket, request) => {
     const keyInterval = fpsParam * 2; // Keyframe every 2 seconds for perfect HLS splitting
 
     ffmpegArgs.push("-map", `[v${idx + 1}out]`);
-    if (hasAudio) {
-      ffmpegArgs.push("-map", "0:a");
-    }
 
     ffmpegArgs.push(
       `-c:v:${idx}`, "libx264",
@@ -175,14 +173,15 @@ wss.on("connection", async (ws: WebSocket, request) => {
   // Audio parameters: high quality AAC stereo (only if source contains audio)
   if (hasAudio) {
     ffmpegArgs.push(
+      "-map", "0:a?",
       "-c:a", "aac",
       "-b:a", "192k",
       "-ac", "2"
     );
   }
 
-  // HLS packing configuration
-  const varStreamMap = resolutions.map((_, idx) => hasAudio ? `v:${idx},a:${idx}` : `v:${idx}`).join(" ");
+  // HLS packing configuration: map the single output audio stream `a:0` to all video variants
+  const varStreamMap = resolutions.map((_, idx) => hasAudio ? `v:${idx},a:0` : `v:${idx}`).join(" ");
   ffmpegArgs.push(
     "-f", "hls",
     "-hls_time", "2", // 2 second chunks for ultra low latency
@@ -204,7 +203,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
 
   ffmpegProcess.stderr.on("data", (data) => {
     // ffmpeg writes transcode statistics to stderr
-    // console.log(`[ffmpeg stderr]: ${data}`);
+    console.error(`[ffmpeg stderr]: ${data}`);
   });
 
   ffmpegProcess.on("close", (code) => {

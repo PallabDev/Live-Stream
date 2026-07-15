@@ -6,7 +6,6 @@ services:
     env_file:
       - .env
     volumes:
-      - ./media:/app/media
       - ./sqlite.db:/app/sqlite.db
     labels:
       caddy: watch.pallabdev.in
