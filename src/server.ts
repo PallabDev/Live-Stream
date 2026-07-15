@@ -21,6 +21,9 @@ const app = express();
 const server = http.createServer(app);
 const port = process.env.PORT || 3000;
 
+// Track active media cleanup timers to prevent race conditions on quick reconnection
+const activeCleanups = new Map<string, NodeJS.Timeout>();
+
 // Setup EJS views
 app.set("view engine", "ejs");
 app.set("views", path.join(process.cwd(), "src", "views"));
@@ -90,6 +93,14 @@ wss.on("connection", async (ws: WebSocket, request) => {
   if (!streamInfo) {
     ws.close(4002, "Invalid stream key.");
     return;
+  }
+
+  // Cancel any pending media cleanup timer for this stream key if the broadcaster reconnected quickly
+  const existingTimer = activeCleanups.get(streamKey);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    activeCleanups.delete(streamKey);
+    console.log(`Cancelled pending media cleanup timer for stream ${streamKey} due to reconnection.`);
   }
 
   console.log(`Broadcaster connected for stream: "${streamInfo.title}" (${streamKey})`);
@@ -249,7 +260,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
     }
 
     // Optional: Keep media for a few seconds so viewer buffers can finish, then clean up
-    setTimeout(() => {
+    const cleanupTimeout = setTimeout(() => {
       try {
         if (fs.existsSync(mediaDir)) {
           fs.rmSync(mediaDir, { recursive: true, force: true });
@@ -257,8 +268,12 @@ wss.on("connection", async (ws: WebSocket, request) => {
         }
       } catch (err) {
         console.error("Cleanup error:", err);
+      } finally {
+        activeCleanups.delete(streamKey);
       }
     }, 15000);
+
+    activeCleanups.set(streamKey, cleanupTimeout);
   });
 });
 
