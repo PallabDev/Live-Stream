@@ -449,7 +449,7 @@ html, body {
   const controls = document.getElementById('sh-controls');
   const offlineScreen = document.getElementById('offline-screen');
 
-  const playlistUrl = "/media/<%= stream.streamKey %>/master.m3u8";
+  const playlistUrl = "/media/<%= stream.streamKey %>/master.m3u8?_t=" + Date.now();
   let hlsInstance = null;
   let levels = [];
   let isFullscreen = false;
@@ -495,10 +495,10 @@ html, body {
         enableWorker: true,
         lowLatencyMode: true,
         backBufferLength: 30,
-        maxBufferLength: 8,
-        maxMaxBufferLength: 12,
-        liveSyncDuration: 2.5,
-        liveMaxLatencyDuration: 5,
+        maxBufferLength: 15,
+        maxMaxBufferLength: 20,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 5,
         liveDurationInfinity: true,
       });
 

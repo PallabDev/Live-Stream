@@ -36,7 +36,9 @@ app.use(express.static(path.join(process.cwd(), "public")));
 app.use("/media", express.static(path.join(process.cwd(), "media"), {
   setHeaders: (res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
   }
 }));
 
