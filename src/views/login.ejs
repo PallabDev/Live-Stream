@@ -1,0 +1,201 @@
+<%- include('header') %>
+
+<div style="max-width: 480px; margin: 3rem auto;">
+  <div class="glass-panel">
+    <div style="text-align: center; margin-bottom: 2rem;">
+      <h2 style="font-size: 2rem; margin-bottom: 0.5rem; background: linear-gradient(to right, #818cf8, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+        Welcome to CoWatch
+      </h2>
+      <p style="color: var(--text-muted);">Your premium screen and video sharing platform</p>
+    </div>
+
+    <!-- Tabs switcher -->
+    <div style="display: flex; gap: 0.5rem; background: rgba(0, 0, 0, 0.2); padding: 0.25rem; border-radius: 10px; margin-bottom: 2rem;">
+      <button id="tab-signin" class="btn" style="flex: 1; padding: 0.5rem; border-radius: 8px; font-size: 0.9rem; background: var(--primary); color: #fff;" onclick="switchTab('signin')">
+        Sign In
+      </button>
+      <button id="tab-signup" class="btn btn-secondary" style="flex: 1; padding: 0.5rem; border-radius: 8px; font-size: 0.9rem; background: transparent; border: none;" onclick="switchTab('signup')">
+        Sign Up
+      </button>
+      <button id="tab-magic" class="btn btn-secondary" style="flex: 1; padding: 0.5rem; border-radius: 8px; font-size: 0.9rem; background: transparent; border: none;" onclick="switchTab('magic')">
+        Magic Link
+      </button>
+    </div>
+
+    <!-- Sign In Panel -->
+    <div id="panel-signin">
+      <form onsubmit="handleSignIn(event)">
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" id="signin-email" class="form-input" placeholder="you@example.com" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" id="signin-password" class="form-input" placeholder="••••••••" required>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+          <i class="ti ti-login"></i> Sign In
+        </button>
+      </form>
+    </div>
+
+    <!-- Sign Up Panel -->
+    <div id="panel-signup" style="display: none;">
+      <form onsubmit="handleSignUp(event)">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" id="signup-name" class="form-input" placeholder="John Doe" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" id="signup-email" class="form-input" placeholder="you@example.com" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" id="signup-password" class="form-input" placeholder="•••••••• (Min 6 chars)" required>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+          <i class="ti ti-user-plus"></i> Create Account
+        </button>
+      </form>
+    </div>
+
+    <!-- Magic Link Panel -->
+    <div id="panel-magic" style="display: none;">
+      <form onsubmit="handleMagicLink(event)">
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" id="magic-email" class="form-input" placeholder="you@example.com" required>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+          <i class="ti ti-mail-fast"></i> Send Magic Link
+        </button>
+      </form>
+    </div>
+
+    <div id="auth-alert" style="display: none; margin-top: 1.5rem; padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.9rem;"></div>
+  </div>
+</div>
+
+<script>
+  function switchTab(tab) {
+    const tabs = ['signin', 'signup', 'magic'];
+    tabs.forEach(t => {
+      const btn = document.getElementById('tab-' + t);
+      const panel = document.getElementById('panel-' + t);
+      
+      if (t === tab) {
+        btn.style.background = 'var(--primary)';
+        btn.style.color = '#fff';
+        panel.style.display = 'block';
+      } else {
+        btn.style.background = 'transparent';
+        btn.style.color = 'var(--text-muted)';
+        panel.style.display = 'none';
+      }
+    });
+    
+    // Clear alerts
+    const alert = document.getElementById('auth-alert');
+    alert.style.display = 'none';
+  }
+
+  function showAlert(message, type) {
+    const alert = document.getElementById('auth-alert');
+    alert.style.display = 'block';
+    alert.textContent = message;
+    
+    if (type === 'success') {
+      alert.style.background = 'rgba(16, 185, 129, 0.15)';
+      alert.style.color = 'var(--accent)';
+      alert.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+    } else {
+      alert.style.background = 'rgba(239, 68, 68, 0.15)';
+      alert.style.color = 'var(--danger)';
+      alert.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+    }
+  }
+
+  async function handleSignIn(e) {
+    e.preventDefault();
+    const email = document.getElementById('signin-email').value;
+    const password = document.getElementById('signin-password').value;
+    
+    try {
+      const res = await fetch('/api/auth/sign-in/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to sign in.');
+      }
+      
+      showAlert('Signed in successfully! Redirecting...', 'success');
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 1000);
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  }
+
+  async function handleSignUp(e) {
+    e.preventDefault();
+    const name = document.getElementById('signup-name').value;
+    const email = document.getElementById('signup-email').value;
+    const password = document.getElementById('signup-password').value;
+    
+    try {
+      const res = await fetch('/api/auth/sign-up/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password })
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to sign up.');
+      }
+      
+      showAlert('Account created! Redirecting...', 'success');
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 1000);
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  }
+
+  async function handleMagicLink(e) {
+    e.preventDefault();
+    const email = document.getElementById('magic-email').value;
+    
+    try {
+      const res = await fetch('/api/auth/magic-link/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          callbackURL: window.location.origin + '/dashboard'
+        })
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to send magic link.');
+      }
+      
+      showAlert('Magic link sent! Check your email inbox.', 'success');
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  }
+</script>
+
+<%- include('footer') %>

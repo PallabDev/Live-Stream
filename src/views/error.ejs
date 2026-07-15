@@ -1,0 +1,20 @@
+<%- include('header') %>
+
+<div class="glass-panel" style="max-width: 600px; margin: 4rem auto; text-align: center;">
+  <div style="color: var(--danger); font-size: 4rem; margin-bottom: 1.5rem;">
+    <i class="ti ti-alert-triangle"></i>
+  </div>
+  <h2 style="margin-bottom: 1rem;"><%= typeof title !== 'undefined' ? title : 'Error Occurred' %></h2>
+  <p style="color: var(--text-muted); margin-bottom: 2rem;"><%= message %></p>
+  
+  <div style="display: flex; justify-content: center; gap: 1rem;">
+    <a href="javascript:history.back()" class="btn btn-secondary">
+      <i class="ti ti-arrow-left"></i> Go Back
+    </a>
+    <a href="/dashboard" class="btn btn-primary">
+      <i class="ti ti-home"></i> Go Dashboard
+    </a>
+  </div>
+</div>
+
+<%- include('footer') %>

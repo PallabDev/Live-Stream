@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof title !== 'undefined' ? title : 'CoWatch' %></title>
+  <link rel="stylesheet" href="/style.css">
+  <!-- Tabler Icons CSS CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+</head>
+<body>
+  <header>
+    <div class="nav-container">
+      <a href="/" class="logo">
+        <i class="ti ti-video-plus"></i> CoWatch
+      </a>
+      <ul class="nav-links">
+        <% if (typeof user !== 'undefined' && user) { %>
+          <li>
+            <span class="badge <%= user.role === 'admin' ? 'badge-danger' : 'badge-primary' %>">
+              <%= user.role === 'admin' ? 'Admin' : 'Broadcaster' %>
+            </span>
+          </li>
+          <li>
+            <a href="/dashboard" style="display: flex; align-items: center; gap: 0.25rem;">
+              <i class="ti ti-layout-dashboard"></i> Dashboard
+            </a>
+          </li>
+          <li>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <div class="avatar">
+                <%= user.name ? user.name.charAt(0).toUpperCase() : 'U' %>
+              </div>
+              <span style="font-size: 0.95rem;"><%= user.name %></span>
+            </div>
+          </li>
+          <li>
+            <a href="/logout" class="btn btn-secondary" style="padding: 0.5rem 1rem; border-radius: 8px;">
+              <i class="ti ti-logout"></i> Logout
+            </a>
+          </li>
+        <% } else { %>
+          <li>
+            <a href="/login" class="btn btn-primary" style="padding: 0.5rem 1rem; border-radius: 8px;">
+              <i class="ti ti-login"></i> Sign In
+            </a>
+          </li>
+        <% } %>
+      </ul>
+    </div>
+  </header>
+  <main class="main-content">

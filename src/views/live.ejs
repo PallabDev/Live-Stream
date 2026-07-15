@@ -1,0 +1,248 @@
+<%- include('header') %>
+
+<div style="max-width: 960px; margin: 1.5rem auto; display: flex; flex-direction: column; gap: 1.5rem;">
+  <!-- Video Player Panel -->
+  <div class="glass-panel" style="padding: 1rem;">
+    <div class="video-container" style="background: #000; border-radius: 12px;">
+      <video id="video-player" class="video-element" controls autoplay playsinline></video>
+      <div id="offline-screen" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(15, 23, 42, 0.95); z-index: 20; text-align: center; padding: 2rem;">
+        <div style="color: var(--text-muted); font-size: 4rem; margin-bottom: 1rem; animation: pulse 2s infinite;">
+          <i class="ti ti-antenna-off"></i>
+        </div>
+        <h3 style="margin-bottom: 0.5rem;">Stream is Offline</h3>
+        <p style="color: var(--text-muted); font-size: 0.95rem; max-width: 400px; margin-bottom: 1.5rem;">
+          The broadcaster is not streaming live right now. The feed will automatically play once they start broadcasting.
+        </p>
+        <button class="btn btn-secondary" onclick="checkStreamStatus()">
+          <i class="ti ti-refresh"></i> Check Again
+        </button>
+      </div>
+    </div>
+
+    <!-- Details and Controls -->
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-top: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+      <div>
+        <h2 style="font-size: 1.5rem; margin-bottom: 0.25rem;"><%= stream.title %></h2>
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+          <span id="player-status-badge" class="badge badge-danger">
+            <i class="ti ti-point-filled"></i> Offline
+          </span>
+          <span style="font-size: 0.85rem; color: var(--text-muted);">
+            Stream Key: <code><%= stream.streamKey %></code>
+          </span>
+        </div>
+      </div>
+
+      <!-- Quality Selection (YT Style) -->
+      <div class="glass-panel" style="padding: 0.75rem 1rem; display: flex; align-items: center; gap: 0.75rem; box-shadow: none;">
+        <label class="form-label" style="margin-bottom: 0; font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 0.25rem;">
+          <i class="ti ti-settings-2"></i> Quality
+        </label>
+        <select id="quality-selector" class="form-input" style="padding: 0.4rem 1rem; border-radius: 6px; font-size: 0.85rem; width: auto; background: rgba(0,0,0,0.4);" onchange="changeQuality(this.value)" disabled>
+          <option value="-1">Auto</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Player Stats & Optimizations -->
+  <div class="glass-panel">
+    <div class="card-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem;">
+      <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.25rem;">
+        <i class="ti ti-chart-bar" style="color: var(--primary);"></i> Live Diagnostics (YouTube Stats for Nerds)
+      </h4>
+    </div>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; font-size: 0.85rem; color: var(--text-muted);">
+      <div>
+        <p>Current Resolution: <strong id="stat-res" style="color: #fff;">-</strong></p>
+        <p style="margin-top: 0.5rem;">Buffer Health: <strong id="stat-buffer" style="color: #fff;">0.0s</strong></p>
+      </div>
+      <div>
+        <p>Active Bitrate: <strong id="stat-bitrate" style="color: #fff;">-</strong></p>
+        <p style="margin-top: 0.5rem;">Latency to Edge: <strong id="stat-latency" style="color: #fff;">-</strong></p>
+      </div>
+      <div>
+        <p>FPS: <strong id="stat-fps" style="color: #fff;">-</strong></p>
+        <p style="margin-top: 0.5rem;">Connection Quality: <strong id="stat-connection" style="color: var(--accent);">Good</strong></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Hls.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+<script>
+  const streamKey = '<%= stream.streamKey %>';
+  const playlistUrl = "/media/" + streamKey + "/master.m3u8";
+  let hls = null;
+  const video = document.getElementById('video-player');
+  const offlineScreen = document.getElementById('offline-screen');
+  const statusBadge = document.getElementById('player-status-badge');
+  const qualitySelector = document.getElementById('quality-selector');
+  let checkInterval = null;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    initPlayer();
+    // Periodically query status and verify HLS file availability
+    checkInterval = setInterval(checkStreamStatus, 3000);
+  });
+
+  async function checkStreamStatus() {
+    try {
+      // Check if master playlist exists on server
+      const res = await fetch(playlistUrl, { method: 'HEAD' });
+      if (res.ok) {
+        if (offlineScreen.style.display !== 'none') {
+          offlineScreen.style.display = 'none';
+          statusBadge.className = 'badge badge-success';
+          statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
+          
+          // Re-initialize player if needed
+          if (!hls && Hls.isSupported()) {
+            loadStream();
+          } else {
+            video.play().catch(e => console.log("Auto play prevented", e));
+          }
+        }
+      } else {
+        showOffline();
+      }
+    } catch (e) {
+      showOffline();
+    }
+  }
+
+  function showOffline() {
+    offlineScreen.style.display = 'flex';
+    statusBadge.className = 'badge badge-danger';
+    statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> Offline';
+    if (hls) {
+      hls.destroy();
+      hls = null;
+    }
+    qualitySelector.disabled = true;
+    clearStats();
+  }
+
+  function initPlayer() {
+    if (Hls.isSupported()) {
+      checkStreamStatus();
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // For iOS Safari that supports HLS natively
+      video.src = playlistUrl;
+      video.addEventListener('loadedmetadata', () => {
+        offlineScreen.style.display = 'none';
+        statusBadge.className = 'badge badge-success';
+        statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
+      });
+    } else {
+      alert('Your browser does not support HLS streaming.');
+    }
+  }
+
+  function loadStream() {
+    // Ultra low latency / high stability YouTube-like buffering config
+    hls = new Hls({
+      enableWorker: true,
+      lowLatencyMode: true,
+      backBufferLength: 30,
+      maxBufferLength: 8, // Keep buffer small for lower latency
+      maxMaxBufferLength: 12,
+      liveSyncDuration: 2.5, // Sync close to edge
+      liveMaxLatencyDuration: 5,
+      liveDurationInfinity: true,
+    });
+
+    hls.loadSource(playlistUrl);
+    hls.attachMedia(video);
+
+    hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+      console.log('Manifest loaded successfully. Quality levels found:', data.levels);
+      
+      // Populate quality dropdown
+      qualitySelector.disabled = false;
+      qualitySelector.innerHTML = '<option value="-1">Auto</option>';
+      
+      data.levels.forEach((level, index) => {
+        const height = level.height || 'Source';
+        const bitrateMbps = (level.bitrate / (1024 * 1024)).toFixed(2);
+        const name = height + 'p (' + bitrateMbps + ' Mbps)';
+        qualitySelector.innerHTML += `<option value="${index}">${name}</option>`;
+      });
+
+      video.play().catch(e => console.log("Play interrupted", e));
+    });
+
+    hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
+      const activeLevel = hls.levels[data.level];
+      if (activeLevel) {
+        document.getElementById('stat-res').textContent = `${activeLevel.width}x${activeLevel.height}`;
+        document.getElementById('stat-bitrate').textContent = `${(activeLevel.bitrate / 1000).toFixed(0)} Kbps`;
+      }
+    });
+
+    // Diagnostics Stats Loops
+    setInterval(updateDiagnostics, 500);
+  }
+
+  function changeQuality(levelIndex) {
+    if (!hls) return;
+    hls.currentLevel = parseInt(levelIndex);
+    
+    const label = levelIndex == -1 ? 'Auto' : 'Level ' + levelIndex;
+    console.log('User manually changed quality level to:', label);
+  }
+
+  function updateDiagnostics() {
+    if (!hls || !video) return;
+
+    // Buffer health
+    let bufferLen = 0;
+    if (video.buffered.length > 0) {
+      const currentPos = video.currentTime;
+      for (let i = 0; i < video.buffered.length; i++) {
+        if (currentPos >= video.buffered.start(i) && currentPos <= video.buffered.end(i)) {
+          bufferLen = video.buffered.end(i) - currentPos;
+          break;
+        }
+      }
+    }
+    document.getElementById('stat-buffer').textContent = bufferLen.toFixed(1) + 's';
+
+    // Latency to live edge
+    if (hls.latency !== undefined) {
+      document.getElementById('stat-latency').textContent = hls.latency.toFixed(1) + 's';
+    }
+
+    // FPS estimation
+    if (video.getVideoPlaybackQuality) {
+      const quality = video.getVideoPlaybackQuality();
+      // Estimate frame rate (needs delta tracking, but we can do simple representation)
+      document.getElementById('stat-fps').textContent = hls.currentLevel >= 0 ? (hls.levels[hls.currentLevel].fps || '30/60') : 'Auto';
+    }
+  }
+
+  function clearStats() {
+    document.getElementById('stat-res').textContent = '-';
+    document.getElementById('stat-bitrate').textContent = '-';
+    document.getElementById('stat-buffer').textContent = '0.0s';
+    document.getElementById('stat-latency').textContent = '-';
+    document.getElementById('stat-fps').textContent = '-';
+  }
+
+  window.onbeforeunload = () => {
+    if (checkInterval) clearInterval(checkInterval);
+    if (hls) hls.destroy();
+  };
+</script>
+
+<style>
+  @keyframes pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+</style>
+
+<%- include('footer') %>

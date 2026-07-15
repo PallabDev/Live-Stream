@@ -1,0 +1,21 @@
+services:
+  cowatch:
+    build: .
+    container_name: cowatch
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./media:/app/media
+      - ./sqlite.db:/app/sqlite.db
+    labels:
+      caddy: watch.pallabdev.in
+      caddy.reverse_proxy: "{{upstreams 3000}}"
+    networks:
+      - default
+      - caddy_net
+
+networks:
+  caddy_net:
+    external: true
+  default:
