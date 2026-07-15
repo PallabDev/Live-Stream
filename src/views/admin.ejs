@@ -1,0 +1,113 @@
+<%- include('header') %>
+
+<div style="max-width: 960px; margin: 1.5rem auto; display: flex; flex-direction: column; gap: 1.5rem;">
+  <!-- Admin Panel -->
+  <div class="glass-panel">
+    <div class="card-header">
+      <h3 class="card-title">
+        <i class="ti ti-shield-lock" style="color: var(--secondary);"></i> Admin Access Panel
+      </h3>
+      <span class="badge badge-danger">Administrator Privilege</span>
+    </div>
+    <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">
+      As an admin, you have master access. You can promote users to Admins or grant them access to create streams.
+    </p>
+
+    <div style="overflow-x: auto;">
+      <table class="premium-table" id="users-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Streaming Access</th>
+          </tr>
+        </thead>
+        <tbody id="users-list">
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--text-muted);">Loading users list...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', fetchUsers);
+
+  async function fetchUsers() {
+    try {
+      const res = await fetch('/api/users');
+      const users = await res.json();
+      const list = document.getElementById('users-list');
+      list.innerHTML = '';
+      
+      users.forEach(u => {
+        // Skip self to prevent self lockouts
+        const isSelf = u.id === '<%= user.id %>';
+        
+        list.innerHTML += `
+          <tr>
+            <td data-label="User">
+              <div style="display:flex; align-items:center; gap:0.5rem;">
+                <div class="avatar" style="width:24px; height:24px; font-size:0.75rem;">${u.name.charAt(0).toUpperCase()}</div>
+                <span style="font-weight:600;">${u.name} ${isSelf ? '(You)' : ''}</span>
+              </div>
+            </td>
+            <td data-label="Email" style="color:var(--text-muted); font-size:0.9rem;">${u.email}</td>
+            <td data-label="Role">
+              <select class="form-input" style="padding:0.25rem 0.5rem; font-size:0.85rem; width:auto;" ${isSelf ? 'disabled' : ''} onchange="changeRole('${u.id}', this.value)">
+                <option value="user" ${u.role === 'user' ? 'selected' : ''}>User</option>
+                <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+              </select>
+            </td>
+            <td data-label="Access">
+              <div class="toggle-wrapper" style="border:none; padding:0; justify-content:flex-start; gap:0.5rem;">
+                <label class="switch">
+                  <input type="checkbox" ${u.hasAccess || u.role === 'admin' ? 'checked' : ''} ${isSelf || u.role === 'admin' ? 'disabled' : ''} onchange="toggleAccess('${u.id}', this.checked)">
+                  <span class="slider"></span>
+                </label>
+                <span style="font-size:0.85rem; color:${u.hasAccess || u.role === 'admin' ? 'var(--accent)' : 'var(--text-muted)'}">
+                  ${u.role === 'admin' ? 'Always Allowed' : (u.hasAccess ? 'Allowed' : 'Denied')}
+                </span>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function toggleAccess(userId, hasAccess) {
+    try {
+      const res = await fetch('/api/users/toggle-access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, hasAccess })
+      });
+      if (!res.ok) throw new Error('Failed to update access.');
+      fetchUsers();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function changeRole(userId, role) {
+    try {
+      const res = await fetch('/api/users/change-role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, role })
+      });
+      if (!res.ok) throw new Error('Failed to update role.');
+      fetchUsers();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+</script>
+
+<%- include('footer') %>

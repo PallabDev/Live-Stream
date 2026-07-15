@@ -1,5 +1,21 @@
 <%- include('header') %>
 
+<!-- Mobile Blocking Overlay -->
+<div id="mobile-block-overlay">
+  <div class="block-card">
+    <div class="block-icon">
+      <i class="ti ti-device-laptop"></i>
+    </div>
+    <h2>Desktop Screen Required</h2>
+    <p>
+      Broadcasting and screen sharing setup are only supported on desktop screens. Please open this link on a computer to start hosting your stream.
+    </p>
+    <a href="/dashboard" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.5rem; justify-content: center; width: 100%;">
+      <i class="ti ti-arrow-left"></i> Go to Dashboard
+    </a>
+  </div>
+</div>
+
 <div class="stream-grid">
   <!-- Left Side: Streaming Preview and Controls -->
   <div style="display: flex; flex-direction: column; gap: 1.5rem;">
@@ -18,16 +34,24 @@
     </div>
 
     <!-- Broadcasting triggers -->
-    <div class="glass-panel" style="display: flex; gap: 1rem; justify-content: center; align-items: center;">
-      <button id="btn-setup" class="btn btn-secondary" onclick="setupMedia()">
-        <i class="ti ti-device-computer-camera"></i> Setup Screen & Audio
-      </button>
-      <button id="btn-start" class="btn btn-primary" onclick="startStreaming()" disabled>
-        <i class="ti ti-antenna"></i> Start Streaming
-      </button>
-      <button id="btn-stop" class="btn btn-danger" onclick="stopStreaming()" disabled>
-        <i class="ti ti-square-rounded-x"></i> Stop Stream
-      </button>
+    <div style="display: flex; justify-content: center; margin-top: 0.5rem;">
+      <div class="control-dock">
+        <button id="btn-setup" class="btn-circle" onclick="setupMedia()" title="Setup Screen & Audio">
+          <i class="ti ti-screen-share"></i>
+        </button>
+        <button id="btn-settings" class="btn-circle" onclick="openSettingsModal()" title="Encoding Settings">
+          <i class="ti ti-settings"></i>
+        </button>
+        <button id="btn-share" class="btn-circle" onclick="copyViewerLink()" title="Copy Viewer Link">
+          <i class="ti ti-share"></i>
+        </button>
+        <button id="btn-start" class="btn-circle" onclick="startStreaming()" disabled title="Start Streaming">
+          <i class="ti ti-player-play"></i>
+        </button>
+        <button id="btn-stop" class="btn-circle" onclick="stopStreaming()" disabled title="Stop Stream" style="background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.2); color: var(--danger);">
+          <i class="ti ti-player-stop"></i>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -43,15 +67,7 @@
       <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.5rem;">
         Your stream key is:
       </p>
-      <code style="background: rgba(0, 0, 0, 0.3); padding: 0.25rem 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.85rem; word-break: break-all;">
-        <%= stream.streamKey %>
-      </code>
-      <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 1rem;">
-        Viewers link: <br>
-        <a href="/live/<%= stream.streamKey %>" target="_blank" style="word-break: break-all;">
-          /live/<%= stream.streamKey %>
-        </a>
-      </p>
+      <code><%= stream.streamKey %></code>
     </div>
 
     <!-- Speed Test & Recommendation -->
@@ -71,56 +87,68 @@
       <div id="speedtest-status" style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted);"></div>
     </div>
 
-    <!-- Encoding Configurations -->
-    <div class="glass-panel">
-      <div class="card-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem;">
-        <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.25rem;">
-          <i class="ti ti-settings" style="color: var(--warning);"></i> Stream Settings
-        </h4>
-      </div>
+  </div>
+</div>
 
-      <!-- Resolutions (Multiple selection allowed) -->
-      <div class="form-group">
-        <label class="form-label">Available Resolutions</label>
-        <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
-          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer;">
-            <input type="checkbox" id="res-480p" checked style="accent-color: var(--primary);">
-            <span>480p SD</span>
-          </label>
-          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer;">
-            <input type="checkbox" id="res-720p" checked style="accent-color: var(--primary);">
-            <span>720p HD</span>
-          </label>
-          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer;">
-            <input type="checkbox" id="res-1080p" checked style="accent-color: var(--primary);">
-            <span>1080p Full HD</span>
-          </label>
-        </div>
-      </div>
+<!-- Settings Modal Popup -->
+<div id="settings-modal" class="modal-backdrop" style="display: none;">
+  <div class="modal-content-wrapper">
+    <div class="card-header" style="margin-bottom: 1.5rem; padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
+      <h4 style="font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: #fff;">
+        <i class="ti ti-settings" style="color: var(--warning);"></i> Stream Settings
+      </h4>
+      <button onclick="closeSettingsModal()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.25rem; display: flex; align-items: center; justify-content: center;">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
 
-      <!-- Frame rate toggle (30 or 60) -->
-      <div class="form-group">
-        <label class="form-label">Target Frame Rate</label>
-        <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
-          <label style="display: flex; align-items: center; gap: 0.25rem; font-size: 0.9rem; cursor: pointer;">
-            <input type="radio" name="fps" id="fps-30" value="30" checked style="accent-color: var(--primary);">
-            <span>30 FPS</span>
-          </label>
-          <label style="display: flex; align-items: center; gap: 0.25rem; font-size: 0.9rem; cursor: pointer;">
-            <input type="radio" name="fps" id="fps-60" value="60" style="accent-color: var(--primary);">
-            <span>60 FPS</span>
-          </label>
-        </div>
-      </div>
-
-      <!-- Custom Bitrate slider -->
-      <div class="form-group" style="margin-bottom: 0;">
-        <label class="form-label" style="display: flex; justify-content: space-between;">
-          <span>Target Bitrate</span>
-          <span id="bitrate-val" style="color: var(--primary); font-weight: 600;">2500 Kbps</span>
+    <!-- Resolutions (Multiple selection allowed) -->
+    <div class="form-group" style="margin-bottom: 1.5rem;">
+      <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Available Resolutions</label>
+      <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
+          <input type="checkbox" id="res-480p" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <span>480p SD</span>
         </label>
-        <input type="range" id="bitrate-input" min="500" max="10000" step="100" value="2500" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
+          <input type="checkbox" id="res-720p" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <span>720p HD</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
+          <input type="checkbox" id="res-1080p" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <span>1080p Full HD</span>
+        </label>
       </div>
+    </div>
+
+    <!-- Frame rate toggle (30 or 60) -->
+    <div class="form-group" style="margin-bottom: 1.5rem;">
+      <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Target Frame Rate</label>
+      <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
+          <input type="radio" name="fps" id="fps-30" value="30" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <span>30 FPS</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
+          <input type="radio" name="fps" id="fps-60" value="60" style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <span>60 FPS</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Custom Bitrate slider -->
+    <div class="form-group" style="margin-bottom: 1.5rem;">
+      <label class="form-label" style="display: flex; justify-content: space-between; font-weight: 600;">
+        <span>Target Bitrate</span>
+        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">2500 Kbps</span>
+      </label>
+      <input type="range" id="bitrate-input" min="500" max="10000" step="100" value="2500" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
+      <button class="btn btn-primary" onclick="closeSettingsModal()" style="padding: 0.5rem 1.5rem; font-size: 0.9rem;">
+        Save & Apply
+      </button>
     </div>
   </div>
 </div>
@@ -134,6 +162,37 @@
 
   function updateBitrateVal(value) {
     document.getElementById('bitrate-val').textContent = value + ' Kbps';
+  }
+
+  function openSettingsModal() {
+    const modal = document.getElementById('settings-modal');
+    modal.style.display = 'flex';
+    modal.offsetHeight; // force reflow
+    modal.classList.add('show');
+  }
+
+  function closeSettingsModal() {
+    const modal = document.getElementById('settings-modal');
+    modal.classList.remove('show');
+    setTimeout(() => {
+      modal.style.display = 'none';
+    }, 300);
+  }
+
+  function copyViewerLink() {
+    const link = window.location.origin + "/live/<%= stream.streamKey %>";
+    navigator.clipboard.writeText(link).then(() => {
+      const btn = document.getElementById('btn-share');
+      const origHtml = btn.innerHTML;
+      btn.innerHTML = '<i class="ti ti-check" style="color: var(--accent);"></i>';
+      btn.style.borderColor = 'var(--accent)';
+      setTimeout(() => {
+        btn.innerHTML = origHtml;
+        btn.style.borderColor = '';
+      }, 2000);
+    }).catch(err => {
+      console.error('Failed to copy: ', err);
+    });
   }
 
   async function runSpeedTest() {
@@ -169,22 +228,22 @@
         recRes = '480p';
         recFps = '30';
         recBitrate = 1000;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: #fff;">480p @ 30 FPS</strong>';
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 30 FPS</strong>';
       } else if (speedMbps < 5) {
         recRes = '720p';
         recFps = '30';
         recBitrate = 2200;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: #fff;">720p @ 30 FPS</strong>';
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">720p @ 30 FPS</strong>';
       } else if (speedMbps < 9) {
         recRes = '1080p';
         recFps = '30';
         recBitrate = 4000;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: #fff;">1080p @ 30 FPS</strong>';
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">1080p @ 30 FPS</strong>';
       } else {
         recRes = '1080p';
         recFps = '60';
         recBitrate = 6000;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: #fff;">1080p @ 60 FPS (Ultra HD)</strong>';
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">1080p @ 60 FPS (Ultra HD)</strong>';
       }
 
       // Apply recommendation
@@ -213,7 +272,8 @@
         video: {
           width: { ideal: 1920 },
           height: { ideal: 1080 },
-          frameRate: { ideal: 60 }
+          frameRate: { ideal: 60 },
+          cursor: 'never'
         },
         audio: true
       });
@@ -227,7 +287,8 @@
 
       // Enable start button
       document.getElementById('btn-start').disabled = false;
-      document.getElementById('btn-setup').textContent = 'Change Capture Device';
+      document.getElementById('btn-start').classList.add('btn-circle-active');
+      document.getElementById('btn-setup').title = 'Change Capture Device';
       
       // Handle screen share stop by browser button
       const videoTrack = localStream.getVideoTracks()[0];
@@ -330,8 +391,10 @@
       document.getElementById('status-badge').className = 'badge badge-success';
       document.getElementById('status-badge').innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
       document.getElementById('btn-start').disabled = true;
+      document.getElementById('btn-start').classList.remove('btn-circle-active');
       document.getElementById('btn-setup').disabled = true;
       document.getElementById('btn-stop').disabled = false;
+      document.getElementById('btn-stop').classList.add('btn-circle-danger-active');
       
       // Configure target inputs disabled during stream
       document.getElementById('res-480p').disabled = true;
@@ -378,8 +441,14 @@
     document.getElementById('status-badge').className = 'badge badge-danger';
     document.getElementById('status-badge').innerHTML = '<i class="ti ti-point-filled"></i> Offline';
     document.getElementById('btn-start').disabled = !localStream;
+    if (localStream) {
+      document.getElementById('btn-start').classList.add('btn-circle-active');
+    } else {
+      document.getElementById('btn-start').classList.remove('btn-circle-active');
+    }
     document.getElementById('btn-setup').disabled = false;
     document.getElementById('btn-stop').disabled = true;
+    document.getElementById('btn-stop').classList.remove('btn-circle-danger-active');
     document.getElementById('duration-badge').style.display = 'none';
 
     document.getElementById('res-480p').disabled = false;

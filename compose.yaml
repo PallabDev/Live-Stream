@@ -10,7 +10,7 @@ services:
       - ./sqlite.db:/app/sqlite.db
     labels:
       caddy: watch.pallabdev.in
-      caddy.reverse_proxy: "{{upstreams 3000}}"
+      caddy.reverse_proxy: "{{upstreams 5678}}"
     networks:
       - default
       - caddy_net

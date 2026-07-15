@@ -1,107 +1,426 @@
-<%- include('header') %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title><%= stream.title %> | CoWatch Player</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link
+  rel="stylesheet"
+  href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+/>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        accent: '#6366f1', /* High-Voltage Indigo to match CoWatch brand */
+        'accent-dark': '#4f46e5',
+        'control-bg': 'rgba(15, 23, 42, 0.95)',
+        'glass-bg': 'rgba(30, 41, 59, 0.7)',
+        'glass-border': 'rgba(255, 255, 255, 0.08)',
+      },
+      animation: {
+        'spin-slow': 'spin 1s linear infinite',
+        'pulse-slow': 'pulse 2s ease-in-out infinite',
+      },
+      backdropBlur: {
+        'glass': '10px',
+      },
+    }
+  }
+}
+</script>
+<style>
+:root {
+  --progress-bg: #3a3a3a;
+  --progress-fill: #6366f1;
+  --value: 100%;
+}
 
-<div style="max-width: 960px; margin: 1.5rem auto; display: flex; flex-direction: column; gap: 1.5rem;">
-  <!-- Video Player Panel -->
-  <div class="glass-panel" style="padding: 1rem;">
-    <div class="video-container" style="background: #000; border-radius: 12px;">
-      <video id="video-player" class="video-element" controls autoplay playsinline></video>
-      <div id="offline-screen" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(15, 23, 42, 0.95); z-index: 20; text-align: center; padding: 2rem;">
-        <div style="color: var(--text-muted); font-size: 4rem; margin-bottom: 1rem; animation: pulse 2s infinite;">
-          <i class="ti ti-antenna-off"></i>
+/* Make page exactly viewport size, no scroll */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000000;
+}
+
+/* Custom scrollbar for settings */
+.sh-settings-list::-webkit-scrollbar {
+  width: 6px;
+}
+.sh-settings-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+.sh-settings-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+.sh-settings-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* === VERTICAL VOLUME SLIDER === */
+.sh-volume-slider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Base input reset */
+.sh-volume-range {
+  -webkit-appearance: none;
+  appearance: none;
+  writing-mode: bt-lr;           /* vertical */
+  -webkit-appearance: slider-vertical;
+  width: 12px;                   /* thickness of the track */
+  height: 100%;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* WebKit track */
+.sh-volume-range::-webkit-slider-runnable-track {
+  width: 12px;
+  height: 100%;
+  background: #1e1b4b;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* WebKit thumb */
+.sh-volume-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid #111;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+  margin-top: -3px; /* center thumb on track */
+}
+
+/* Firefox track */
+.sh-volume-range::-moz-range-track {
+  width: 12px;
+  height: 100%;
+  background: #1e1b4b;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Firefox thumb */
+.sh-volume-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid #111;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+}
+
+/* Hide ugly focus ring */
+.sh-volume-range:focus {
+  outline: none;
+}
+
+/* Progress bar gradient */
+.sh-progress-bar {
+  background: linear-gradient(90deg, #6366f1, #4f46e5);
+}
+
+/* Fullscreen adjustments: player fills iframe viewport */
+:fullscreen .sh-player,
+:-webkit-full-screen .sh-player,
+:-moz-full-screen .sh-player {
+  border-radius: 0;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  background: #000;
+}
+</style>
+</head>
+<body class="bg-[#000000] m-0 p-0 font-['Inter',system-ui,sans-serif] text-white">
+  <!-- Full-screen container -->
+  <div class="w-screen h-screen relative overflow-hidden">
+    <!-- Player fills entire viewport -->
+    <div
+      class="sh-player w-full h-full bg-black rounded-none overflow-hidden relative shadow-[0_4px_20px_rgba(0,0,0,0.8)] transition-all duration-300"
+      id="sh-player"
+    >
+      <video
+        class="w-full h-full object-contain bg-black block"
+        id="sh-video"
+        playsinline
+      ></video>
+
+      <!-- Offline Screen Overlay -->
+      <div
+        id="offline-screen"
+        class="absolute inset-0 bg-[#0f172a] z-50 flex flex-col justify-center items-center text-center p-6"
+        style="display: flex;"
+      >
+        <div class="text-indigo-500 text-6xl mb-4 animate-pulse">
+          <i class="fa-solid fa-satellite-dish"></i>
         </div>
-        <h3 style="margin-bottom: 0.5rem;">Stream is Offline</h3>
-        <p style="color: var(--text-muted); font-size: 0.95rem; max-width: 400px; margin-bottom: 1.5rem;">
+        <h3 class="text-2xl font-bold text-white mb-2">Stream is Offline</h3>
+        <p class="text-slate-400 text-sm max-w-sm mb-6">
           The broadcaster is not streaming live right now. The feed will automatically play once they start broadcasting.
         </p>
-        <button class="btn btn-secondary" onclick="checkStreamStatus()">
-          <i class="ti ti-refresh"></i> Check Again
+        <button
+          class="px-6 py-2.5 rounded-full bg-indigo-600 hover:bg-indigo-500 font-semibold text-sm transition-all hover:scale-105"
+          onclick="checkStreamStatus()"
+        >
+          <i class="fa-solid fa-arrows-rotate mr-1.5"></i> Check Again
         </button>
       </div>
-    </div>
 
-    <!-- Details and Controls -->
-    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-top: 1.5rem; flex-wrap: wrap; gap: 1rem;">
-      <div>
-        <h2 style="font-size: 1.5rem; margin-bottom: 0.25rem;"><%= stream.title %></h2>
-        <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
-          <span id="player-status-badge" class="badge badge-danger">
-            <i class="ti ti-point-filled"></i> Offline
-          </span>
-          <span style="font-size: 0.85rem; color: var(--text-muted);">
-            Stream Key: <code><%= stream.streamKey %></code>
-          </span>
+      <!-- Loading Spinner -->
+      <div
+        class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60px] h-[60px] border-4 border-solid border-white/10 border-t-accent rounded-full z-[5] hidden animate-[spin_1s_linear_infinite,pulse_2s_ease-in-out_infinite]"
+        id="sh-loading"
+      ></div>
+
+      <!-- Controls -->
+      <div
+        class="absolute left-0 right-0 bottom-0 p-4 sm:p-6 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex flex-col gap-3 transition-all duration-150 z-10"
+        id="sh-controls"
+      >
+        <div class="flex items-center gap-4">
+          <!-- Play / Pause -->
+          <button
+            class="sh-play-btn w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-accent text-white flex items-center justify-center text-lg transition-all duration-150 shadow-[0_4px_12px_rgba(99,102,241,0.4)] hover:bg-accent-dark hover:scale-105 hover:shadow-[0_6px_16px_rgba(99,102,241,0.5)]"
+            id="sh-play-btn"
+            aria-label="Play/Pause"
+          >
+            <i class="fas fa-play" id="sh-play-icon"></i>
+          </button>
+
+          <!-- Progress + Time -->
+          <div class="flex-1 flex items-center gap-3 min-w-0">
+            <span
+              class="text-xs sm:text-sm font-medium text-[#aaaaaa] min-w-[42px] sm:min-w-[50px] font-mono tabular-nums"
+              id="sh-current-time"
+            >
+              00:00
+            </span>
+
+            <div
+              class="sh-progress relative flex-1 h-1.5 sm:h-2 rounded-full bg-[#3a3a3a] cursor-pointer overflow-hidden transition-all duration-150 hover:h-2 sm:hover:h-2.5"
+              id="sh-progress"
+            >
+              <div
+                class="sh-progress-buffer absolute top-0 left-0 bottom-0 w-0 rounded-full bg-white/20"
+                id="sh-progress-buffer"
+              ></div>
+              <div
+                class="sh-progress-bar absolute top-0 left-0 bottom-0 w-0 rounded-full"
+                id="sh-progress-bar"
+              ></div>
+              <div
+                class="sh-progress-handle absolute top-1/2 -translate-y-1/2 w-0 h-0 rounded-full bg-white shadow-none transition-all duration-150 pointer-events-none"
+                id="sh-progress-handle"
+              ></div>
+            </div>
+
+            <span
+              class="text-xs sm:text-sm font-medium text-[#aaaaaa] min-w-[42px] sm:min-w-[50px] font-mono tabular-nums"
+              id="sh-duration"
+            >
+              00:00
+            </span>
+          </div>
+
+          <!-- Right controls -->
+          <div class="sh-controls-right flex items-center gap-1.5 sm:gap-2">
+            <!-- Volume -->
+            <div class="sh-volume-wrap relative flex items-center" id="sh-volume-wrap">
+              <button
+                class="sh-btn w-8 h-8 sm:w-10 sm:h-10 bg-transparent text-[#aaaaaa] flex items-center justify-center text-lg p-2 rounded-lg transition-all duration-150 hover:text-white hover:bg-white/10 min-w-[32px]"
+                id="sh-volume-btn"
+                title="Volume"
+              >
+                <i class="fas fa-volume-up" id="sh-volume-icon"></i>
+              </button>
+              <div
+                class="sh-volume-popup absolute left-1/2 bottom-11 -translate-x-1/2 w-16 sm:w-20 p-3 bg-control-bg backdrop-blur-glass rounded-xl border border-glass-border shadow-[0_4px_20px_rgba(0,0,0,0.8)] opacity-0 pointer-events-none transition-opacity duration-150 flex justify-center z-[100]"
+              >
+                <div class="sh-volume-slider w-[10px] h-24 sm:h-28 flex justify-center">
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value="1"
+                    id="sh-volume-range"
+                    class="sh-volume-range"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- Settings -->
+            <div class="sh-settings relative" id="sh-settings">
+              <button
+                class="sh-btn w-8 h-8 sm:w-10 sm:h-10 bg-transparent text-[#aaaaaa] flex items-center justify-center text-lg p-2 rounded-lg transition-all duration-150 hover:text-white hover:bg-white/10 min-w-[32px]"
+                id="sh-settings-btn"
+                title="Settings"
+              >
+                <i class="fas fa-cog"></i>
+              </button>
+
+              <div
+                class="sh-settings-menu absolute right-0 bottom-11 w-48 sm:w-56 bg-control-bg backdrop-blur-glass rounded-xl border border-glass-border shadow-[0_4px_20px_rgba(0,0,0,0.8)] p-2 text-sm hidden z-[100]"
+              >
+                <!-- ROOT PANEL: Quality + Speed ONLY -->
+                <div
+                  class="sh-settings-panel active"
+                  data-panel="root"
+                  id="sh-settings-root"
+                >
+                  <ul class="sh-settings-list m-0 p-0 max-h-64 overflow-y-auto">
+                    <li
+                      class="sh-settings-item px-4 py-2.5 mx-2 my-0.5 rounded-lg cursor-pointer flex justify-between items-center transition-all duration-150 hover:bg-white/10"
+                      data-open-panel="quality"
+                    >
+                      <span class="flex items-center gap-2">
+                        <i class="fas fa-tachometer-alt"></i> Quality
+                      </span>
+                      <span id="sh-quality-current">Auto</span>
+                    </li>
+                    <li
+                      class="sh-settings-item px-4 py-2.5 mx-2 my-0.5 rounded-lg cursor-pointer flex justify-between items-center transition-all duration-150 hover:bg-white/10"
+                      data-open-panel="speed"
+                    >
+                      <span class="flex items-center gap-2">
+                        <i class="fas fa-running"></i> Speed
+                      </span>
+                      <span id="sh-speed-current">Normal</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <!-- QUALITY PANEL -->
+                <div
+                  class="sh-settings-panel hidden"
+                  data-panel="quality"
+                  id="sh-settings-quality"
+                >
+                  <div
+                    class="sh-settings-header px-4 py-3 sm:px-5 sm:py-3.5 flex items-center gap-2.5 border-b border-white/10 text-sm font-semibold"
+                  >
+                    <button
+                      class="sh-back-btn bg-transparent text-[#aaaaaa] cursor-pointer text-base p-1 rounded-lg transition-all duration-150 hover:text-white hover:bg-white/10"
+                      data-back
+                    >
+                      <i class="fas fa-arrow-left"></i>
+                    </button>
+                    <span>Select Quality</span>
+                  </div>
+                  <ul
+                    class="sh-settings-list m-0 p-0 max-h-64 overflow-y-auto"
+                    id="sh-quality-list"
+                  ></ul>
+                </div>
+
+                <!-- SPEED PANEL -->
+                <div
+                  class="sh-settings-panel hidden"
+                  data-panel="speed"
+                  id="sh-settings-speed"
+                >
+                  <div
+                    class="sh-settings-header px-4 py-3 sm:px-5 sm:py-3.5 flex items-center gap-2.5 border-b border-white/10 text-sm font-semibold"
+                  >
+                    <button
+                      class="sh-back-btn bg-transparent text-[#aaaaaa] cursor-pointer text-base p-1 rounded-lg transition-all duration-150 hover:text-white hover:bg-white/10"
+                      data-back
+                    >
+                      <i class="fas fa-arrow-left"></i>
+                    </button>
+                    <span>Playback Speed</span>
+                  </div>
+                  <ul
+                    class="sh-settings-list m-0 p-0 max-h-64 overflow-y-auto"
+                    id="sh-speed-list"
+                  ></ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Fullscreen -->
+            <button
+              class="sh-btn sh-full-btn w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-white/10 flex items-center justify-center text-lg transition-all duration-150 hover:bg-white/20 hover:scale-105"
+              id="sh-full-btn"
+              title="Fullscreen"
+            >
+              <i class="fas fa-expand" id="sh-fullscreen-icon"></i>
+            </button>
+          </div>
         </div>
       </div>
-
-      <!-- Quality Selection (YT Style) -->
-      <div class="glass-panel" style="padding: 0.75rem 1rem; display: flex; align-items: center; gap: 0.75rem; box-shadow: none;">
-        <label class="form-label" style="margin-bottom: 0; font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 0.25rem;">
-          <i class="ti ti-settings-2"></i> Quality
-        </label>
-        <select id="quality-selector" class="form-input" style="padding: 0.4rem 1rem; border-radius: 6px; font-size: 0.85rem; width: auto; background: rgba(0,0,0,0.4);" onchange="changeQuality(this.value)" disabled>
-          <option value="-1">Auto</option>
-        </select>
-      </div>
     </div>
   </div>
-
-  <!-- Player Stats & Optimizations -->
-  <div class="glass-panel">
-    <div class="card-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem;">
-      <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.25rem;">
-        <i class="ti ti-chart-bar" style="color: var(--primary);"></i> Live Diagnostics (YouTube Stats for Nerds)
-      </h4>
-    </div>
-    
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; font-size: 0.85rem; color: var(--text-muted);">
-      <div>
-        <p>Current Resolution: <strong id="stat-res" style="color: #fff;">-</strong></p>
-        <p style="margin-top: 0.5rem;">Buffer Health: <strong id="stat-buffer" style="color: #fff;">0.0s</strong></p>
-      </div>
-      <div>
-        <p>Active Bitrate: <strong id="stat-bitrate" style="color: #fff;">-</strong></p>
-        <p style="margin-top: 0.5rem;">Latency to Edge: <strong id="stat-latency" style="color: #fff;">-</strong></p>
-      </div>
-      <div>
-        <p>FPS: <strong id="stat-fps" style="color: #fff;">-</strong></p>
-        <p style="margin-top: 0.5rem;">Connection Quality: <strong id="stat-connection" style="color: var(--accent);">Good</strong></p>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Hls.js CDN -->
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
 <script>
-  const streamKey = '<%= stream.streamKey %>';
-  const playlistUrl = "/media/" + streamKey + "/master.m3u8";
-  let hls = null;
-  const video = document.getElementById('video-player');
+(function () {
+  // DOM Elements
+  const video = document.getElementById('sh-video');
+  const player = document.getElementById('sh-player');
+  const playBtn = document.getElementById('sh-play-btn');
+  const playIcon = document.getElementById('sh-play-icon');
+  const currentTimeEl = document.getElementById('sh-current-time');
+  const durationEl = document.getElementById('sh-duration');
+  const progress = document.getElementById('sh-progress');
+  const progressBar = document.getElementById('sh-progress-bar');
+  const progressBuffer = document.getElementById('sh-progress-buffer');
+  const progressHandle = document.getElementById('sh-progress-handle');
+  const volumeWrap = document.getElementById('sh-volume-wrap');
+  const volumeBtn = document.getElementById('sh-volume-btn');
+  const volumeIcon = document.getElementById('sh-volume-icon');
+  const volumeRange = document.getElementById('sh-volume-range');
+  const settingsRoot = document.getElementById('sh-settings');
+  const settingsBtn = document.getElementById('sh-settings-btn');
+  const qualityList = document.getElementById('sh-quality-list');
+  const speedList = document.getElementById('sh-speed-list');
+  const rootPanel = document.getElementById('sh-settings-root');
+  const qualityPanel = document.getElementById('sh-settings-quality');
+  const speedPanel = document.getElementById('sh-settings-speed');
+  const qualityCurrent = document.getElementById('sh-quality-current');
+  const speedCurrent = document.getElementById('sh-speed-current');
+  const fullBtn = document.getElementById('sh-full-btn');
+  const fullscreenIcon = document.getElementById('sh-fullscreen-icon');
+  const loadingSpinner = document.getElementById('sh-loading');
+  const controls = document.getElementById('sh-controls');
   const offlineScreen = document.getElementById('offline-screen');
-  const statusBadge = document.getElementById('player-status-badge');
-  const qualitySelector = document.getElementById('quality-selector');
+
+  const playlistUrl = "/media/<%= stream.streamKey %>/master.m3u8";
+  let hlsInstance = null;
+  let levels = [];
+  let isFullscreen = false;
+  let controlsTimeout = null;
+  let scrubbing = false;
+  let controlsHidden = false;
   let checkInterval = null;
 
-  document.addEventListener('DOMContentLoaded', () => {
-    initPlayer();
-    // Periodically query status and verify HLS file availability
-    checkInterval = setInterval(checkStreamStatus, 3000);
-  });
-
+  // Stream status checker
   async function checkStreamStatus() {
     try {
-      // Check if master playlist exists on server
       const res = await fetch(playlistUrl, { method: 'HEAD' });
       if (res.ok) {
         if (offlineScreen.style.display !== 'none') {
           offlineScreen.style.display = 'none';
-          statusBadge.className = 'badge badge-success';
-          statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
-          
-          // Re-initialize player if needed
-          if (!hls && Hls.isSupported()) {
-            loadStream();
+          if (!hlsInstance) {
+            initHLS();
           } else {
             video.play().catch(e => console.log("Auto play prevented", e));
           }
@@ -116,133 +435,594 @@
 
   function showOffline() {
     offlineScreen.style.display = 'flex';
-    statusBadge.className = 'badge badge-danger';
-    statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> Offline';
-    if (hls) {
-      hls.destroy();
-      hls = null;
+    if (hlsInstance) {
+      hlsInstance.destroy();
+      hlsInstance = null;
     }
-    qualitySelector.disabled = true;
-    clearStats();
   }
 
-  function initPlayer() {
+  // HLS init
+  function initHLS() {
+    showLoading();
     if (Hls.isSupported()) {
-      checkStreamStatus();
+      hlsInstance = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        backBufferLength: 30,
+        maxBufferLength: 8,
+        maxMaxBufferLength: 12,
+        liveSyncDuration: 2.5,
+        liveMaxLatencyDuration: 5,
+        liveDurationInfinity: true,
+      });
+
+      hlsInstance.loadSource(playlistUrl);
+      hlsInstance.attachMedia(video);
+
+      hlsInstance.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
+        levels = data.levels || [];
+        buildQualityMenu(levels);
+        hideLoading();
+        video.play().catch(e => console.log("Play interrupted", e));
+      });
+
+      hlsInstance.on(Hls.Events.FRAG_BUFFERED, function () {
+        updateBufferProgress();
+      });
+
+      hlsInstance.on(Hls.Events.ERROR, function (event, data) {
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.error('Network error, trying to recover...');
+              hlsInstance.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.error('Media error, recovering...');
+              hlsInstance.recoverMediaError();
+              break;
+            default:
+              console.error('Fatal HLS error, cannot recover');
+              hlsInstance.destroy();
+              hlsInstance = null;
+              showOffline();
+              break;
+          }
+        }
+      });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // For iOS Safari that supports HLS natively
       video.src = playlistUrl;
       video.addEventListener('loadedmetadata', () => {
-        offlineScreen.style.display = 'none';
-        statusBadge.className = 'badge badge-success';
-        statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
+        hideLoading();
+        video.play().catch(e => console.log("Native play prevented", e));
       });
     } else {
-      alert('Your browser does not support HLS streaming.');
+      console.warn('HLS not supported in this browser');
+      hideLoading();
     }
   }
 
-  function loadStream() {
-    // Ultra low latency / high stability YouTube-like buffering config
-    hls = new Hls({
-      enableWorker: true,
-      lowLatencyMode: true,
-      backBufferLength: 30,
-      maxBufferLength: 8, // Keep buffer small for lower latency
-      maxMaxBufferLength: 12,
-      liveSyncDuration: 2.5, // Sync close to edge
-      liveMaxLatencyDuration: 5,
-      liveDurationInfinity: true,
+  function formatTime(sec) {
+    if (!sec || !isFinite(sec)) return '00:00';
+    const s = Math.floor(sec % 60);
+    const m = Math.floor(sec / 60);
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  function showLoading() {
+    loadingSpinner.style.display = 'block';
+  }
+  function hideLoading() {
+    loadingSpinner.style.display = 'none';
+  }
+
+  // Play / pause
+  function updatePlayIcon() {
+    if (video.paused) {
+      playIcon.className = 'fas fa-play';
+      playBtn.setAttribute('aria-label', 'Play');
+    } else {
+      playIcon.className = 'fas fa-pause';
+      playBtn.setAttribute('aria-label', 'Pause');
+    }
+  }
+
+  playBtn.addEventListener('click', () => {
+    if (video.paused) {
+      video.play();
+    } else {
+      video.pause();
+    }
+    resetControlsTimer();
+  });
+
+  video.addEventListener('play', updatePlayIcon);
+  video.addEventListener('pause', updatePlayIcon);
+
+  // Time + progress
+  video.addEventListener('timeupdate', () => {
+    const ct = video.currentTime || 0;
+    const dur = video.duration || 0;
+    currentTimeEl.textContent = formatTime(ct);
+
+    if (dur > 0) {
+      const percent = (ct / dur) * 100;
+      progressBar.style.width = percent + '%';
+      progressHandle.style.left = percent + '%';
+    }
+  });
+
+  video.addEventListener('loadedmetadata', () => {
+    durationEl.textContent = formatTime(video.duration);
+  });
+
+  video.addEventListener('waiting', showLoading);
+  video.addEventListener('playing', hideLoading);
+
+  // Buffer progress
+  function updateBufferProgress() {
+    if (video.buffered && video.buffered.length > 0 && video.duration > 0) {
+      const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+      const percent = (bufferedEnd / video.duration) * 100;
+      progressBuffer.style.width = percent + '%';
+    }
+  }
+  video.addEventListener('progress', updateBufferProgress);
+
+  // Hover handle
+  progress.addEventListener('mouseenter', () => {
+    progressHandle.style.width = '14px';
+    progressHandle.style.height = '14px';
+    progressHandle.style.boxShadow = '0 0 0 3px rgba(0, 0, 0, 0.5)';
+  });
+  progress.addEventListener('mouseleave', () => {
+    progressHandle.style.width = '0';
+    progressHandle.style.height = '0';
+    progressHandle.style.boxShadow = 'none';
+  });
+
+  // Seek
+  function seekByClientX(clientX) {
+    const rect = progress.getBoundingClientRect();
+    const ratio =
+      Math.min(Math.max(0, clientX - rect.left), rect.width) / rect.width;
+    if (video.duration) {
+      video.currentTime = ratio * video.duration;
+    }
+  }
+
+  progress.addEventListener('mousedown', (e) => {
+    scrubbing = true;
+    seekByClientX(e.clientX);
+    resetControlsTimer();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (scrubbing) {
+      seekByClientX(e.clientX);
+      resetControlsTimer();
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    scrubbing = false;
+    resetControlsTimer();
+  });
+
+  progress.addEventListener('click', (e) => {
+    seekByClientX(e.clientX);
+    resetControlsTimer();
+  });
+
+  // Volume
+  volumeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    volumeWrap.classList.toggle('open');
+    const popup = volumeWrap.querySelector('.sh-volume-popup');
+    if (popup) {
+      popup.style.opacity = volumeWrap.classList.contains('open') ? '1' : '0';
+      popup.style.pointerEvents = volumeWrap.classList.contains('open')
+        ? 'auto'
+        : 'none';
+    }
+    resetControlsTimer();
+  });
+
+  volumeWrap.addEventListener('click', (e) => e.stopPropagation());
+
+  document.addEventListener('click', () => {
+    volumeWrap.classList.remove('open');
+    const popup = volumeWrap.querySelector('.sh-volume-popup');
+    if (popup) {
+      popup.style.opacity = '0';
+      popup.style.pointerEvents = 'none';
+    }
+    settingsRoot.classList.remove('open');
+    const menu = settingsRoot.querySelector('.sh-settings-menu');
+    if (menu) menu.style.display = 'none';
+  });
+
+  volumeRange.addEventListener('input', function () {
+    let v = parseFloat(this.value);
+    video.volume = v;
+    video.muted = v === 0;
+
+    if (v === 0) {
+      volumeIcon.className = 'fas fa-volume-mute';
+    } else if (v < 0.5) {
+      volumeIcon.className = 'fas fa-volume-down';
+    } else {
+      volumeIcon.className = 'fas fa-volume-up';
+    }
+    resetControlsTimer();
+  });
+
+  // Double click volume icon = mute
+  volumeBtn.addEventListener('dblclick', () => {
+    video.muted = !video.muted;
+    if (video.muted) {
+      volumeRange.value = 0;
+      volumeIcon.className = 'fas fa-volume-mute';
+    } else {
+      volumeRange.value = video.volume;
+      if (video.volume === 0) {
+        volumeIcon.className = 'fas fa-volume-mute';
+      } else if (video.volume < 0.5) {
+        volumeIcon.className = 'fas fa-volume-down';
+      } else {
+        volumeIcon.className = 'fas fa-volume-up';
+      }
+    }
+    resetControlsTimer();
+  });
+
+  // Settings
+  settingsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    settingsRoot.classList.toggle('open');
+    const menu = settingsRoot.querySelector('.sh-settings-menu');
+    if (menu) {
+      menu.style.display = settingsRoot.classList.contains('open')
+        ? 'block'
+        : 'none';
+    }
+    showSettingsPanel('root');
+    resetControlsTimer();
+  });
+
+  settingsRoot.addEventListener('click', (e) => e.stopPropagation());
+
+  function showSettingsPanel(which) {
+    [rootPanel, qualityPanel, speedPanel].forEach((p) => {
+      p.classList.remove('active');
+      p.style.display = 'none';
     });
 
-    hls.loadSource(playlistUrl);
-    hls.attachMedia(video);
+    if (which === 'root') {
+      rootPanel.classList.add('active');
+      rootPanel.style.display = 'block';
+    }
+    if (which === 'quality') {
+      qualityPanel.classList.add('active');
+      qualityPanel.style.display = 'block';
+    }
+    if (which === 'speed') {
+      speedPanel.classList.add('active');
+      speedPanel.style.display = 'block';
+    }
+    resetControlsTimer();
+  }
 
-    hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
-      console.log('Manifest loaded successfully. Quality levels found:', data.levels);
-      
-      // Populate quality dropdown
-      qualitySelector.disabled = false;
-      qualitySelector.innerHTML = '<option value="-1">Auto</option>';
-      
-      data.levels.forEach((level, index) => {
-        const height = level.height || 'Source';
-        const bitrateMbps = (level.bitrate / (1024 * 1024)).toFixed(2);
-        const name = height + 'p (' + bitrateMbps + ' Mbps)';
-        qualitySelector.innerHTML += `<option value="${index}">${name}</option>`;
+  rootPanel.querySelectorAll('[data-open-panel]').forEach((li) => {
+    li.addEventListener('click', () => {
+      const target = li.getAttribute('data-open-panel');
+      showSettingsPanel(target);
+    });
+  });
+
+  document.querySelectorAll('[data-back]').forEach((btn) => {
+    btn.addEventListener('click', () => showSettingsPanel('root'));
+  });
+
+  // Quality menu
+  function buildQualityMenu(levels) {
+    qualityList.innerHTML = '';
+
+    // Auto
+    const autoLi = document.createElement('li');
+    autoLi.className =
+      'sh-settings-item px-4 py-2.5 mx-2 my-0.5 rounded-lg cursor-pointer flex justify-between items-center transition-all duration-150 bg-accent/20 text-accent font-medium';
+    autoLi.dataset.level = -1;
+    autoLi.innerHTML = '<span>Auto</span>';
+    autoLi.addEventListener('click', function () {
+      setActiveQuality(this);
+      qualityCurrent.textContent = 'Auto';
+      if (hlsInstance) hlsInstance.currentLevel = -1;
+      resetControlsTimer();
+    });
+    qualityList.appendChild(autoLi);
+
+    // Each level
+    levels.forEach((level, index) => {
+      const li = document.createElement('li');
+      li.className =
+        'sh-settings-item px-4 py-2.5 mx-2 my-0.5 rounded-lg cursor-pointer flex justify-between items-center transition-all duration-150 hover:bg-white/10';
+      const label = (level.height || '') + 'p';
+      li.dataset.level = index;
+      li.innerHTML =
+        '<span>' +
+        label +
+        '</span><span>' +
+        Math.round((level.bitrate || 0) / 1000) +
+        ' kbps</span>';
+      li.addEventListener('click', function () {
+        setActiveQuality(this);
+        qualityCurrent.textContent = label;
+        if (hlsInstance) hlsInstance.currentLevel = parseInt(
+          this.dataset.level,
+          10
+        );
+        resetControlsTimer();
       });
-
-      video.play().catch(e => console.log("Play interrupted", e));
+      qualityList.appendChild(li);
     });
+  }
 
-    hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
-      const activeLevel = hls.levels[data.level];
-      if (activeLevel) {
-        document.getElementById('stat-res').textContent = `${activeLevel.width}x${activeLevel.height}`;
-        document.getElementById('stat-bitrate').textContent = `${(activeLevel.bitrate / 1000).toFixed(0)} Kbps`;
+  function setActiveQuality(el) {
+    Array.from(qualityList.children).forEach((li) => {
+      li.classList.remove('bg-accent/20', 'text-accent', 'font-medium');
+      li.classList.add('hover:bg-white/10');
+    });
+    el.classList.add('bg-accent/20', 'text-accent', 'font-medium');
+    el.classList.remove('hover:bg-white/10');
+  }
+
+  // Speed menu
+  const speeds = [
+    { value: 0.25, label: '0.25x' },
+    { value: 0.5, label: '0.5x' },
+    { value: 0.75, label: '0.75x' },
+    { value: 1, label: 'Normal' },
+    { value: 1.25, label: '1.25x' },
+    { value: 1.5, label: '1.5x' },
+    { value: 1.75, label: '1.75x' },
+    { value: 2, label: '2x' },
+  ];
+
+  speedList.innerHTML = '';
+  speeds.forEach((sp) => {
+    const li = document.createElement('li');
+    li.className =
+      'sh-settings-item px-4 py-2.5 mx-2 my-0.5 rounded-lg cursor-pointer flex justify-between items-center transition-all duration-150 hover:bg-white/10' +
+      (sp.value === 1 ? ' bg-accent/20 text-accent font-medium' : '');
+    li.dataset.speed = sp.value;
+    li.textContent = sp.label;
+    li.addEventListener('click', function () {
+      Array.from(speedList.children).forEach((x) => {
+        x.classList.remove('bg-accent/20', 'text-accent', 'font-medium');
+        x.classList.add('hover:bg-white/10');
+      });
+      this.classList.add('bg-accent/20', 'text-accent', 'font-medium');
+      this.classList.remove('hover:bg-white/10');
+      video.playbackRate = parseFloat(this.dataset.speed);
+      speedCurrent.textContent = sp.label;
+      resetControlsTimer();
+    });
+    speedList.appendChild(li);
+  });
+
+  // Fullscreen (works inside iframe; fullscreen is for player element)
+  function toggleFullscreen() {
+    if (
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement
+    ) {
+      exitFullscreen();
+    } else {
+      enterFullscreen();
+    }
+  }
+
+  function enterFullscreen() {
+    const element = player;
+
+    if (element.requestFullscreen) {
+      element.requestFullscreen();
+    } else if (element.mozRequestFullScreen) {
+      element.mozRequestFullScreen();
+    } else if (element.webkitRequestFullscreen) {
+      element.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
+    } else if (element.msRequestFullscreen) {
+      element.msRequestFullscreen();
+    }
+
+    if (isMobile() && screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(() => {});
+    }
+
+    isFullscreen = true;
+    fullscreenIcon.className = 'fas fa-compress';
+    resetControlsTimer();
+  }
+
+  function exitFullscreen() {
+    if (document.exitFullscreen) {
+      document.exitFullscreen();
+    } else if (document.mozCancelFullScreen) {
+      document.mozCancelFullScreen();
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    } else if (document.msExitFullscreen) {
+      document.msExitFullscreen();
+    }
+
+    if (screen.orientation && screen.orientation.unlock) {
+      screen.orientation.unlock();
+    }
+
+    isFullscreen = false;
+    fullscreenIcon.className = 'fas fa-expand';
+    resetControlsTimer();
+  }
+
+  fullBtn.addEventListener('click', toggleFullscreen);
+
+  // Fullscreen events
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+  document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+  document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+  function handleFullscreenChange() {
+    isFullscreen = !!(
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement
+    );
+
+    if (isFullscreen) {
+      fullscreenIcon.className = 'fas fa-compress';
+      if (isMobile() && screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('landscape').catch(() => {});
       }
-    });
-
-    // Diagnostics Stats Loops
-    setInterval(updateDiagnostics, 500);
+    } else {
+      fullscreenIcon.className = 'fas fa-expand';
+      if (screen.orientation && screen.orientation.unlock) {
+        screen.orientation.unlock();
+      }
+    }
+    resetControlsTimer();
   }
 
-  function changeQuality(levelIndex) {
-    if (!hls) return;
-    hls.currentLevel = parseInt(levelIndex);
-    
-    const label = levelIndex == -1 ? 'Auto' : 'Level ' + levelIndex;
-    console.log('User manually changed quality level to:', label);
-  }
+  // Auto-hide controls
+  function resetControlsTimer() {
+    clearTimeout(controlsTimeout);
+    controls.style.opacity = '1';
+    controls.style.transform = 'translateY(0)';
+    controls.style.pointerEvents = 'auto';
+    controlsHidden = false;
 
-  function updateDiagnostics() {
-    if (!hls || !video) return;
-
-    // Buffer health
-    let bufferLen = 0;
-    if (video.buffered.length > 0) {
-      const currentPos = video.currentTime;
-      for (let i = 0; i < video.buffered.length; i++) {
-        if (currentPos >= video.buffered.start(i) && currentPos <= video.buffered.end(i)) {
-          bufferLen = video.buffered.end(i) - currentPos;
-          break;
+    if (!video.paused) {
+      controlsTimeout = setTimeout(() => {
+        if (!scrubbing) {
+          controls.style.opacity = '0';
+          controls.style.transform = 'translateY(10px)';
+          controls.style.pointerEvents = 'none';
+          controlsHidden = true;
         }
+      }, 3000);
+    }
+  }
+
+  player.addEventListener('mousemove', () => {
+    resetControlsTimer();
+  });
+  player.addEventListener('touchstart', () => {
+    resetControlsTimer();
+  });
+
+  // Tap to show / hide controls on mobile
+  player.addEventListener('touchend', (e) => {
+    if (e.target === video || e.target === player) {
+      if (controlsHidden) {
+        resetControlsTimer();
+      } else {
+        clearTimeout(controlsTimeout);
+        controls.style.opacity = '0';
+        controls.style.transform = 'translateY(10px)';
+        controls.style.pointerEvents = 'none';
+        controlsHidden = true;
       }
     }
-    document.getElementById('stat-buffer').textContent = bufferLen.toFixed(1) + 's';
+  });
 
-    // Latency to live edge
-    if (hls.latency !== undefined) {
-      document.getElementById('stat-latency').textContent = hls.latency.toFixed(1) + 's';
+  const controlElements = [
+    playBtn,
+    progress,
+    volumeBtn,
+    volumeWrap,
+    settingsBtn,
+    fullBtn,
+  ];
+
+  controlElements.forEach((el) => {
+    el.addEventListener('mouseenter', () => {
+      clearTimeout(controlsTimeout);
+      controls.style.opacity = '1';
+      controls.style.transform = 'translateY(0)';
+      controls.style.pointerEvents = 'auto';
+      controlsHidden = false;
+    });
+
+    el.addEventListener('mouseleave', () => {
+      if (!video.paused) {
+        controlsTimeout = setTimeout(() => {
+          if (!video.paused && !scrubbing) {
+            controls.style.opacity = '0';
+            controls.style.transform = 'translateY(10px)';
+            controls.style.pointerEvents = 'none';
+            controlsHidden = true;
+          }
+        }, 1000);
+      }
+    });
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if (e.target.matches('input, textarea')) return;
+
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (video.paused) video.play();
+      else video.pause();
+      resetControlsTimer();
     }
 
-    // FPS estimation
-    if (video.getVideoPlaybackQuality) {
-      const quality = video.getVideoPlaybackQuality();
-      // Estimate frame rate (needs delta tracking, but we can do simple representation)
-      document.getElementById('stat-fps').textContent = hls.currentLevel >= 0 ? (hls.levels[hls.currentLevel].fps || '30/60') : 'Auto';
+    if (e.code === 'KeyF') {
+      e.preventDefault();
+      toggleFullscreen();
     }
+
+    if (e.code === 'Escape') {
+      if (isFullscreen) {
+        e.preventDefault();
+        exitFullscreen();
+      } else if (settingsRoot.classList.contains('open')) {
+        e.preventDefault();
+        settingsRoot.classList.remove('open');
+        const menu = settingsRoot.querySelector('.sh-settings-menu');
+        if (menu) menu.style.display = 'none';
+        resetControlsTimer();
+      }
+    }
+
+    if (e.code === 'KeyM') {
+      e.preventDefault();
+      video.muted = !video.muted;
+      resetControlsTimer();
+    }
+  });
+
+  function isMobile() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      navigator.userAgent
+    );
   }
 
-  function clearStats() {
-    document.getElementById('stat-res').textContent = '-';
-    document.getElementById('stat-bitrate').textContent = '-';
-    document.getElementById('stat-buffer').textContent = '0.0s';
-    document.getElementById('stat-latency').textContent = '-';
-    document.getElementById('stat-fps').textContent = '-';
-  }
+  // Init
+  checkStreamStatus();
+  checkInterval = setInterval(checkStreamStatus, 3000);
+  resetControlsTimer();
 
   window.onbeforeunload = () => {
     if (checkInterval) clearInterval(checkInterval);
-    if (hls) hls.destroy();
+    if (hlsInstance) hlsInstance.destroy();
   };
+})();
 </script>
-
-<style>
-  @keyframes pulse {
-    0%, 100% { opacity: 0.6; }
-    50% { opacity: 1; }
-  }
-</style>
-
-<%- include('footer') %>
+</body>
+</html>

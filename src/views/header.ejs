@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= typeof title !== 'undefined' ? title : 'CoWatch' %></title>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=1.0.3">
   <!-- Tabler Icons CSS CDN -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 </head>
@@ -14,6 +14,9 @@
       <a href="/" class="logo">
         <i class="ti ti-video-plus"></i> CoWatch
       </a>
+      <button class="nav-toggle" id="nav-toggle" aria-label="Toggle Menu">
+        <i class="ti ti-menu-2"></i>
+      </button>
       <ul class="nav-links">
         <% if (typeof user !== 'undefined' && user) { %>
           <li>
@@ -26,6 +29,13 @@
               <i class="ti ti-layout-dashboard"></i> Dashboard
             </a>
           </li>
+          <% if (user.role === 'admin') { %>
+            <li>
+              <a href="/admin" style="display: flex; align-items: center; gap: 0.25rem;">
+                <i class="ti ti-shield-lock"></i> Admin Panel
+              </a>
+            </li>
+          <% } %>
           <li>
             <div style="display: flex; align-items: center; gap: 0.5rem;">
               <div class="avatar">
@@ -49,4 +59,24 @@
       </ul>
     </div>
   </header>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const toggle = document.getElementById('nav-toggle');
+      const menu = document.querySelector('.nav-links');
+      if (toggle && menu) {
+        toggle.addEventListener('click', (e) => {
+          e.stopPropagation();
+          menu.classList.toggle('show');
+        });
+        document.addEventListener('click', () => {
+          menu.classList.remove('show');
+        });
+        menu.addEventListener('click', (e) => {
+          e.stopPropagation();
+        });
+      }
+    });
+  </script>
+
   <main class="main-content">

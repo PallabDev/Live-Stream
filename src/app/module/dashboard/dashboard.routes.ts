@@ -74,6 +74,29 @@ router.get("/stream/:key", requireAuth, requireAccess, async (req: Authenticated
   }
 });
 
+// Admin Panel Page (GET request to render admin.ejs)
+router.get("/admin", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    if (req.user.role !== "admin") {
+      return res.status(403).render("error", {
+        title: "Access Denied",
+        message: "You are not authorized to view the Admin Panel.",
+        user: req.user,
+      });
+    }
+    res.render("admin", {
+      title: "Admin Panel - CoWatch",
+      user: req.user,
+    });
+  } catch (error: any) {
+    res.status(500).render("error", {
+      title: "Error",
+      message: error.message,
+      user: req.user,
+    });
+  }
+});
+
 // Logout Route (GET request to clear cookies and redirect)
 router.get("/logout", (req, res) => {
   res.clearCookie("better-auth.session_token");

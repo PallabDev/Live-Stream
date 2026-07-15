@@ -21,7 +21,7 @@ COPY . .
 RUN mkdir -p /app/media
 
 # Expose default port
-EXPOSE 3000
+EXPOSE 5678
 
 # Start application using tsx watch or tsx
 CMD ["npm", "start"]
