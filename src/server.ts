@@ -162,9 +162,9 @@ wss.on("connection", async (ws: WebSocket, request) => {
     // Map video profiles and configurations for each resolution
     resolutions.forEach((res, idx) => {
         // Distribute bitrates as per quality levels
-        let videoBitrate = "2200k";
-        if (res === "480p") videoBitrate = "900k";
-        if (res === "1080p") videoBitrate = "4800k";
+        let videoBitrate = "1800k";
+        if (res === "480p") videoBitrate = "800k";
+        if (res === "1080p") videoBitrate = "3500k";
 
         // If only one resolution, let user customize the target bitrate
         if (resolutions.length === 1) {
