@@ -204,12 +204,6 @@ wss.on("connection", async (ws: WebSocket, request) => {
     if (resolutions.length === 0) {
         resolutions.push("720p");
     }
-    if ((resolutions.includes("720p") || resolutions.includes("1080p")) && !resolutions.includes("480p")) {
-        resolutions = ["480p", ...resolutions];
-    }
-    if (resolutions.includes("1080p") && !resolutions.includes("720p")) {
-        resolutions = ["480p", "720p", "1080p"];
-    }
 
     // 3. Mark stream active in database
     await StreamService.setStreamActive(streamKey, true);
