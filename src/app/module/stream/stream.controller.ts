@@ -55,13 +55,16 @@ export class StreamController {
 
       // Spawn FFmpeg with low latency settings + high quality output (CRF 20, 256k AAC audio)
       const ffmpegProcess = spawn("ffmpeg", [
-        "-fflags", "+genpts",
         "-f", "webm",
         "-i", "pipe:0",
 
         // Map first video and optional first audio streams
         "-map", "0:v:0",
         "-map", "0:a:0?",
+
+        // Enforce constant frame rate of 30 fps to avoid timebase duplication issues
+        "-r", "30",
+        "-vsync", "cfr",
 
         // Video encoding settings: High quality libx264, zero-latency tune
         "-c:v", "libx264",
