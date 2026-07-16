@@ -437,8 +437,8 @@
                     
                     mediaRecorder = new MediaRecorder(mediaStream, {
                         mimeType: 'video/webm;codecs=vp8,opus',
-                        videoBitsPerSecond: 2500000,
-                        audioBitsPerSecond: 256000
+                        videoBitsPerSecond: 1200000,
+                        audioBitsPerSecond: 128000
                     });
 
                     mediaRecorder.ondataavailable = (e) => {

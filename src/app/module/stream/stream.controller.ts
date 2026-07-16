@@ -48,7 +48,7 @@ export class StreamController {
       // Write a master playlist format that live.ejs expects (pointing to variant 0)
       fs.writeFileSync(
         path.join(streamDir, "master.m3u8"),
-        `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=6000000\n0/index.m3u8\n`
+        `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=1500000\n0/index.m3u8\n`
       );
 
       console.log(`Spawning FFmpeg for stream key: ${key} inside ${variantDir}`);
@@ -62,17 +62,13 @@ export class StreamController {
         "-map", "0:v:0",
         "-map", "0:a:0?",
 
-        // Enforce constant frame rate of 30 fps to avoid timebase duplication issues
-        "-r", "30",
-        "-vsync", "cfr",
-
         // Video encoding settings: High quality libx264, zero-latency tune
         "-c:v", "libx264",
         "-preset", "ultrafast",
         "-tune", "zerolatency",
         "-crf", "26",
-        "-maxrate", "6M",
-        "-bufsize", "12M",
+        "-maxrate", "1.5M",
+        "-bufsize", "3M",
         "-pix_fmt", "yuv420p",
 
         // Audio encoding settings: 128kbps stereo AAC
