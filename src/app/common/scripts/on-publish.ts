@@ -2,6 +2,7 @@ import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
+import { fileURLToPath } from "url";
 import { StreamService } from "../../module/stream/stream.service.js";
 
 // Load environment variables
@@ -44,7 +45,10 @@ async function main() {
   const resolutionsStr = streamInfo.resolutions || "480p,1080p";
 
   // 2. Prepare media folder for this stream
-  const mediaDir = path.join(process.cwd(), "media", streamKey);
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const projectRoot = path.resolve(__dirname, "../../../../");
+  const mediaDir = path.resolve(projectRoot, "media", streamKey);
   try {
     if (fs.existsSync(mediaDir)) {
       fs.rmSync(mediaDir, { recursive: true, force: true });
