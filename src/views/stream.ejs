@@ -378,7 +378,7 @@
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      const whipUrl = `/whip/live/${streamKey}`;
+      const whipUrl = `/whip/live/${streamKey}/whip`;
       const whipRes = await fetch(whipUrl, {
         method: "POST",
         headers: {
