@@ -19,7 +19,8 @@ webrtc: yes
 webrtcAddress: :8889
 webrtcEncryption: no
 webrtcLocalUDPAddress: :8189
-webrtcIPs: [ "222.167.207.36" ]
+webrtcAdditionalHosts:
+  - 222.167.207.36
 
 # Enable MediaMTX Control API on localhost (used to kick sessions on Stop Live)
 api: yes
