@@ -64,6 +64,6 @@ app.use((req, res) => {
 });
 
 // Run server
-server.listen(port, () => {
-  console.log(`CoWatch streaming server running at http://localhost:${port}`);
+server.listen(Number(port), "0.0.0.0", () => {
+  console.log(`CoWatch streaming server running at http://0.0.0.0:${port}`);
 });
