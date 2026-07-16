@@ -9,14 +9,14 @@ dotenv.config();
 
 const HLS_SEGMENT_SECONDS = 2;
 const STREAM_RETENTION_SECONDS = 600;
-const DEFAULT_FPS = 20;
+const DEFAULT_FPS = 30;
 const X264_PRESET = process.env.X264_PRESET || "veryfast";
 const X264_TUNE = process.env.X264_TUNE || "film";
 
 const RESOLUTION_CONFIG = {
   "480p": { height: 480, defaultBitrate: 1000 },
-  "720p": { height: 720, defaultBitrate: 900 },
-  "1080p": { height: 1080, defaultBitrate: 2200 },
+  "720p": { height: 720, defaultBitrate: 2000 },
+  "1080p": { height: 1080, defaultBitrate: 4000 },
 } as const;
 
 type StreamResolution = keyof typeof RESOLUTION_CONFIG;
@@ -161,6 +161,39 @@ async function main() {
   console.log("[on-publish] Spawning FFmpeg with arguments:", ffmpegArgs.join(" "));
   const ffmpegProcess = spawn("ffmpeg", ffmpegArgs);
 
+  // Monitor FFmpeg CPU usage
+  let lastCpuTicks = 0;
+  let lastSampleTime = Date.now();
+
+  const getCpuTicks = (pid: number): Promise<number | null> => {
+    return new Promise((resolve) => {
+      fs.readFile(`/proc/${pid}/stat`, "utf8", (err, data) => {
+        if (err) return resolve(null);
+        const parts = data.trim().split(/\s+/);
+        if (parts.length < 15) return resolve(null);
+        const utime = parseInt(parts[13], 10);
+        const stime = parseInt(parts[14], 10);
+        resolve(utime + stime);
+      });
+    });
+  };
+
+  const cpuMonitorInterval = setInterval(async () => {
+    if (!ffmpegProcess.pid) return;
+    const ticks = await getCpuTicks(ffmpegProcess.pid);
+    if (ticks === null) return;
+
+    const now = Date.now();
+    if (lastCpuTicks > 0) {
+      const elapsedSeconds = (now - lastSampleTime) / 1000;
+      const deltaTicks = ticks - lastCpuTicks;
+      const cpuPercentage = ((deltaTicks / 100) / elapsedSeconds) * 100;
+      console.log(`[on-publish] [cpu status] FFmpeg (PID ${ffmpegProcess.pid}) CPU usage: ${cpuPercentage.toFixed(1)}%`);
+    }
+    lastCpuTicks = ticks;
+    lastSampleTime = now;
+  }, 5000);
+
   ffmpegProcess.stdin.on("error", (err) => {
     console.error(`[on-publish] [ffmpeg stdin error]:`, err.message);
   });
@@ -174,6 +207,17 @@ async function main() {
     for (const line of lines) {
       if (!line.trim()) continue;
       console.log(`[on-publish] [ffmpeg stderr]: ${line}`);
+
+      // Parse speed from ffmpeg stats line
+      const match = line.match(/^speed=\s*([\d\.]+)x/);
+      if (match) {
+        const speed = parseFloat(match[1]);
+        if (speed < 1.0) {
+          console.warn(`[on-publish] [speed warning] FFmpeg transcoding speed is below real-time: ${speed}x (transcoding is lagging behind!)`);
+        } else {
+          console.log(`[on-publish] [speed status] FFmpeg transcoding speed is healthy: ${speed}x`);
+        }
+      }
     }
   });
 
@@ -212,6 +256,7 @@ async function main() {
 
     console.log(`[on-publish] Cleaning up due to: ${reason}`);
     clearInterval(rollingInterval);
+    clearInterval(cpuMonitorInterval);
 
     // Terminate FFmpeg
     try {

@@ -121,13 +121,13 @@
       </div>
     </div>
 
-    <!-- Frame rate toggle (20 or 60) -->
+    <!-- Frame rate toggle (30 or 60) -->
     <div class="form-group" style="margin-bottom: 1.5rem;">
       <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Target Frame Rate</label>
       <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="radio" name="fps" id="fps-20" value="20" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
-          <span>20 FPS</span>
+          <input type="radio" name="fps" id="fps-20" value="30" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <span>30 FPS</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
           <input type="radio" name="fps" id="fps-60" value="60" disabled style="accent-color: var(--primary); width: 16px; height: 16px;">
@@ -142,7 +142,7 @@
         <span>Target Bitrate</span>
         <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">1000 Kbps</span>
       </label>
-      <input type="range" id="bitrate-input" min="400" max="2200" step="100" value="1000" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
+      <input type="range" id="bitrate-input" min="400" max="4500" step="100" value="1000" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
     </div>
 
     <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
@@ -160,13 +160,13 @@
   let durationInterval = null;
   let broadcastState = 'idle';
   const AUDIO_BITS_PER_SECOND = 96000;
-  const MAX_VIDEO_BITRATE_KBPS = 2200;
-  const DEFAULT_FRAME_RATE = 20;
-  const MAX_FRAME_RATE = 20;
+  const MAX_VIDEO_BITRATE_KBPS = 4500;
+  const DEFAULT_FRAME_RATE = 30;
+  const MAX_FRAME_RATE = 30;
   const RESOLUTION_LIMITS = {
     '480p': { width: 854, height: 480, bitrate: 1000 },
-    '720p': { width: 1280, height: 720, bitrate: 900 },
-    '1080p': { width: 1920, height: 1080, bitrate: 2200 }
+    '720p': { width: 1280, height: 720, bitrate: 2000 },
+    '1080p': { width: 1920, height: 1080, bitrate: 4000 }
   };
 
   function clampNumber(value, min, max) {
@@ -314,19 +314,15 @@
       if (speedMbps < 2) {
         recResolutions = ['480p'];
         recBitrate = 1000;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 20 FPS</strong>';
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 30 FPS</strong>';
       } else if (speedMbps < 6) {
-        recResolutions = ['480p'];
-        recBitrate = 1000;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 20 FPS</strong>';
-      } else if (speedMbps < 35) {
-        recResolutions = ['480p'];
-        recBitrate = 1000;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 20 FPS</strong>';
+        recResolutions = ['720p'];
+        recBitrate = 2000;
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">720p @ 30 FPS</strong>';
       } else {
-        recResolutions = ['480p'];
-        recBitrate = 1000;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 20 FPS</strong>';
+        recResolutions = ['1080p'];
+        recBitrate = 4000;
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">1080p @ 30 FPS</strong>';
       }
 
       // Apply recommendation
