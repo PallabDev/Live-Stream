@@ -34,8 +34,25 @@ async function main() {
   const streamKey = rawPath.replace(/^whip\//, "");
   console.log(`[on-publish] Starting transcode process for stream: ${streamKey}`);
 
+  // Try to load query parameters from the settings file written by the auth controller
+  let queryStr = rawQuery;
+  const settingsPath = path.join(process.cwd(), "media", `${streamKey}_settings.json`);
+  if (fs.existsSync(settingsPath)) {
+    try {
+      const settingsContent = fs.readFileSync(settingsPath, "utf8");
+      const settings = JSON.parse(settingsContent);
+      if (settings && settings.query) {
+        queryStr = settings.query;
+      }
+      fs.unlinkSync(settingsPath); // Remove temp settings file
+      console.log(`[on-publish] Successfully loaded query parameters from settings file: ${queryStr}`);
+    } catch (err) {
+      console.warn(`[on-publish] Failed to read/parse settings file: ${settingsPath}`, err);
+    }
+  }
+
   // Parse query params
-  const queryParams = new URLSearchParams(rawQuery);
+  const queryParams = new URLSearchParams(queryStr);
   const resolutionsParam = queryParams.get("resolutions") || "480p";
   const fpsParam = Math.min(Math.max(parseInt(queryParams.get("fps") || `${DEFAULT_FPS}`), 10), 30);
   const hasAudio = queryParams.get("hasAudio") === "true";
@@ -138,7 +155,7 @@ async function main() {
   if (hasAudio) {
     ffmpegArgs.push(
       "-c:a", "aac",
-      "-b:a", "96k",
+      "-b:a", "128k",
       "-ac", "2",
       "-ar", "44100",
       "-af", "aresample=async=1:first_pts=0"
@@ -272,8 +289,15 @@ async function main() {
     }
 
     // Wipe media files after 30s
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
+        // Query database to check if the stream has restarted in the meantime
+        const currentStream = await StreamService.getStreamByKey(streamKey);
+        if (currentStream && currentStream.isActive) {
+          console.log(`[on-publish] [cleanup bypass] Stream ${streamKey} has restarted and is active. Skipping media directory deletion.`);
+          return;
+        }
+
         if (fs.existsSync(mediaDir)) {
           fs.rmSync(mediaDir, { recursive: true, force: true });
           console.log(`[on-publish] Cleaned up media files for ${streamKey}`);

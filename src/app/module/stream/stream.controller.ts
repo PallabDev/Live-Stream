@@ -2,6 +2,8 @@ import { Request, Response } from "express";
 import { AuthenticatedRequest } from "../auth/auth.middleware.js";
 import { StreamService } from "./stream.service.js";
 import { createStreamDto } from "./stream.dto.js";
+import fs from "fs";
+import path from "path";
 
 export class StreamController {
   static async createStream(req: AuthenticatedRequest, res: Response) {
@@ -75,6 +77,16 @@ export class StreamController {
       }
 
       console.log(`[MediaMTX Auth] Approved: Stream key "${streamKey}" for title "${streamInfo.title}"`);
+
+      // Save query parameters to a settings file
+      const queryStr = req.body.query || "";
+      const mediaDirParent = path.join(process.cwd(), "media");
+      if (!fs.existsSync(mediaDirParent)) {
+        fs.mkdirSync(mediaDirParent, { recursive: true });
+      }
+      const settingsPath = path.join(mediaDirParent, `${streamKey}_settings.json`);
+      fs.writeFileSync(settingsPath, JSON.stringify({ query: queryStr }));
+
       return res.sendStatus(200);
     } catch (err: any) {
       console.error("[MediaMTX Auth] Error during authentication:", err);
