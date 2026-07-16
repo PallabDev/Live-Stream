@@ -1,5 +1,10 @@
 <%- include('header') %>
 
+<style>
+  .hidden-row { display: none !important; }
+  .flex-row-layout { display: flex; justify-content: space-between; }
+</style>
+
 <!-- Server-passed variables for JS (prevents IDE template parsing warnings) -->
 <div id="studio-config" 
      data-stream-key="<%= stream.streamKey %>" 
@@ -123,7 +128,7 @@
           <span style="color: var(--text-muted);">Streaming Mode:</span>
           <strong id="config-summary-mode"><%= stream.isRaw ? 'Raw (Direct Copy)' : 'Transcoded' %></strong>
         </li>
-        <li id="config-summary-resolutions-row" style="display: <%= stream.isRaw ? 'none' : 'flex' %>; justify-content: space-between;">
+        <li id="config-summary-resolutions-row" class="<%= stream.isRaw ? 'hidden-row' : 'flex-row-layout' %>">
           <span style="color: var(--text-muted);">Target Formats:</span>
           <strong id="config-summary-resolutions"><%= stream.resolutions %></strong>
         </li>
@@ -172,7 +177,7 @@
     </div>
 
     <!-- Transcoded Resolutions -->
-    <div id="resolutions-config-section" class="form-group" style="margin-bottom: 1.5rem; display: <%= stream.isRaw ? 'none' : 'block' %>;">
+    <div id="resolutions-config-section" class="form-group <%= stream.isRaw ? 'hidden-row' : '' %>" style="margin-bottom: 1.5rem;">
       <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Target Resolutions</label>
       <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
