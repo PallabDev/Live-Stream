@@ -14,9 +14,9 @@ const X264_PRESET = process.env.X264_PRESET || "superfast";
 const X264_TUNE = process.env.X264_TUNE || "film";
 
 const RESOLUTION_CONFIG = {
-  "480p": { height: 480, defaultBitrate: 1000 },
-  "720p": { height: 720, defaultBitrate: 2000 },
-  "1080p": { height: 1080, defaultBitrate: 3500 },
+  "480p": { height: 480, maxBitrate: 3000, bufSize: 4500 },
+  "720p": { height: 720, maxBitrate: 6000, bufSize: 9000 },
+  "1080p": { height: 1080, maxBitrate: 12000, bufSize: 18000 },
 } as const;
 
 type StreamResolution = keyof typeof RESOLUTION_CONFIG;
@@ -143,30 +143,29 @@ async function main() {
     // Map video profiles and configurations for each resolution
     resolutions.forEach((res, idx) => {
       const config = RESOLUTION_CONFIG[res as StreamResolution];
-      const videoBitrate = `${config.defaultBitrate}k`;
       const keyInterval = fpsParam * HLS_SEGMENT_SECONDS;
-
+ 
       ffmpegArgs.push("-map", `[v${idx + 1}out]`);
       if (hasAudio) {
         ffmpegArgs.push("-map", "0:a?");
       }
-
+ 
       ffmpegArgs.push(
         `-c:v:${idx}`, "libx264",
         `-r:v:${idx}`, fpsParam.toString(),
-        `-b:v:${idx}`, videoBitrate,
-        `-maxrate:v:${idx}`, videoBitrate,
-        `-bufsize:v:${idx}`, `${Math.round(config.defaultBitrate * 1.5)}k`,
+        `-crf:v:${idx}`, "18",
+        `-maxrate:v:${idx}`, `${config.maxBitrate}k`,
+        `-bufsize:v:${idx}`, `${config.bufSize}k`,
         `-g:v:${idx}`, keyInterval.toString(),
         `-keyint_min:v:${idx}`, keyInterval.toString(),
         `-force_key_frames:v:${idx}`, `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,
         `-sc_threshold:v:${idx}`, "0",
         `-preset:v:${idx}`, X264_PRESET,
         `-tune:v:${idx}`, X264_TUNE,
-        `-profile:v:${idx}`, "main",
+        `-profile:v:${idx}`, "high",
         `-pix_fmt:v:${idx}`, "yuv420p"
       );
-
+ 
       fs.mkdirSync(path.join(mediaDir, idx.toString()), { recursive: true });
     });
   }
@@ -174,9 +173,9 @@ async function main() {
   if (hasAudio) {
     ffmpegArgs.push(
       "-c:a", "aac",
-      "-b:a", "128k",
+      "-b:a", "320k",
       "-ac", "2",
-      "-ar", "44100",
+      "-ar", "48000",
       "-af", "aresample=async=1:first_pts=0"
     );
   }
