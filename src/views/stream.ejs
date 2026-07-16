@@ -428,10 +428,39 @@
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       });
 
+      // Set content hints to optimize WebRTC for motion and high quality audio
+      localStream.getVideoTracks().forEach(track => {
+        if ('contentHint' in track) {
+          track.contentHint = 'motion';
+        }
+      });
+      localStream.getAudioTracks().forEach(track => {
+        if ('contentHint' in track) {
+          track.contentHint = 'music';
+        }
+      });
+
       // Add tracks to the peer connection
       localStream.getTracks().forEach(track => {
         peerConnection.addTrack(track, localStream);
       });
+
+      // Configure encoding parameters for the video sender to output the selected bitrate
+      const senders = peerConnection.getSenders();
+      const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+      if (videoSender) {
+        const parameters = videoSender.getParameters();
+        if (!parameters.encodings || parameters.encodings.length === 0) {
+          parameters.encodings = [{}];
+        }
+        parameters.encodings[0].maxBitrate = bitrate * 1000; // Kbps to bps
+        console.log(`[WebRTC] Set video maxBitrate to: ${bitrate} Kbps`);
+        try {
+          await videoSender.setParameters(parameters);
+        } catch (setParamErr) {
+          console.warn('Failed to set WebRTC video encoding parameters:', setParamErr);
+        }
+      }
 
       // Handle connection state changes
       peerConnection.onconnectionstatechange = () => {

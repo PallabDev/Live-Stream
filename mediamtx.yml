@@ -2,6 +2,7 @@
 
 # Log level
 logLevel: info
+udpReadBufferSize: 8388608
 
 # Enable RTSP (needed for internal communication with FFmpeg)
 rtsp: yes
