@@ -183,7 +183,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
             videoBitrate = `${bitrateParam}k`;
         }
 
-        const keyInterval = fpsParam * 2; // Keyframe every 2 seconds for perfect HLS splitting
+        const keyInterval = fpsParam * 6; // Keyframe every 6s — must match hls_time so segments always start on a keyframe
 
         ffmpegArgs.push("-map", `[v${idx + 1}out]`);
         if (hasAudio) {
@@ -216,14 +216,14 @@ wss.on("connection", async (ws: WebSocket, request) => {
     }
 
     // HLS packing configuration
-    // hls_list_size=300 keeps the last 10 minutes in the playlist (300 x 2s = 600s).
+    // hls_list_size=100 keeps the last 10 minutes in the playlist (100 x 6s = 600s).
     // omit_endlist keeps the stream marked as live.
     // NO delete_segments — we manage deletion ourselves with a rolling 10-minute window.
     const varStreamMap = resolutions.map((_, idx) => hasAudio ? `v:${idx},a:${idx}` : `v:${idx}`).join(" ");
     ffmpegArgs.push(
         "-f", "hls",
-        "-hls_time", "2",
-        "-hls_list_size", "300",  // 10 minutes of segments always available on disk
+        "-hls_time", "6",          // 6-second segments
+        "-hls_list_size", "100",   // 100 × 6s = 600s = 10 minutes always on disk
         "-hls_flags", "omit_endlist",  // keep stream live — no auto-deletion
         "-hls_segment_filename", path.join(mediaDir, "%v", "file%06d.ts"),
         "-master_pl_name", "master.m3u8",

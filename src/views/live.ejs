@@ -495,12 +495,12 @@ html, body {
         enableWorker: true,
         lowLatencyMode: false,
 
-        // Buffer: build 12s ahead, sync 3 segments behind live edge
-        backBufferLength: 30,
-        maxBufferLength: 20,
-        maxMaxBufferLength: 40,
-        liveSyncDurationCount: 3,       // stay 6s behind live edge (3 x 2s segments)
-        liveMaxLatencyDurationCount: 8, // if >16s behind, jump forward
+        // Buffer: build 30s ahead, sync 2 segments behind live edge (2 x 6s = 12s)
+        backBufferLength: 60,
+        maxBufferLength: 30,        // buffer ~5 full 6s segments ahead
+        maxMaxBufferLength: 60,
+        liveSyncDurationCount: 2,       // stay 12s behind live edge (2 x 6s segments)
+        liveMaxLatencyDurationCount: 4, // if >24s behind, jump to live edge (4 x 6s)
         liveDurationInfinity: true,
 
         // FIX 1: Cache-bust every playlist request so the browser never
