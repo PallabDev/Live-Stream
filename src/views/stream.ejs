@@ -1,5 +1,12 @@
 <%- include('header') %>
 
+<!-- Server-passed variables for JS (prevents IDE template parsing warnings) -->
+<div id="studio-config" 
+     data-stream-key="<%= stream.streamKey %>" 
+     data-is-live="<%= stream.isLive %>" 
+     style="display: none;">
+</div>
+
 <!-- Mobile Blocking Overlay -->
 <div id="mobile-block-overlay">
   <div class="block-card">
@@ -195,7 +202,11 @@
 </div>
 
 <script>
-  let isLive = <%= stream.isLive %>; // Authorized in DB
+  // Read config properties initialized by server side (prevents IDE template syntax confusion)
+  const studioConfig = document.getElementById("studio-config");
+  const streamKey = studioConfig.dataset.streamKey;
+  let isLive = studioConfig.dataset.isLive === "true";
+
   let isStreaming = false; // WebRTC Peer Connection is actively sending data
   let streamStartTime = null;
   let durationInterval = null;
@@ -324,7 +335,7 @@
 
     try {
       // 1. Authorize stream in database
-      const authRes = await fetch("/api/stream/<%= stream.streamKey %>/golive", { method: "POST" });
+      const authRes = await fetch(`/api/stream/${streamKey}/golive`, { method: "POST" });
       if (!authRes.ok) throw new Error("Database authorization failed.");
 
       isLive = true;
@@ -362,7 +373,7 @@
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      const whipUrl = `/whip/live/<%= stream.streamKey %>`;
+      const whipUrl = `/whip/live/${streamKey}`;
       const whipRes = await fetch(whipUrl, {
         method: "POST",
         headers: {
@@ -408,7 +419,7 @@
 
     // Call Stop endpoint on database (revokes auth and kicks media session)
     try {
-      await fetch("/api/stream/<%= stream.streamKey %>/stop", { method: "POST" });
+      await fetch(`/api/stream/${streamKey}/stop`, { method: "POST" });
     } catch (_) {}
 
     isLive = false;
@@ -494,7 +505,7 @@
   }
 
   function copyViewerLink() {
-    const link = window.location.origin + "/live/<%= stream.streamKey %>";
+    const link = window.location.origin + "/live/" + streamKey;
     navigator.clipboard.writeText(link).then(() => {
       alert("Viewer link copied to clipboard!");
     }).catch(err => {
@@ -551,7 +562,7 @@
     }
 
     try {
-      const res = await fetch("/api/stream/<%= stream.streamKey %>/settings", {
+      const res = await fetch(`/api/stream/${streamKey}/settings`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
