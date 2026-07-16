@@ -7,21 +7,19 @@ logLevel: info
 rtsp: yes
 rtspAddress: 127.0.0.1:8554
 
-# Enable RTMP (for local fallback/monitoring if needed)
+# Enable RTMP (bound globally for OBS streaming)
 rtmp: yes
-rtmpAddress: 127.0.0.1:1935
+rtmpAddress: :1935
 
 # Disable internal HLS (our script generates the actual HLS segments)
 hls: no
 
-# Enable WebRTC / WHIP / WHEP
-webrtc: yes
-webrtcAddress: :8889
-webrtcLocalUDPAddress: :8189
-webrtcLocalTCPAddress: :8189
-webrtcAdditionalHosts:
-  - localhost
-  - watch.pallabdev.in
+# Disable WebRTC / WHIP / WHEP (as browser streaming is removed)
+webrtc: no
+
+# Enable MediaMTX Control API on localhost (used to kick sessions on Stop Live)
+api: yes
+apiAddress: 127.0.0.1:9997
 
 # Authentication configuration (delegates validation to Node/Express)
 authMethod: http

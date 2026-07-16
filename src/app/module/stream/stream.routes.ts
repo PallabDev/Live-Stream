@@ -10,10 +10,14 @@ router.post("/api/stream", requireAuth, requireAccess, StreamController.createSt
 // Delete stream (requires auth)
 router.delete("/api/stream/:id", requireAuth, StreamController.deleteStream);
 
-// Bandwidth test endpoint (requires auth)
-router.post("/api/stream/speedtest", requireAuth, StreamController.speedTest);
+
 
 // MediaMTX external authentication endpoint (public, validated internally)
 router.post("/api/stream/auth", StreamController.mediaMtxAuth);
+
+// Stream control endpoints (require auth)
+router.post("/api/stream/:key/golive", requireAuth, StreamController.goLive);
+router.post("/api/stream/:key/stop", requireAuth, StreamController.stopLive);
+router.post("/api/stream/:key/settings", requireAuth, StreamController.updateSettings);
 
 export default router;

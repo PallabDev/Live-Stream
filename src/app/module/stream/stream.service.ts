@@ -46,6 +46,14 @@ export class StreamService {
     return await db.update(stream).set({ isActive }).where(eq(stream.streamKey, streamKey));
   }
 
+  static async setStreamLive(streamKey: string, isLive: boolean) {
+    return await db.update(stream).set({ isLive }).where(eq(stream.streamKey, streamKey));
+  }
+
+  static async updateStreamSettings(streamKey: string, isRaw: boolean, resolutions: string) {
+    return await db.update(stream).set({ isRaw, resolutions }).where(eq(stream.streamKey, streamKey));
+  }
+
   static async getAllActiveStreams() {
     return await db.select().from(stream).where(eq(stream.isActive, true));
   }

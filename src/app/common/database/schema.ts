@@ -60,5 +60,9 @@ export const stream = sqliteTable("stream", {
   title: text("title").notNull(),
   streamKey: text("streamKey").notNull().unique(),
   isActive: integer("isActive", { mode: "boolean" }).default(false).notNull(),
+  isLive: integer("isLive", { mode: "boolean" }).default(false).notNull(),
+  isRaw: integer("isRaw", { mode: "boolean" }).default(false).notNull(),
+  resolutions: text("resolutions").default("480p,1080p").notNull(),
   createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
 });
+

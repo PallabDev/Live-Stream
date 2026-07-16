@@ -23,7 +23,6 @@ type StreamResolution = keyof typeof RESOLUTION_CONFIG;
 
 async function main() {
   const rawPath = process.env.MTX_PATH;
-  const rawQuery = process.env.MTX_QUERY || "";
 
   if (!rawPath) {
     console.error("[on-publish] No MTX_PATH environment variable provided.");
@@ -31,33 +30,8 @@ async function main() {
   }
 
   // Extract streamKey (e.g. "whip/live_1234abcd" -> "live_1234abcd")
-  const streamKey = rawPath.replace(/^whip\//, "");
-  console.log(`[on-publish] Starting transcode process for stream: ${streamKey}`);
-
-  // Try to load query parameters from the settings file written by the auth controller
-  let queryStr = rawQuery;
-  const settingsPath = path.join(process.cwd(), "media", `${streamKey}_settings.json`);
-  if (fs.existsSync(settingsPath)) {
-    try {
-      const settingsContent = fs.readFileSync(settingsPath, "utf8");
-      const settings = JSON.parse(settingsContent);
-      if (settings && settings.query) {
-        queryStr = settings.query;
-      }
-      fs.unlinkSync(settingsPath); // Remove temp settings file
-      console.log(`[on-publish] Successfully loaded query parameters from settings file: ${queryStr}`);
-    } catch (err) {
-      console.warn(`[on-publish] Failed to read/parse settings file: ${settingsPath}`, err);
-    }
-  }
-
-  // Parse query params
-  const queryParams = new URLSearchParams(queryStr);
-  const resolutionsParam = queryParams.get("resolutions") || "480p";
-  const fpsParam = Math.min(Math.max(parseInt(queryParams.get("fps") || `${DEFAULT_FPS}`), 10), 30);
-  const hasAudio = queryParams.get("hasAudio") === "true";
-  const codecParam = queryParams.get("codec") || "vp8";
-  const bitrateParam = parseInt(queryParams.get("bitrate") || "0", 10);
+  const streamKey = rawPath.split("/").pop() || "";
+  console.log(`[on-publish] Starting streaming process for stream: ${streamKey}`);
 
   // 1. Verify Stream Key in database
   const streamInfo = await StreamService.getStreamByKey(streamKey);
@@ -65,6 +39,9 @@ async function main() {
     console.error(`[on-publish] Stream key not found in database: ${streamKey}`);
     process.exit(1);
   }
+
+  const isRaw = !!streamInfo.isRaw;
+  const resolutionsStr = streamInfo.resolutions || "480p,1080p";
 
   // 2. Prepare media folder for this stream
   const mediaDir = path.join(process.cwd(), "media", streamKey);
@@ -78,26 +55,42 @@ async function main() {
     process.exit(1);
   }
 
-  // Parse resolutions array
-  let resolutions = resolutionsParam
-    .split(",")
-    .filter((r): r is StreamResolution => r in RESOLUTION_CONFIG);
-  if (resolutions.length === 0) {
-    resolutions.push("480p");
-  }
-
   // 3. Mark stream active in database
   await StreamService.setStreamActive(streamKey, true);
   console.log(`[on-publish] Set stream "${streamInfo.title}" active in database.`);
 
-  // 4. Build dynamic ffmpeg process arguments
   const inputRtspUrl = `rtsp://localhost:8554/${rawPath}`;
-  const isDirectH264Copy = codecParam === "h264" && resolutions.length === 1;
+
+  // 4. Run ffprobe to detect if stream contains audio
+  let hasAudio = false;
+  try {
+    const { execSync } = await import("child_process");
+    const probeCmd = `ffprobe -v error -select_streams a -show_entries stream=codec_type -of csv=p=0 "${inputRtspUrl}"`;
+    const probeResult = execSync(probeCmd).toString().trim();
+    hasAudio = probeResult.includes("audio");
+    console.log(`[on-publish] ffprobe audio detection result: hasAudio=${hasAudio}`);
+  } catch (probeErr: any) {
+    console.warn(`[on-publish] ffprobe failed to detect audio, defaulting to true:`, probeErr.message);
+    hasAudio = true;
+  }
+
+  // Parse resolutions array
+  let resolutions: string[] = [];
+  if (isRaw) {
+    resolutions = ["raw"];
+  } else {
+    resolutions = resolutionsStr
+      .split(",")
+      .filter((r): r is StreamResolution => r in RESOLUTION_CONFIG);
+    if (resolutions.length === 0) {
+      resolutions.push("480p");
+    }
+  }
 
   let ffmpegArgs: string[] = [];
 
-  if (isDirectH264Copy) {
-    console.log(`[on-publish] Stream is H.264 video. Enabling ZERO-TRANSCODE direct copy mode.`);
+  if (isRaw) {
+    console.log(`[on-publish] Raw streaming mode enabled. Enabling ZERO-TRANSCODE direct copy mode.`);
     ffmpegArgs = [
       "-hide_banner",
       "-loglevel", "warning",
@@ -113,22 +106,23 @@ async function main() {
     if (hasAudio) {
       ffmpegArgs.push("-map", "0:a?");
     }
-    ffmpegArgs.push(
-      "-c:v:0", "copy"
-    );
+    ffmpegArgs.push("-c:v:0", "copy");
+    if (hasAudio) {
+      ffmpegArgs.push("-c:a:0", "copy");
+    }
     fs.mkdirSync(path.join(mediaDir, "0"), { recursive: true });
   } else {
-    console.log(`[on-publish] Transcoding stream (codec: ${codecParam}, resolutions: ${resolutions.join(",")}) using software transcoder.`);
-    // Filter complex to scale video to multiple variants using high quality bicubic scaling
+    console.log(`[on-publish] Transcoding stream (resolutions: ${resolutions.join(",")}) using software transcoder.`);
+    const fpsParam = DEFAULT_FPS;
     let filterComplex = "";
     if (resolutions.length > 1) {
       const splits = resolutions.map((_, idx) => `[v${idx + 1}]`).join("");
       filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB)[vfps];[vfps]split=${resolutions.length}${splits};`;
       resolutions.forEach((res, idx) => {
-        filterComplex += `[v${idx + 1}]scale=w=-2:h=${RESOLUTION_CONFIG[res].height}:flags=bicubic[v${idx + 1}out];`;
+        filterComplex += `[v${idx + 1}]scale=w=-2:h=${RESOLUTION_CONFIG[res as StreamResolution].height}:flags=bicubic[v${idx + 1}out];`;
       });
     } else {
-      filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB),scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0]].height}:flags=bicubic[v1out]`;
+      filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB),scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0] as StreamResolution].height}:flags=bicubic[v1out]`;
     }
 
     // Strip trailing semicolon
@@ -151,19 +145,8 @@ async function main() {
 
     // Map video profiles and configurations for each resolution
     resolutions.forEach((res, idx) => {
-      const config = RESOLUTION_CONFIG[res];
-      
-      // Determine bitrate: use custom bitrate for the highest resolution variant if specified
-      let bitrateKbps: number = config.defaultBitrate;
-      if (idx === resolutions.length - 1 && bitrateParam > 0) {
-        bitrateKbps = bitrateParam;
-      } else if (resolutions.length > 1 && bitrateParam > 0) {
-        // Scale down lower resolutions proportionally relative to user's custom bitrate
-        if (res === "720p") bitrateKbps = Math.min(3000, Math.round(bitrateParam * 0.6));
-        if (res === "480p") bitrateKbps = Math.min(1500, Math.round(bitrateParam * 0.3));
-      }
-
-      const videoBitrate = `${bitrateKbps}k`;
+      const config = RESOLUTION_CONFIG[res as StreamResolution];
+      const videoBitrate = `${config.defaultBitrate}k`;
       const keyInterval = fpsParam * HLS_SEGMENT_SECONDS;
 
       ffmpegArgs.push("-map", `[v${idx + 1}out]`);
@@ -175,7 +158,7 @@ async function main() {
         `-c:v:${idx}`, "libx264",
         `-b:v:${idx}`, videoBitrate,
         `-maxrate:v:${idx}`, videoBitrate,
-        `-bufsize:v:${idx}`, `${Math.round(bitrateKbps * 1.5)}k`,
+        `-bufsize:v:${idx}`, `${Math.round(config.defaultBitrate * 1.5)}k`,
         `-g:v:${idx}`, keyInterval.toString(),
         `-keyint_min:v:${idx}`, keyInterval.toString(),
         `-force_key_frames:v:${idx}`, `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,

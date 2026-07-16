@@ -27,8 +27,8 @@ RUN sed -i 's/\r$//' /app/start.sh && chmod +x /app/start.sh
 # Create volume target for streams media HLS chunks
 RUN mkdir -p /app/media
 
-# Expose HTTP port, WHIP signaling port, and WebRTC media ports
-EXPOSE 5678 8889 8189 8189/udp
+# Expose HTTP port and RTMP port
+EXPOSE 5678 1935
 
 # Start application using the startup wrapper script
 CMD ["/app/start.sh"]

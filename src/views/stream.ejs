@@ -1,5 +1,8 @@
 <%- include('header') %>
 
+<!-- Script for Hls.js -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
 <!-- Mobile Blocking Overlay -->
 <div id="mobile-block-overlay">
   <div class="block-card">
@@ -8,7 +11,7 @@
     </div>
     <h2>Desktop Screen Required</h2>
     <p>
-      Broadcasting and screen sharing setup are only supported on desktop screens. Please open this link on a computer to start hosting your stream.
+      Broadcasting setup and dashboard configurations are only supported on desktop screens. Please open this link on a computer.
     </p>
     <a href="/dashboard" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.5rem; justify-content: center; width: 100%;">
       <i class="ti ti-arrow-left"></i> Go to Dashboard
@@ -20,9 +23,23 @@
   <!-- Left Side: Streaming Preview and Controls -->
   <div style="display: flex; flex-direction: column; gap: 1.5rem;">
     <div class="glass-panel" style="padding: 1rem;">
-      <div class="video-container">
-        <video id="local-preview" class="video-element" autoplay muted playsinline></video>
-        <div class="video-overlay">
+      <div class="video-container" style="position: relative; background: #000; border-radius: var(--radius); overflow: hidden; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center;">
+        
+        <!-- Video Element for HLS Live stream -->
+        <video id="preview-player" class="video-element" autoplay muted playsinline controls style="display: none; width: 100%; height: 100%; object-fit: contain;"></video>
+        
+        <!-- Offline/Ready State Showcase -->
+        <div id="preview-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem; color: var(--text-muted);">
+          <div id="placeholder-icon" class="badge-danger" style="width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin-bottom: 1.5rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3);">
+            <i class="ti ti-antenna-off" id="icon-element" style="color: var(--danger);"></i>
+          </div>
+          <h3 id="placeholder-title" style="margin-bottom: 0.5rem; font-size: 1.5rem; color: #fff;">Stream Offline</h3>
+          <p id="placeholder-text" style="max-width: 450px; font-size: 0.95rem; line-height: 1.6;">
+            Click the <strong style="color: var(--primary);">Go Live</strong> button below to authorize connections, configure your settings, and start streaming from OBS.
+          </p>
+        </div>
+
+        <div class="video-overlay" style="position: absolute; top: 1rem; left: 1rem; display: flex; gap: 0.5rem; z-index: 10;">
           <span id="status-badge" class="badge badge-danger">
             <i class="ti ti-point-filled"></i> Offline
           </span>
@@ -33,120 +50,154 @@
       </div>
     </div>
 
-    <!-- Broadcasting triggers -->
+    <!-- Streaming Control Dock -->
     <div style="display: flex; justify-content: center; margin-top: 0.5rem;">
-      <div class="control-dock">
-        <button id="btn-setup" class="btn-circle" onclick="setupMedia()" title="Setup Screen & Audio">
-          <i class="ti ti-screen-share"></i>
+      <div class="control-dock" style="display: flex; gap: 1rem; background: rgba(30, 41, 59, 0.6); border: 1px solid var(--panel-border); padding: 0.75rem 1.5rem; border-radius: 50px; backdrop-filter: blur(10px); align-items: center;">
+        <button id="btn-golive" class="btn btn-primary" onclick="triggerGoLive()" style="border-radius: 30px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 600;">
+          <i class="ti ti-antenna"></i> Go Live
         </button>
-        <button id="btn-settings" class="btn-circle" onclick="openSettingsModal()" title="Encoding Settings">
-          <i class="ti ti-settings"></i>
+        <button id="btn-settings" class="btn btn-secondary" onclick="openSettingsModal()" title="Stream Settings" style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center;">
+          <i class="ti ti-settings" style="font-size: 1.2rem;"></i>
         </button>
-        <button id="btn-share" class="btn-circle" onclick="copyViewerLink()" title="Copy Viewer Link">
-          <i class="ti ti-share"></i>
+        <button id="btn-share" class="btn btn-secondary" onclick="copyViewerLink()" title="Copy Viewer Link" style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center;">
+          <i class="ti ti-share" style="font-size: 1.2rem;"></i>
         </button>
-        <button id="btn-start" class="btn-circle" onclick="startStreaming()" disabled title="Start Streaming">
-          <i class="ti ti-player-play"></i>
-        </button>
-        <button id="btn-stop" class="btn-circle" onclick="stopStreaming()" disabled title="Stop Stream" style="background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.2); color: var(--danger);">
-          <i class="ti ti-player-stop"></i>
+        <button id="btn-stop" class="btn btn-danger" onclick="triggerStopLive()" disabled style="border-radius: 30px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 600; opacity: 0.5;">
+          <i class="ti ti-player-stop"></i> Stop Live
         </button>
       </div>
     </div>
   </div>
 
-  <!-- Right Side: Stream Configuration Cockpit -->
+  <!-- Right Side: Stream Configuration & Key details -->
   <div style="display: flex; flex-direction: column; gap: 1.5rem;">
-    <!-- Info -->
-    <div class="glass-panel">
-      <div class="card-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem;">
-        <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.25rem;">
-          <i class="ti ti-broadcast" style="color: var(--primary);"></i> <%= stream.title %>
+    <!-- Connection Details -->
+    <div class="glass-panel" style="padding: 1.5rem;">
+      <div class="card-header" style="margin-bottom: 1.25rem; padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+        <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <i class="ti ti-broadcast" style="color: var(--primary); font-size: 1.3rem;"></i> <%= stream.title %>
         </h4>
       </div>
-      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.5rem;">
-        Your stream key is:
-      </p>
-      <code><%= stream.streamKey %></code>
+      
+      <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <!-- RTMP Server URL -->
+        <div>
+          <label class="form-label" style="font-size: 0.8rem; font-weight: 600; margin-bottom: 0.25rem;">RTMP Server URL</label>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input type="text" id="rtmp-url" class="form-input" readonly style="font-family: monospace; font-size: 0.8rem; padding: 0.5rem; flex: 1; background: rgba(15, 23, 42, 0.4);">
+            <button class="btn btn-secondary btn-sm" onclick="copyValue('rtmp-url')" style="border-radius: 8px; padding: 0.5rem 0.75rem;">
+              <i class="ti ti-copy"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Stream Key -->
+        <div>
+          <label class="form-label" style="font-size: 0.8rem; font-weight: 600; margin-bottom: 0.25rem;">Stream Key</label>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input type="password" id="stream-key" value="<%= stream.streamKey %>" class="form-input" readonly style="font-family: monospace; font-size: 0.8rem; padding: 0.5rem; flex: 1; background: rgba(15, 23, 42, 0.4);">
+            <button class="btn btn-secondary btn-sm" onclick="toggleStreamKeyVisibility()" style="border-radius: 8px; padding: 0.5rem 0.75rem;" title="Show/Hide">
+              <i id="key-visibility-icon" class="ti ti-eye"></i>
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="copyValue('stream-key')" style="border-radius: 8px; padding: 0.5rem 0.75rem;">
+              <i class="ti ti-copy"></i>
+            </button>
+          </div>
+        </div>
+
+        <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem;">
+          <p style="color: var(--text-muted); font-size: 0.8rem; line-height: 1.5; margin: 0;">
+            <i class="ti ti-info-circle" style="color: var(--primary);"></i> 
+            To stream, copy these credentials into OBS (Settings > Stream > Custom...) and click "Start Streaming".
+          </p>
+        </div>
+      </div>
     </div>
 
-    <!-- Speed Test & Recommendation -->
-    <div class="glass-panel">
+    <!-- Active Configurations Summary -->
+    <div class="glass-panel" style="padding: 1.5rem;">
       <div class="card-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem;">
-        <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.25rem;">
-          <i class="ti ti-gauge" style="color: var(--accent);"></i> Bandwidth Test
+        <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <i class="ti ti-adjustments" style="color: var(--secondary); font-size: 1.3rem;"></i> Active Config
         </h4>
       </div>
-      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
-        Test your connection to determine the recommended streaming configs.
-      </p>
-      <button class="btn btn-secondary" style="width: 100%; font-size: 0.85rem; padding: 0.5rem 1rem;" onclick="runSpeedTest()">
-        <i class="ti ti-device-heart-monitor"></i> Test Upload Speed
-      </button>
-      <div id="speedtest-result" style="margin-top: 0.75rem; font-size: 0.9rem;"></div>
-      <div id="speedtest-status" style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted);"></div>
+      <ul style="list-style: none; padding: 0; margin: 0; font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.75rem;">
+        <li style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">Streaming Mode:</span>
+          <strong id="config-summary-mode"><%= stream.isRaw ? 'Raw (Direct Copy)' : 'Transcoded' %></strong>
+        </li>
+        <li id="config-summary-resolutions-row" style="display: <%= stream.isRaw ? 'none' : 'flex' %>; justify-content: space-between;">
+          <span style="color: var(--text-muted);">Target Formats:</span>
+          <strong id="config-summary-resolutions"><%= stream.resolutions %></strong>
+        </li>
+        <li style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">Key Status:</span>
+          <span id="config-key-status" class="badge <%= stream.isLive ? 'badge-success' : 'badge-danger' %>" style="padding: 0.1rem 0.5rem; font-size: 0.75rem;">
+            <%= stream.isLive ? 'Authorized' : 'Locked' %>
+          </span>
+        </li>
+      </ul>
     </div>
-
   </div>
 </div>
 
 <!-- Settings Modal Popup -->
-<div id="settings-modal" class="modal-backdrop" style="display: none;">
-  <div class="modal-content-wrapper">
+<div id="settings-modal" class="modal-backdrop" style="display: none; position: fixed; inset: 0; z-index: 100; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(8px); transition: var(--transition);">
+  <div class="modal-content-wrapper" style="background: #1e293b; border: 1px solid var(--panel-border); border-radius: var(--radius); width: 100%; max-width: 480px; padding: 2rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); transform: scale(0.9); opacity: 0; transition: var(--transition);">
     <div class="card-header" style="margin-bottom: 1.5rem; padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
       <h4 style="font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: #fff;">
         <i class="ti ti-settings" style="color: var(--warning);"></i> Stream Settings
       </h4>
-      <button onclick="closeSettingsModal()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.25rem; display: flex; align-items: center; justify-content: center;">
+      <button onclick="closeSettingsModal()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.25rem; display: flex; align-items: center; justify-content: center; transition: var(--transition);">
         <i class="ti ti-x"></i>
       </button>
     </div>
 
-    <!-- Resolutions (Multiple selection allowed) -->
+    <!-- Mode Selector: Raw vs Transcoded -->
     <div class="form-group" style="margin-bottom: 1.5rem;">
-      <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Available Resolutions</label>
+      <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Streaming Mode</label>
+      <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+        <label style="display: flex; align-items: flex-start; gap: 0.75rem; font-size: 0.95rem; cursor: pointer;">
+          <input type="radio" name="stream-mode" id="mode-raw" value="raw" <%= stream.isRaw ? 'checked' : '' %> onchange="onModeChange()" style="accent-color: var(--primary); width: 18px; height: 18px; margin-top: 0.15rem;">
+          <div style="display: flex; flex-direction: column;">
+            <span style="font-weight: 600; color: #fff;">Raw Mode (Zero-Transcode)</span>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Pushes OBS output directly without re-encoding. Best for high-performance servers, lower CPU usage.</span>
+          </div>
+        </label>
+        <label style="display: flex; align-items: flex-start; gap: 0.75rem; font-size: 0.95rem; cursor: pointer;">
+          <input type="radio" name="stream-mode" id="mode-transcode" value="transcode" <%= !stream.isRaw ? 'checked' : '' %> onchange="onModeChange()" style="accent-color: var(--primary); width: 18px; height: 18px; margin-top: 0.15rem;">
+          <div style="display: flex; flex-direction: column;">
+            <span style="font-weight: 600; color: #fff;">Transcoded Mode (Multi-Compression)</span>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Generates multiple compression variants for adaptiveness (recommended for viewers on slower bandwidths).</span>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- Transcoded Resolutions -->
+    <div id="resolutions-config-section" class="form-group" style="margin-bottom: 1.5rem; display: <%= stream.isRaw ? 'none' : 'block' %>;">
+      <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Target Resolutions</label>
       <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-480p" onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
-          <span>480p SD</span>
+          <input type="checkbox" id="res-480p" <%= stream.resolutions.includes('480p') ? 'checked' : '' %> style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <span>480p SD (Mobile Friendly)</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-720p" onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
-          <span>720p HD</span>
+          <input type="checkbox" id="res-720p" <%= stream.resolutions.includes('720p') ? 'checked' : '' %> style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <span>720p HD (Balanced)</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-1080p" checked onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
-          <span>1080p Full HD</span>
+          <input type="checkbox" id="res-1080p" <%= stream.resolutions.includes('1080p') ? 'checked' : '' %> style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <span>1080p Full HD (High Quality)</span>
         </label>
       </div>
     </div>
 
-    <!-- Frame rate toggle (30 or 60) -->
-    <div class="form-group" style="margin-bottom: 1.5rem;">
-      <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Target Frame Rate</label>
-      <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
-        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="radio" name="fps" id="fps-20" value="30" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
-          <span>30 FPS</span>
-        </label>
-        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="radio" name="fps" id="fps-60" value="60" disabled style="accent-color: var(--primary); width: 16px; height: 16px;">
-          <span>60 FPS</span>
-        </label>
-      </div>
-    </div>
-
-    <!-- Custom Bitrate slider -->
-    <div class="form-group" style="margin-bottom: 1.5rem;">
-      <label class="form-label" style="display: flex; justify-content: space-between; font-weight: 600;">
-        <span>Target Bitrate</span>
-        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">6000 Kbps</span>
-      </label>
-      <input type="range" id="bitrate-input" min="800" max="8000" step="100" value="6000" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
-    </div>
-
-    <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
-      <button class="btn btn-primary" onclick="closeSettingsModal()" style="padding: 0.5rem 1.5rem; font-size: 0.9rem;">
+    <div style="display: flex; justify-content: flex-end; margin-top: 2rem; gap: 0.75rem;">
+      <button class="btn btn-secondary" onclick="closeSettingsModal()" style="padding: 0.5rem 1.25rem; font-size: 0.9rem; border-radius: 8px;">
+        Cancel
+      </button>
+      <button class="btn btn-primary" onclick="saveSettings()" style="padding: 0.5rem 1.5rem; font-size: 0.9rem; border-radius: 8px;">
         Save & Apply
       </button>
     </div>
@@ -154,511 +205,345 @@
 </div>
 
 <script>
-  let localStream = null;
-  let peerConnection = null;
+  // Setup RTMP URL on load
+  document.getElementById("rtmp-url").value = "rtmp://" + window.location.hostname + "/live";
+
+  let isLive = <%= stream.isLive %>; // Toggled by clicking "Go Live"
+  let isActive = <%= stream.isActive %>; // Set true when server generates HLS segments
   let streamStartTime = null;
   let durationInterval = null;
-  let broadcastState = 'idle';
-  const AUDIO_BITS_PER_SECOND = 96000;
-  const MAX_VIDEO_BITRATE_KBPS = 8000;
-  const DEFAULT_FRAME_RATE = 30;
-  const MAX_FRAME_RATE = 30;
-  const RESOLUTION_LIMITS = {
-    '480p': { width: 854, height: 480, bitrate: 1500 },
-    '720p': { width: 1280, height: 720, bitrate: 3000 },
-    '1080p': { width: 1920, height: 1080, bitrate: 6000 }
-  };
+  let pollInterval = null;
+  let hlsInstance = null;
 
-  function clampNumber(value, min, max) {
-    return Math.min(Math.max(value, min), max);
+  // Initialize UI on page load
+  updateUI();
+
+  // Polling check for active HLS playlist
+  if (isLive) {
+    startStatusPolling();
   }
 
-  function getSelectedStreamConfig() {
-    const resolutions = [];
-    if (document.getElementById('res-480p').checked) resolutions.push('480p');
-    if (document.getElementById('res-720p').checked) resolutions.push('720p');
-    if (document.getElementById('res-1080p').checked) resolutions.push('1080p');
-
-    const selectedFps = parseInt(document.querySelector('input[name="fps"]:checked').value, 10);
-    const fps = clampNumber(Number.isFinite(selectedFps) ? selectedFps : DEFAULT_FRAME_RATE, DEFAULT_FRAME_RATE, MAX_FRAME_RATE);
-    const selectedBitrate = parseInt(document.getElementById('bitrate-input').value, 10);
-    const maxRes = resolutions.includes('1080p') ? '1080p' : (resolutions.includes('720p') ? '720p' : '480p');
-    const resolutionBitrate = RESOLUTION_LIMITS[maxRes].bitrate;
-    const bitrate = clampNumber(
-      Number.isFinite(selectedBitrate) ? Math.max(selectedBitrate, resolutionBitrate) : resolutionBitrate,
-      400,
-      MAX_VIDEO_BITRATE_KBPS
-    );
-
-    return { resolutions, fps, bitrate, maxRes };
+  function startStatusPolling() {
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(checkStreamActiveState, 2000);
+    checkStreamActiveState(); // run once immediately
   }
 
-  function updateBitrateVal(value) {
-    document.getElementById('bitrate-val').textContent = value + ' Kbps';
-  }
-
-  function syncBitrateToSelectedResolution() {
-    const config = getSelectedStreamConfig();
-    const bitrateInput = document.getElementById('bitrate-input');
-    const bitrate = RESOLUTION_LIMITS[config.maxRes].bitrate;
-    bitrateInput.value = bitrate;
-    updateBitrateVal(bitrate);
-  }
-
-  function setStreamSettingsDisabled(disabled) {
-    document.getElementById('res-480p').disabled = disabled;
-    document.getElementById('res-720p').disabled = disabled;
-    document.getElementById('res-1080p').disabled = disabled;
-    document.getElementById('fps-20').disabled = disabled;
-    document.getElementById('fps-60').disabled = true;
-    document.getElementById('bitrate-input').disabled = disabled;
-  }
-
-  function setConnectingUi() {
-    document.getElementById('status-badge').className = 'badge badge-primary';
-    document.getElementById('status-badge').innerHTML = '<i class="ti ti-point-filled"></i> Connecting';
-    document.getElementById('btn-start').disabled = true;
-    document.getElementById('btn-start').classList.remove('btn-circle-active');
-    document.getElementById('btn-setup').disabled = true;
-    document.getElementById('btn-stop').disabled = false;
-    document.getElementById('btn-stop').classList.add('btn-circle-danger-active');
-    setStreamSettingsDisabled(true);
-  }
-
-  function setLiveUi() {
-    document.getElementById('status-badge').className = 'badge badge-success';
-    document.getElementById('status-badge').innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
-    document.getElementById('btn-start').disabled = true;
-    document.getElementById('btn-start').classList.remove('btn-circle-active');
-    document.getElementById('btn-setup').disabled = true;
-    document.getElementById('btn-stop').disabled = false;
-    document.getElementById('btn-stop').classList.add('btn-circle-danger-active');
-    setStreamSettingsDisabled(true);
-  }
-
-  function resetStreamUi() {
-    document.getElementById('status-badge').className = 'badge badge-danger';
-    document.getElementById('status-badge').innerHTML = '<i class="ti ti-point-filled"></i> Offline';
-    document.getElementById('btn-start').disabled = !localStream;
-    if (localStream) {
-      document.getElementById('btn-start').classList.add('btn-circle-active');
-    } else {
-      document.getElementById('btn-start').classList.remove('btn-circle-active');
+  function stopStatusPolling() {
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      pollInterval = null;
     }
-    document.getElementById('btn-setup').disabled = false;
-    document.getElementById('btn-stop').disabled = true;
-    document.getElementById('btn-stop').classList.remove('btn-circle-danger-active');
-    document.getElementById('duration-badge').style.display = 'none';
-    setStreamSettingsDisabled(false);
   }
 
-  function openSettingsModal() {
-    const modal = document.getElementById('settings-modal');
-    modal.style.display = 'flex';
-    modal.offsetHeight; // force reflow
-    modal.classList.add('show');
-  }
-
-  function closeSettingsModal() {
-    const modal = document.getElementById('settings-modal');
-    modal.classList.remove('show');
-    setTimeout(() => {
-      modal.style.display = 'none';
-    }, 300);
-  }
-
-  function copyViewerLink() {
-    const link = window.location.origin + "/live/<%= stream.streamKey %>";
-    navigator.clipboard.writeText(link).then(() => {
-      const btn = document.getElementById('btn-share');
-      const origHtml = btn.innerHTML;
-      btn.innerHTML = '<i class="ti ti-check" style="color: var(--accent);"></i>';
-      btn.style.borderColor = 'var(--accent)';
-      setTimeout(() => {
-        btn.innerHTML = origHtml;
-        btn.style.borderColor = '';
-      }, 2000);
-    }).catch(err => {
-      console.error('Failed to copy: ', err);
-    });
-  }
-
-  async function runSpeedTest() {
-    const statusEl = document.getElementById('speedtest-status');
-    const resultEl = document.getElementById('speedtest-result');
-    statusEl.textContent = 'Running test... uploading 1.5MB test data...';
-    resultEl.innerHTML = '';
-
-    const payloadSize = 1.5 * 1024 * 1024; // 1.5 MB
-    const dummyBytes = new Uint8Array(payloadSize);
-
-    const start = performance.now();
+  async function checkStreamActiveState() {
+    const playlistUrl = `/media/<%= stream.streamKey %>/master.m3u8?_t=${Date.now()}`;
     try {
-      const res = await fetch('/api/stream/speedtest', {
-        method: 'POST',
-        body: dummyBytes
-      });
-      const end = performance.now();
-      
-      if (!res.ok) throw new Error('Network error during test.');
-      
-      const durationSec = (end - start) / 1000;
-      const bitsUploaded = payloadSize * 8;
-      const speedMbps = (bitsUploaded / durationSec) / (1024 * 1024);
-      
-      resultEl.innerHTML = `Speed: <strong style="color: var(--accent); font-size: 1.1rem;">${speedMbps.toFixed(2)} Mbps</strong>`;
-      
-      let recResolutions = ['480p'];
-      let recBitrate = 1000; // Kbps
-
-      if (speedMbps < 2) {
-        recResolutions = ['480p'];
-        recBitrate = 1000;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 30 FPS</strong>';
-      } else if (speedMbps < 6) {
-        recResolutions = ['720p'];
-        recBitrate = 2000;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">720p @ 30 FPS</strong>';
+      const res = await fetch(playlistUrl, { method: "HEAD", cache: "no-store" });
+      if (res.ok) {
+        if (!isActive) {
+          console.log("[Status Polling] Stream became active! Loading player.");
+          isActive = true;
+          updateUI();
+          initPlayer();
+        }
       } else {
-        recResolutions = ['1080p'];
-        recBitrate = 4000;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">1080p @ 30 FPS</strong>';
+        if (isActive) {
+          console.log("[Status Polling] Stream went offline.");
+          isActive = false;
+          updateUI();
+          destroyPlayer();
+        }
       }
-
-      // Apply recommendation
-      document.getElementById('bitrate-input').value = recBitrate;
-      updateBitrateVal(recBitrate);
-
-      document.getElementById('res-480p').checked = recResolutions.includes('480p');
-      document.getElementById('res-720p').checked = recResolutions.includes('720p');
-      document.getElementById('res-1080p').checked = recResolutions.includes('1080p');
-
-      document.getElementById('fps-20').checked = true;
-
     } catch (err) {
-      statusEl.textContent = 'Test failed: ' + err.message;
+      if (isActive) {
+        isActive = false;
+        updateUI();
+        destroyPlayer();
+      }
     }
   }
 
-  function preferH264InSdp(sdp) {
-    const lines = sdp.split('\r\n');
-    let mVideoIdx = -1;
-    const h264Payloads = [];
+  function initPlayer() {
+    const video = document.getElementById("preview-player");
+    const playlistUrl = `/media/<%= stream.streamKey %>/master.m3u8?_t=${Date.now()}`;
 
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].startsWith('m=video')) {
-        mVideoIdx = i;
-      }
-      const match = lines[i].match(/^a=rtpmap:(\d+)\s+H264\/\d+/i);
-      if (match) {
-        h264Payloads.push(match[1]);
-      }
+    if (hlsInstance) {
+      hlsInstance.destroy();
     }
 
-    if (mVideoIdx === -1 || h264Payloads.length === 0) {
-      return sdp;
-    }
-
-    const mLine = lines[mVideoIdx];
-    const parts = mLine.split(' ');
-    const header = parts.slice(0, 3);
-    const payloads = parts.slice(3);
-
-    const otherPayloads = payloads.filter(pt => !h264Payloads.includes(pt));
-    const newPayloads = [...h264Payloads, ...otherPayloads];
-
-    lines[mVideoIdx] = header.join(' ') + ' ' + newPayloads.join(' ');
-    return lines.join('\r\n');
-  }
-
-  function addBandwidthToSdp(sdp, bitrateKbps) {
-    const lines = sdp.split('\r\n');
-    const newLines = [];
-    let inVideoSection = false;
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      
-      if (line.startsWith('m=video')) {
-        inVideoSection = true;
-        newLines.push(line);
-        newLines.push(`b=AS:${bitrateKbps}`);
-        newLines.push(`b=TIAS:${bitrateKbps * 1000}`);
-        continue;
-      } else if (line.startsWith('m=')) {
-        inVideoSection = false;
-      }
-      
-      if (inVideoSection) {
-        if (line.startsWith('b=AS:') || line.startsWith('b=TIAS:')) {
-          continue;
-        }
-        if (line.startsWith('a=fmtp:')) {
-          newLines.push(line + `;x-google-min-bitrate=${bitrateKbps};x-google-start-bitrate=${bitrateKbps};x-google-max-bitrate=${bitrateKbps}`);
-          continue;
-        }
-      }
-      
-      newLines.push(line);
-    }
-    
-    return newLines.join('\r\n');
-  }
-
-  async function setupMedia() {
-    if (broadcastState !== 'idle') return;
-
-    try {
-      const config = getSelectedStreamConfig();
-      const captureSize = RESOLUTION_LIMITS[config.maxRes];
-
-      // Capture screen video + screen audio (if available)
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          width: { ideal: captureSize.width },
-          height: { ideal: captureSize.height },
-          frameRate: { ideal: config.fps, max: MAX_FRAME_RATE },
-          cursor: 'never'
-        },
-        audio: true
+    if (Hls.isSupported()) {
+      hlsInstance = new Hls({
+        maxLiveSyncPlaybackRate: 1.5,
+        liveSyncDurationCount: 3,
+        enableWorker: true
       });
-
-      localStream = screenStream;
-      
-      // Connect to preview element
-      const preview = document.getElementById('local-preview');
-      preview.srcObject = localStream;
-      preview.play();
-
-      // Enable start button
-      document.getElementById('btn-start').disabled = false;
-      document.getElementById('btn-start').classList.add('btn-circle-active');
-      document.getElementById('btn-setup').title = 'Change Capture Device';
-      
-      // Handle screen share stop by browser button
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.addEventListener('ended', () => {
-          stopStreaming();
-        });
-      }
-
-    } catch (err) {
-      alert('Failed to capture screen share: ' + err.message);
-    }
-  }
-
-  async function startStreaming() {
-    if (!localStream || broadcastState !== 'idle') return;
-
-    broadcastState = 'starting';
-    setConnectingUi();
-
-    const config = getSelectedStreamConfig();
-
-    if (config.resolutions.length === 0) {
-      broadcastState = 'idle';
-      resetStreamUi();
-      alert('You must enable at least one resolution (480p, 720p, or 1080p).');
-      return;
-    }
-
-    const resolutions = config.resolutions;
-    const fps = config.fps;
-    const bitrate = config.bitrate;
-
-    // Dynamically apply video track constraints to avoid capturing at higher resolutions than needed
-    const videoTrack = localStream.getVideoTracks()[0];
-    if (videoTrack) {
-      const captureSize = RESOLUTION_LIMITS[config.maxRes];
-
-      console.log(`Applying track constraints: ${captureSize.width}x${captureSize.height} @ ${fps} FPS`);
-      try {
-        await videoTrack.applyConstraints({
-          width: { ideal: captureSize.width },
-          height: { ideal: captureSize.height },
-          frameRate: { ideal: fps, max: MAX_FRAME_RATE }
-        });
-      } catch (constraintErr) {
-        console.warn('Failed to apply video track constraints:', constraintErr);
-      }
-    }
-
-    // Check if localStream has audio tracks
-    const hasAudio = localStream.getAudioTracks().length > 0;
-    console.log('Stream tracks - Video:', localStream.getVideoTracks().length, 'Audio:', localStream.getAudioTracks().length);
-
-    try {
-      peerConnection = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      hlsInstance.loadSource(playlistUrl);
+      hlsInstance.attachMedia(video);
+      hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(e => console.log("Auto play prevented", e));
       });
-
-      // Set content hints to optimize WebRTC for detail and high quality audio
-      localStream.getVideoTracks().forEach(track => {
-        if ('contentHint' in track) {
-          track.contentHint = 'detail';
-        }
-      });
-      localStream.getAudioTracks().forEach(track => {
-        if ('contentHint' in track) {
-          track.contentHint = 'music';
-        }
-      });
-
-      // Add tracks to the peer connection
-      localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-      });
-
-      // Prioritize H.264 video codec if supported by the browser
-      try {
-        const transceivers = peerConnection.getTransceivers();
-        transceivers.forEach(transceiver => {
-          if (transceiver.sender && transceiver.sender.track && transceiver.sender.track.kind === 'video') {
-            if (typeof RTCRtpReceiver.getCapabilities === 'function') {
-              const capabilities = RTCRtpReceiver.getCapabilities('video');
-              if (capabilities && capabilities.codecs) {
-                const codecs = capabilities.codecs;
-                const h264Codecs = codecs.filter(codec => codec.mimeType.toLowerCase() === 'video/h264');
-                const otherCodecs = codecs.filter(codec => codec.mimeType.toLowerCase() !== 'video/h264');
-                if (h264Codecs.length > 0) {
-                  transceiver.setCodecPreferences([...h264Codecs, ...otherCodecs]);
-                  console.log('[WebRTC] Prioritized H.264 video codec preferences');
-                }
-              }
-            }
-          }
-        });
-      } catch (codecErr) {
-        console.warn('Failed to set video codec preferences:', codecErr);
-      }
-
-      // Handle connection state changes
-      peerConnection.onconnectionstatechange = () => {
-        console.log('WebRTC connection state:', peerConnection.connectionState);
-        if (peerConnection.connectionState === 'connected') {
-          broadcastState = 'live';
-          setLiveUi();
-          streamStartTime = Date.now();
-          document.getElementById('duration-badge').style.display = 'inline-flex';
-          durationInterval = setInterval(updateDuration, 1000);
-        } else if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
-          if (broadcastState !== 'idle') {
-            stopStreaming();
+      hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              hlsInstance.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              hlsInstance.recoverMediaError();
+              break;
+            default:
+              destroyPlayer();
+              break;
           }
         }
-      };
-
-      // Create offer
-      const offer = await peerConnection.createOffer();
-      
-      // Force H.264 prioritization in SDP text and configure bitrates
-      let preferredSdp = preferH264InSdp(offer.sdp);
-      preferredSdp = addBandwidthToSdp(preferredSdp, bitrate);
-      
-      await peerConnection.setLocalDescription({
-        type: 'offer',
-        sdp: preferredSdp
       });
-
-      // Configure encoding parameters for the video sender to output the selected bitrate
-      const senders = peerConnection.getSenders();
-      const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-      if (videoSender) {
-        const parameters = videoSender.getParameters();
-        if (!parameters.encodings || parameters.encodings.length === 0) {
-          parameters.encodings = [{}];
-        }
-        parameters.encodings[0].maxBitrate = bitrate * 1000; // Kbps to bps
-        parameters.encodings[0].maxFramerate = fps;
-        parameters.degradationPreference = 'maintain-resolution';
-        
-        console.log(`[WebRTC] Set video maxBitrate to: ${bitrate} Kbps, maxFramerate to: ${fps} FPS`);
-        try {
-          await videoSender.setParameters(parameters);
-        } catch (setParamErr) {
-          console.warn('Failed to set WebRTC video encoding parameters:', setParamErr);
-        }
-      }
-
-      // Wait for ICE gathering to complete before sending SDP to MediaMTX
-      await new Promise((resolve) => {
-        if (peerConnection.iceGatheringState === 'complete') {
-          resolve();
-        } else {
-          function checkState() {
-            if (peerConnection.iceGatheringState === 'complete') {
-              peerConnection.removeEventListener('icegatheringstatechange', checkState);
-              resolve();
-            }
-          }
-          peerConnection.addEventListener('icegatheringstatechange', checkState);
-        }
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = playlistUrl;
+      video.addEventListener("loadedmetadata", () => {
+        video.play().catch(e => console.log("Auto play prevented", e));
       });
-
-      // Detect codec in local SDP offer
-      const offerSdp = peerConnection.localDescription.sdp;
-      const isH264 = offerSdp.includes('H264') || offerSdp.includes('h264');
-      const codec = isH264 ? 'h264' : 'vp8';
-      console.log(`[WebRTC] SDP offer codec detected: ${codec}`);
-
-      // Build WHIP signaling URL (sends query parameters for FFmpeg transcoding config)
-      const whipUrl = `${window.location.protocol}//${window.location.host}/whip/<%= stream.streamKey %>/whip?resolutions=${resolutions.join(',')}&fps=${fps}&bitrate=${bitrate}&hasAudio=${hasAudio}&codec=${codec}`;
-      console.log('Connecting WHIP to URL:', whipUrl);
-
-      const response = await fetch(whipUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/sdp'
-        },
-        body: peerConnection.localDescription.sdp
-      });
-
-      if (!response.ok) {
-        throw new Error(`WHIP signaling gateway returned status ${response.status}`);
-      }
-
-      const answerSdp = await response.text();
-      await peerConnection.setRemoteDescription({
-        type: 'answer',
-        sdp: answerSdp
-      });
-
-    } catch (err) {
-      console.error('WebRTC Streaming Start Error:', err);
-      alert('Failed to start streaming: ' + err.message);
-      stopStreaming();
     }
+
+    // Start counter
+    streamStartTime = Date.now();
+    document.getElementById("duration-badge").style.display = "inline-flex";
+    if (durationInterval) clearInterval(durationInterval);
+    durationInterval = setInterval(updateDuration, 1000);
   }
 
-  function stopStreaming() {
-    if (broadcastState === 'idle' && !peerConnection) {
-      resetStreamUi();
-      return;
+  function destroyPlayer() {
+    const video = document.getElementById("preview-player");
+    video.pause();
+    video.src = "";
+    if (hlsInstance) {
+      hlsInstance.destroy();
+      hlsInstance = null;
     }
-
-    broadcastState = 'stopping';
-
-    if (peerConnection) {
-      peerConnection.close();
-      peerConnection = null;
-    }
-
     if (durationInterval) {
       clearInterval(durationInterval);
+      durationInterval = null;
     }
-
-    broadcastState = 'idle';
-    resetStreamUi();
+    document.getElementById("duration-badge").style.display = "none";
   }
 
   function updateDuration() {
+    if (!streamStartTime) return;
     const elapsedMs = Date.now() - streamStartTime;
     const totalSecs = Math.floor(elapsedMs / 1000);
     const hrs = Math.floor(totalSecs / 3600).toString().padStart(2, '0');
     const mins = Math.floor((totalSecs % 3600) / 60).toString().padStart(2, '0');
     const secs = (totalSecs % 60).toString().padStart(2, '0');
     document.getElementById('duration-badge').textContent = `${hrs}:${mins}:${secs}`;
+  }
+
+  async function triggerGoLive() {
+    try {
+      const res = await fetch("/api/stream/<%= stream.streamKey %>/golive", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to activate stream.");
+      
+      isLive = true;
+      updateUI();
+      startStatusPolling();
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
+  }
+
+  async function triggerStopLive() {
+    try {
+      const res = await fetch("/api/stream/<%= stream.streamKey %>/stop", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to stop stream.");
+      
+      isLive = false;
+      isActive = false;
+      stopStatusPolling();
+      destroyPlayer();
+      updateUI();
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
+  }
+
+  function updateUI() {
+    const statusBadge = document.getElementById("status-badge");
+    const btnGoLive = document.getElementById("btn-golive");
+    const btnStop = document.getElementById("btn-stop");
+    const playerEl = document.getElementById("preview-player");
+    const placeholderEl = document.getElementById("preview-placeholder");
+    const configKeyStatus = document.getElementById("config-key-status");
+    
+    const iconElement = document.getElementById("icon-element");
+    const placeholderTitle = document.getElementById("placeholder-title");
+    const placeholderText = document.getElementById("placeholder-text");
+
+    if (isActive) {
+      // Stream is active and playing
+      statusBadge.className = "badge badge-success";
+      statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
+      playerEl.style.display = "block";
+      placeholderEl.style.display = "none";
+      
+      btnGoLive.disabled = true;
+      btnGoLive.style.opacity = "0.5";
+      btnStop.disabled = false;
+      btnStop.style.opacity = "1";
+    } else if (isLive) {
+      // Waiting for OBS connection
+      statusBadge.className = "badge badge-primary";
+      statusBadge.innerHTML = '<i class="ti ti-loader animate-spin"></i> Waiting';
+      playerEl.style.display = "none";
+      placeholderEl.style.display = "flex";
+
+      iconElement.className = "ti ti-antenna animate-pulse";
+      iconElement.style.color = "var(--primary)";
+      iconElement.parentElement.style.background = "rgba(99, 102, 241, 0.1)";
+      iconElement.parentElement.style.borderColor = "rgba(99, 102, 241, 0.3)";
+      placeholderTitle.textContent = "Connecting to Encoder...";
+      placeholderTitle.style.color = "var(--primary)";
+      placeholderText.innerHTML = "Authorized! Start streaming in OBS. The preview player will load automatically once OBS starts pushing video.";
+
+      btnGoLive.disabled = true;
+      btnGoLive.style.opacity = "0.5";
+      btnStop.disabled = false;
+      btnStop.style.opacity = "1";
+    } else {
+      // Completely offline
+      statusBadge.className = "badge badge-danger";
+      statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> Offline';
+      playerEl.style.display = "none";
+      placeholderEl.style.display = "flex";
+
+      iconElement.className = "ti ti-antenna-off";
+      iconElement.style.color = "var(--danger)";
+      iconElement.parentElement.style.background = "rgba(239, 68, 68, 0.1)";
+      iconElement.parentElement.style.borderColor = "rgba(239, 68, 68, 0.3)";
+      placeholderTitle.textContent = "Stream Offline";
+      placeholderTitle.style.color = "#fff";
+      placeholderText.textContent = 'Click the "Go Live" button below to authorize connections, configure your settings, and start streaming from OBS.';
+
+      btnGoLive.disabled = false;
+      btnGoLive.style.opacity = "1";
+      btnStop.disabled = true;
+      btnStop.style.opacity = "0.5";
+    }
+
+    if (isLive) {
+      configKeyStatus.className = "badge badge-success";
+      configKeyStatus.textContent = "Authorized";
+    } else {
+      configKeyStatus.className = "badge badge-danger";
+      configKeyStatus.textContent = "Locked";
+    }
+  }
+
+  function toggleStreamKeyVisibility() {
+    const keyInput = document.getElementById("stream-key");
+    const visibilityIcon = document.getElementById("key-visibility-icon");
+    if (keyInput.type === "password") {
+      keyInput.type = "text";
+      visibilityIcon.className = "ti ti-eye-off";
+    } else {
+      keyInput.type = "password";
+      visibilityIcon.className = "ti ti-eye";
+    }
+  }
+
+  function copyValue(id) {
+    const input = document.getElementById(id);
+    navigator.clipboard.writeText(input.value).then(() => {
+      alert("Copied to clipboard!");
+    }).catch(err => {
+      console.error("Copy failed:", err);
+    });
+  }
+
+  function copyViewerLink() {
+    const link = window.location.origin + "/live/<%= stream.streamKey %>";
+    navigator.clipboard.writeText(link).then(() => {
+      alert("Viewer link copied to clipboard!");
+    }).catch(err => {
+      console.error("Copy failed:", err);
+    });
+  }
+
+  // Modal open / close handlers
+  function openSettingsModal() {
+    const modal = document.getElementById("settings-modal");
+    modal.style.display = "flex";
+    setTimeout(() => {
+      modal.firstElementChild.style.transform = "scale(1)";
+      modal.firstElementChild.style.opacity = "1";
+    }, 50);
+  }
+
+  function closeSettingsModal() {
+    const modal = document.getElementById("settings-modal");
+    modal.firstElementChild.style.transform = "scale(0.9)";
+    modal.firstElementChild.style.opacity = "0";
+    setTimeout(() => {
+      modal.style.display = "none";
+    }, 200);
+  }
+
+  // Simple modal backdrop click close
+  window.onclick = function(event) {
+    const modal = document.getElementById("settings-modal");
+    if (event.target == modal) {
+      closeSettingsModal();
+    }
+  }
+
+  function onModeChange() {
+    const isRaw = document.getElementById("mode-raw").checked;
+    const resSection = document.getElementById("resolutions-config-section");
+    if (isRaw) {
+      resSection.style.display = "none";
+    } else {
+      resSection.style.display = "block";
+    }
+  }
+
+  async function saveSettings() {
+    const isRaw = document.getElementById("mode-raw").checked;
+    const resolutions = [];
+    if (document.getElementById("res-480p").checked) resolutions.push("480p");
+    if (document.getElementById("res-720p").checked) resolutions.push("720p");
+    if (document.getElementById("res-1080p").checked) resolutions.push("1080p");
+
+    if (!isRaw && resolutions.length === 0) {
+      alert("Please check at least one compression format or select Raw Mode.");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/stream/<%= stream.streamKey %>/settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          isRaw,
+          resolutions: resolutions.join(",")
+        })
+      });
+
+      if (!res.ok) throw new Error("Failed to save settings.");
+
+      // Update UI config summary panel
+      document.getElementById("config-summary-mode").textContent = isRaw ? "Raw (Direct Copy)" : "Transcoded";
+      const resRow = document.getElementById("config-summary-resolutions-row");
+      if (isRaw) {
+        resRow.style.display = "none";
+      } else {
+        resRow.style.display = "flex";
+        document.getElementById("config-summary-resolutions").textContent = resolutions.join(",");
+      }
+
+      closeSettingsModal();
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
   }
 </script>
 
