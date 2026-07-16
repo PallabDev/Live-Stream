@@ -1,670 +1,734 @@
 <%- include('header') %>
 
-<style>
-  .hidden-row { display: none !important; }
-  .flex-row-layout { display: flex; justify-content: space-between; }
-</style>
-
-<!-- Server-passed variables for JS (prevents IDE template parsing warnings) -->
-<div id="studio-config" 
-     data-stream-key="<%= stream.streamKey %>" 
-     data-is-live="<%= stream.isLive %>" 
-     style="display: none;">
-</div>
-
-<!-- Mobile Blocking Overlay -->
-<div id="mobile-block-overlay">
-  <div class="block-card">
-    <div class="block-icon">
-      <i class="ti ti-device-laptop"></i>
-    </div>
-    <h2>Desktop Screen Required</h2>
-    <p>
-      Broadcasting studio and dashboard configurations are only supported on desktop screens. Please open this link on a computer.
-    </p>
-    <a href="/dashboard" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.5rem; justify-content: center; width: 100%;">
-      <i class="ti ti-arrow-left"></i> Go to Dashboard
-    </a>
-  </div>
-</div>
-
-<div class="stream-grid">
-  <!-- Left Side: Streaming Preview and Controls -->
-  <div style="display: flex; flex-direction: column; gap: 1.5rem;">
-    <div class="glass-panel" style="padding: 1rem;">
-      <div class="video-container" style="position: relative; background: #000; border-radius: var(--radius); overflow: hidden; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center;">
-        
-        <!-- Video Element for local preview and movie playback -->
-        <video id="preview-player" class="video-element" playsinline controls style="display: none; width: 100%; height: 100%; object-fit: contain;"></video>
-        
-        <!-- Offline/Ready State Placeholder -->
-        <div id="preview-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem; color: var(--text-muted);">
-          <div id="placeholder-icon" class="badge-danger" style="width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin-bottom: 1.5rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3);">
-            <i class="ti ti-video-off" id="icon-element" style="color: var(--danger);"></i>
-          </div>
-          <h3 id="placeholder-title" style="margin-bottom: 0.5rem; font-size: 1.5rem; color: #fff;">No Media Selected</h3>
-          <p id="placeholder-text" style="max-width: 450px; font-size: 0.95rem; line-height: 1.6;">
-            Select a local movie file or share your screen using the control panel on the right, then click <strong>Go Live</strong> to start streaming.
-          </p>
-        </div>
-
-        <div class="video-overlay" style="position: absolute; top: 1rem; left: 1rem; display: flex; gap: 0.5rem; z-index: 10;">
-          <span id="status-badge" class="badge badge-danger">
-            <i class="ti ti-point-filled"></i> Offline
-          </span>
-          <span id="duration-badge" class="badge badge-primary" style="display: none;">
-            00:00:00
-          </span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Streaming Control Dock -->
-    <div style="display: flex; justify-content: center; margin-top: 0.5rem;">
-      <div class="control-dock" style="display: flex; gap: 1rem; background: rgba(30, 41, 59, 0.6); border: 1px solid var(--panel-border); padding: 0.75rem 1.5rem; border-radius: 50px; backdrop-filter: blur(10px); align-items: center;">
-        <button id="btn-golive" class="btn btn-primary" onclick="triggerGoLive()" disabled style="border-radius: 30px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 600; opacity: 0.5;">
-          <i class="ti ti-player-play"></i> Go Live
-        </button>
-        <button id="btn-settings" class="btn btn-secondary" onclick="openSettingsModal()" title="Stream Settings" style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center;">
-          <i class="ti ti-settings" style="font-size: 1.2rem;"></i>
-        </button>
-        <button id="btn-share" class="btn btn-secondary" onclick="copyViewerLink()" title="Copy Viewer Link" style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center;">
-          <i class="ti ti-share" style="font-size: 1.2rem;"></i>
-        </button>
-        <button id="btn-stop" class="btn btn-danger" onclick="triggerStopLive()" disabled style="border-radius: 30px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 600; opacity: 0.5;">
-          <i class="ti ti-player-stop"></i> Stop Live
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Right Side: Stream Configuration & Studio Controls -->
-  <div style="display: flex; flex-direction: column; gap: 1.5rem;">
-    <!-- Media Source Selector -->
-    <div class="glass-panel" style="padding: 1.5rem;">
-      <div class="card-header" style="margin-bottom: 1.25rem; padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.05);">
-        <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
-          <i class="ti ti-device-tv" style="color: var(--primary); font-size: 1.3rem;"></i> Studio Media Source
-        </h4>
-      </div>
-      
-      <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-        <input type="file" id="movie-file-input" accept="video/*" style="display: none;">
-        
-        <!-- Select Movie File Button -->
-        <button id="btn-select-file" class="btn btn-secondary" onclick="document.getElementById('movie-file-input').click()" style="justify-content: flex-start; border-radius: 12px; padding: 0.8rem 1.2rem; width: 100%;">
-          <i class="ti ti-movie" style="font-size: 1.2rem; color: var(--primary);"></i> Select Movie File
-        </button>
-
-        <!-- Share Screen Button -->
-        <button id="btn-select-screen" class="btn btn-secondary" onclick="startScreenShare()" style="justify-content: flex-start; border-radius: 12px; padding: 0.8rem 1.2rem; width: 100%;">
-          <i class="ti ti-screen-share" style="font-size: 1.2rem; color: var(--secondary);"></i> Share Desktop Screen
-        </button>
-
-        <!-- Download Raw Ingest Button (visible when offline) -->
-        <a id="btn-download-raw" class="btn btn-secondary" style="display: none; justify-content: flex-start; border-radius: 12px; padding: 0.8rem 1.2rem; width: 100%;" target="_blank">
-          <i class="ti ti-download" style="font-size: 1.2rem; color: var(--accent);"></i> Download Raw Ingest (MKV)
-        </a>
-
-        <!-- Active Source Info -->
-        <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: 12px; margin-top: 0.5rem;">
-          <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em;">Current Source</span>
-          <strong id="active-source-text" style="font-size: 0.9rem; color: #fff;">None Selected</strong>
-        </div>
-
-        <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem;">
-          <p style="color: var(--text-muted); font-size: 0.8rem; line-height: 1.5; margin: 0;">
-            <i class="ti ti-info-circle" style="color: var(--primary);"></i> 
-            <strong>Pro Tip:</strong> When sharing your screen, make sure to check the <strong>"Share system audio"</strong> checkbox in the browser popup to stream the movie sound!
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Active Configurations Summary -->
-    <div class="glass-panel" style="padding: 1.5rem;">
-      <div class="card-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem;">
-        <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
-          <i class="ti ti-adjustments" style="color: var(--secondary); font-size: 1.3rem;"></i> Active Config
-        </h4>
-      </div>
-      <ul style="list-style: none; padding: 0; margin: 0; font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.75rem;">
-        <li style="display: flex; justify-content: space-between;">
-          <span style="color: var(--text-muted);">Streaming Mode:</span>
-          <strong id="config-summary-mode"><%= stream.isRaw ? 'Raw (Direct Copy)' : 'Transcoded' %></strong>
-        </li>
-        <li id="config-summary-resolutions-row" class="<%= stream.isRaw ? 'hidden-row' : 'flex-row-layout' %>">
-          <span style="color: var(--text-muted);">Target Formats:</span>
-          <strong id="config-summary-resolutions"><%= stream.resolutions %></strong>
-        </li>
-        <li style="display: flex; justify-content: space-between;">
-          <span style="color: var(--text-muted);">Key Status:</span>
-          <span id="config-key-status" class="badge <%= stream.isLive ? 'badge-success' : 'badge-danger' %>" style="padding: 0.1rem 0.5rem; font-size: 0.75rem;">
-            <%= stream.isLive ? 'Authorized' : 'Locked' %>
-          </span>
-        </li>
-      </ul>
-    </div>
-  </div>
-</div>
-
-<!-- Settings Modal Popup -->
-<div id="settings-modal" class="modal-backdrop" style="display: none; position: fixed; inset: 0; z-index: 100; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(8px); transition: var(--transition);">
-  <div class="modal-content-wrapper" style="background: #1e293b; border: 1px solid var(--panel-border); border-radius: var(--radius); width: 100%; max-width: 480px; padding: 2rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); transform: scale(0.9); opacity: 0; transition: var(--transition);">
-    <div class="card-header" style="margin-bottom: 1.5rem; padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
-      <h4 style="font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: #fff;">
-        <i class="ti ti-settings" style="color: var(--warning);"></i> Stream Settings
-      </h4>
-      <button onclick="closeSettingsModal()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.25rem; display: flex; align-items: center; justify-content: center; transition: var(--transition);">
-        <i class="ti ti-x"></i>
-      </button>
-    </div>
-
-    <!-- Mode Selector: Raw vs Transcoded -->
-    <div class="form-group" style="margin-bottom: 1.5rem;">
-      <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Streaming Mode</label>
-      <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
-        <label style="display: flex; align-items: flex-start; gap: 0.75rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="radio" name="stream-mode" id="mode-raw" value="raw" <%= stream.isRaw ? 'checked' : '' %> onchange="onModeChange()" style="accent-color: var(--primary); width: 18px; height: 18px; margin-top: 0.15rem;">
-          <div style="display: flex; flex-direction: column;">
-            <span style="font-weight: 600; color: #fff;">Raw Mode (Zero-Transcode)</span>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">Pushes source output directly without re-encoding. Best for high-performance servers, lower CPU usage.</span>
-          </div>
-        </label>
-        <label style="display: flex; align-items: flex-start; gap: 0.75rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="radio" name="stream-mode" id="mode-transcode" value="transcode" <%= !stream.isRaw ? 'checked' : '' %> onchange="onModeChange()" style="accent-color: var(--primary); width: 18px; height: 18px; margin-top: 0.15rem;">
-          <div style="display: flex; flex-direction: column;">
-            <span style="font-weight: 600; color: #fff;">Transcoded Mode (Multi-Compression)</span>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">Generates multiple compression variants for adaptiveness (recommended for viewers on slower bandwidths).</span>
-          </div>
-        </label>
-      </div>
-    </div>
-
-    <!-- Transcoded Resolutions -->
-    <div id="resolutions-config-section" class="form-group <%= stream.isRaw ? 'hidden-row' : '' %>" style="margin-bottom: 1.5rem;">
-      <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Target Resolutions</label>
-      <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
-        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-480p" <%= stream.resolutions.includes('480p') ? 'checked' : '' %> style="accent-color: var(--primary); width: 16px; height: 16px;">
-          <span>480p SD (Mobile Friendly)</span>
-        </label>
-        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-720p" <%= stream.resolutions.includes('720p') ? 'checked' : '' %> style="accent-color: var(--primary); width: 16px; height: 16px;">
-          <span>720p HD (Balanced)</span>
-        </label>
-        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-1080p" <%= stream.resolutions.includes('1080p') ? 'checked' : '' %> style="accent-color: var(--primary); width: 16px; height: 16px;">
-          <span>1080p Full HD (High Quality)</span>
-        </label>
-      </div>
-    </div>
-
-    <div style="display: flex; justify-content: flex-end; margin-top: 2rem; gap: 0.75rem;">
-      <button class="btn btn-secondary" onclick="closeSettingsModal()" style="padding: 0.5rem 1.25rem; font-size: 0.9rem; border-radius: 8px;">
-        Cancel
-      </button>
-      <button class="btn btn-primary" onclick="saveSettings()" style="padding: 0.5rem 1.5rem; font-size: 0.9rem; border-radius: 8px;">
-        Save & Apply
-      </button>
-    </div>
-  </div>
-</div>
-
-<script>
-  // Read config properties initialized by server side (prevents IDE template syntax confusion)
-  const studioConfig = document.getElementById("studio-config");
-  const streamKey = studioConfig.dataset.streamKey;
-  let isLive = studioConfig.dataset.isLive === "true";
-
-  let isStreaming = false; // WebRTC Peer Connection is actively sending data
-  let streamStartTime = null;
-  let durationInterval = null;
-
-  let pc = null;
-  let captureStream = null;
-  let currentSourceType = null; // 'file' or 'screen'
-
-  const movieFileInput = document.getElementById("movie-file-input");
-  const previewPlayer = document.getElementById("preview-player");
-  const previewPlaceholder = document.getElementById("preview-placeholder");
-
-  // Handle local video file selection
-  movieFileInput.addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    // Reset current stream state if active
-    if (isStreaming) {
-      triggerStopLive();
-    }
-
-    // Stop active screen share tracks if any
-    stopMediaTracks();
-
-    const fileUrl = URL.createObjectURL(file);
-    previewPlayer.srcObject = null;
-    previewPlayer.src = fileUrl;
-    previewPlayer.load();
-
-    currentSourceType = 'file';
-    document.getElementById("active-source-text").textContent = `Movie File: ${file.name}`;
-    
-    // Show player preview, hide default state
-    previewPlayer.style.display = "block";
-    previewPlaceholder.style.display = "none";
-
-    updateUI();
-  });
-
-  // Handle local screen sharing
-  async function startScreenShare() {
-    try {
-      if (isStreaming) {
-        triggerStopLive();
-      }
-
-      stopMediaTracks();
-      if (movieFileInput.value) {
-        movieFileInput.value = "";
-        previewPlayer.src = "";
-      }
-
-      // Prompt screen capture with system audio request
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 30 }
-        },
-        audio: true
-      });
-
-      captureStream = stream;
-      previewPlayer.src = null;
-      previewPlayer.srcObject = stream;
-      previewPlayer.play().catch(e => console.log("Local preview play error:", e));
-
-      currentSourceType = 'screen';
-      document.getElementById("active-source-text").textContent = "Screen Sharing (with system audio)";
-
-      previewPlayer.style.display = "block";
-      previewPlaceholder.style.display = "none";
-
-      // Listen for the browser's native "Stop Sharing" button click
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.onended = () => {
-          console.log("Screen share track ended by browser controls.");
-          triggerStopLive();
-        };
-      }
-
-      updateUI();
-    } catch (err) {
-      alert("Screen sharing cancelled or failed: " + err.message);
-    }
-  }
-
-  function stopMediaTracks() {
-    if (captureStream) {
-      captureStream.getTracks().forEach(track => track.stop());
-      captureStream = null;
-    }
-  }
-
-  async function triggerGoLive() {
-    if (isStreaming) return;
-
-    let mediaStream = null;
-
-    // Obtain the media tracks based on selected source type
-    if (currentSourceType === 'file') {
-      // Capture stream from the playing video element (requesting full steady 30 fps)
-      if (previewPlayer.captureStream) {
-        mediaStream = previewPlayer.captureStream(30);
-      } else if (previewPlayer.mozCaptureStream) {
-        mediaStream = previewPlayer.mozCaptureStream(30);
-      } else {
-        alert("Your browser does not support video capturing API.");
-        return;
-      }
-
-      // Play the movie if it's paused so streaming starts
-      if (previewPlayer.paused) {
-        previewPlayer.play().catch(e => console.warn("Player play error:", e));
-      }
-    } else if (currentSourceType === 'screen') {
-      mediaStream = captureStream;
-    }
-
-    // Set video track contentHint to prioritize smooth motion and framerate
-    if (mediaStream) {
-      mediaStream.getVideoTracks().forEach(track => {
-        if ('contentHint' in track) {
-          track.contentHint = 'motion';
-          console.log("[WebRTC] Set video track contentHint to 'motion'");
+    <style>
+        .hidden-row {
+            display: none !important;
         }
-      });
-    }
 
-    if (!mediaStream || mediaStream.getTracks().length === 0) {
-      alert("No active media tracks found. Please play the video or start screen sharing first.");
-      return;
-    }
-
-    try {
-      // 1. Authorize stream in database
-      const authRes = await fetch(`/api/stream/${streamKey}/golive`, { method: "POST" });
-      if (!authRes.ok) throw new Error("Database authorization failed.");
-
-      isLive = true;
-      updateUI();
-
-      // 2. Establish WebRTC WHIP connection
-      console.log("[Studio WHIP] Connecting to MediaMTX WHIP endpoint...");
-      pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-      });
-
-      // Track PC state changes
-      pc.onconnectionstatechange = () => {
-        console.log("[WebRTC state]:", pc.connectionState);
-        if (pc.connectionState === 'connected') {
-          isStreaming = true;
-          updateUI();
-          
-          // Optimize WebRTC video sender encoding parameters for high-quality movie streaming
-          try {
-            const senders = pc.getSenders();
-            senders.forEach(sender => {
-              if (sender.track && sender.track.kind === 'video') {
-                const parameters = sender.getParameters();
-                if (parameters && parameters.encodings && parameters.encodings.length > 0) {
-                  parameters.encodings[0].maxBitrate = 8000000; // 8 Mbps
-                  parameters.encodings[0].maxFramerate = 30; // Force 30fps
-                  parameters.encodings[0].scaleResolutionDownBy = 1.0; // Prevent scaling down
-                  parameters.degradationPreference = 'maintain-resolution'; // Prioritize resolution quality over adaptive latency drops
-                  
-                  sender.setParameters(parameters).then(() => {
-                    console.log("[WebRTC Sender] Configured: 8 Mbps, maxFramerate=30, scale=1.0, degradationPreference=maintain-resolution.");
-                  }).catch(e => console.warn("Failed to set sender parameters:", e));
-                }
-              }
-            });
-          } catch (err) {
-            console.warn("Failed to configure WebRTC sender parameters:", err);
-          }
-
-          // Start stream duration counter
-          streamStartTime = Date.now();
-          document.getElementById("duration-badge").style.display = "inline-flex";
-          if (durationInterval) clearInterval(durationInterval);
-          durationInterval = setInterval(updateDuration, 1000);
-        } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-          triggerStopLive();
+        .flex-row-layout {
+            display: flex;
+            justify-content: space-between;
         }
-      };
+    </style>
 
-      // Add local captured tracks to peer connection
-      mediaStream.getTracks().forEach(track => {
-        pc.addTrack(track, mediaStream);
-      });
+    <!-- Server-passed variables for JS (prevents IDE template parsing warnings) -->
+    <div id="studio-config" data-stream-key="<%= stream.streamKey %>" data-is-live="<%= stream.isLive %>"
+        style="display: none;">
+    </div>
 
-      // Prefer H.264 for high-quality WebRTC ingest
-      try {
-        if (typeof RTCRtlTransceiver !== 'undefined' && 'setCodecPreferences' in RTCRtlTransceiver.prototype) {
-          const transceivers = pc.getTransceivers();
-          transceivers.forEach(transceiver => {
-            if (transceiver.sender && transceiver.sender.track && transceiver.sender.track.kind === 'video') {
-              const capabilities = RTCRtlSender.getCapabilities('video');
-              if (capabilities && capabilities.codecs) {
-                const h264Codecs = capabilities.codecs.filter(c => 
-                  c.mimeType.toLowerCase() === 'video/h264' && 
-                  c.sdpFmtpLine && c.sdpFmtpLine.includes('profile-level-id=42e01f')
-                );
-                if (h264Codecs.length > 0) {
-                  const otherCodecs = capabilities.codecs.filter(c => c.mimeType.toLowerCase() !== 'video/h264');
-                  transceiver.setCodecPreferences([...h264Codecs, ...otherCodecs]);
-                  console.log("[WebRTC Codec] H.264 preferred successfully.");
-                }
-              }
+    <!-- Mobile Blocking Overlay -->
+    <div id="mobile-block-overlay">
+        <div class="block-card">
+            <div class="block-icon">
+                <i class="ti ti-device-laptop"></i>
+            </div>
+            <h2>Desktop Screen Required</h2>
+            <p>
+                Broadcasting studio and dashboard configurations are only supported on desktop screens. Please open this
+                link on a computer.
+            </p>
+            <a href="/dashboard" class="btn btn-primary"
+                style="display: inline-flex; align-items: center; gap: 0.5rem; justify-content: center; width: 100%;">
+                <i class="ti ti-arrow-left"></i> Go to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <div class="stream-grid">
+        <!-- Left Side: Streaming Preview and Controls -->
+        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+            <div class="glass-panel" style="padding: 1rem;">
+                <div class="video-container"
+                    style="position: relative; background: #000; border-radius: var(--radius); overflow: hidden; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center;">
+
+                    <!-- Video Element for local preview and movie playback -->
+                    <video id="preview-player" class="video-element" playsinline controls
+                        style="display: none; width: 100%; height: 100%; object-fit: contain;"></video>
+
+                    <!-- Offline/Ready State Placeholder -->
+                    <div id="preview-placeholder"
+                        style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem; color: var(--text-muted);">
+                        <div id="placeholder-icon" class="badge-danger"
+                            style="width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin-bottom: 1.5rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3);">
+                            <i class="ti ti-video-off" id="icon-element" style="color: var(--danger);"></i>
+                        </div>
+                        <h3 id="placeholder-title" style="margin-bottom: 0.5rem; font-size: 1.5rem; color: #fff;">No
+                            Media Selected</h3>
+                        <p id="placeholder-text" style="max-width: 450px; font-size: 0.95rem; line-height: 1.6;">
+                            Select a local movie file or share your screen using the control panel on the right, then
+                            click <strong>Go Live</strong> to start streaming.
+                        </p>
+                    </div>
+
+                    <div class="video-overlay"
+                        style="position: absolute; top: 1rem; left: 1rem; display: flex; gap: 0.5rem; z-index: 10;">
+                        <span id="status-badge" class="badge badge-danger">
+                            <i class="ti ti-point-filled"></i> Offline
+                        </span>
+                        <span id="duration-badge" class="badge badge-primary" style="display: none;">
+                            00:00:00
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Streaming Control Dock -->
+            <div style="display: flex; justify-content: center; margin-top: 0.5rem;">
+                <div class="control-dock"
+                    style="display: flex; gap: 1rem; background: rgba(30, 41, 59, 0.6); border: 1px solid var(--panel-border); padding: 0.75rem 1.5rem; border-radius: 50px; backdrop-filter: blur(10px); align-items: center;">
+                    <button id="btn-golive" class="btn btn-primary" onclick="triggerGoLive()" disabled
+                        style="border-radius: 30px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 600; opacity: 0.5;">
+                        <i class="ti ti-player-play"></i> Go Live
+                    </button>
+                    <button id="btn-settings" class="btn btn-secondary" onclick="openSettingsModal()"
+                        title="Stream Settings"
+                        style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center;">
+                        <i class="ti ti-settings" style="font-size: 1.2rem;"></i>
+                    </button>
+                    <button id="btn-share" class="btn btn-secondary" onclick="copyViewerLink()" title="Copy Viewer Link"
+                        style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center;">
+                        <i class="ti ti-share" style="font-size: 1.2rem;"></i>
+                    </button>
+                    <button id="btn-stop" class="btn btn-danger" onclick="triggerStopLive()" disabled
+                        style="border-radius: 30px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 600; opacity: 0.5;">
+                        <i class="ti ti-player-stop"></i> Stop Live
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side: Stream Configuration & Studio Controls -->
+        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+            <!-- Media Source Selector -->
+            <div class="glass-panel" style="padding: 1.5rem;">
+                <div class="card-header"
+                    style="margin-bottom: 1.25rem; padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+                        <i class="ti ti-device-tv" style="color: var(--primary); font-size: 1.3rem;"></i> Studio Media
+                        Source
+                    </h4>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+                    <input type="file" id="movie-file-input" accept="video/*" style="display: none;">
+
+                    <!-- Select Movie File Button -->
+                    <button id="btn-select-file" class="btn btn-secondary"
+                        onclick="document.getElementById('movie-file-input').click()"
+                        style="justify-content: flex-start; border-radius: 12px; padding: 0.8rem 1.2rem; width: 100%;">
+                        <i class="ti ti-movie" style="font-size: 1.2rem; color: var(--primary);"></i> Select Movie File
+                    </button>
+
+                    <!-- Share Screen Button -->
+                    <button id="btn-select-screen" class="btn btn-secondary" onclick="startScreenShare()"
+                        style="justify-content: flex-start; border-radius: 12px; padding: 0.8rem 1.2rem; width: 100%;">
+                        <i class="ti ti-screen-share" style="font-size: 1.2rem; color: var(--secondary);"></i> Share
+                        Desktop Screen
+                    </button>
+
+                    <!-- Download Raw Ingest Button (visible when offline) -->
+                    <a id="btn-download-raw" class="btn btn-secondary"
+                        style="display: none; justify-content: flex-start; border-radius: 12px; padding: 0.8rem 1.2rem; width: 100%;"
+                        target="_blank">
+                        <i class="ti ti-download" style="font-size: 1.2rem; color: var(--accent);"></i> Download Raw
+                        Ingest (MKV)
+                    </a>
+
+                    <!-- Active Source Info -->
+                    <div
+                        style="background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: 12px; margin-top: 0.5rem;">
+                        <span
+                            style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em;">Current
+                            Source</span>
+                        <strong id="active-source-text" style="font-size: 0.9rem; color: #fff;">None Selected</strong>
+                    </div>
+
+                    <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem;">
+                        <p style="color: var(--text-muted); font-size: 0.8rem; line-height: 1.5; margin: 0;">
+                            <i class="ti ti-info-circle" style="color: var(--primary);"></i>
+                            <strong>Pro Tip:</strong> When sharing your screen, make sure to check the <strong>"Share
+                                system audio"</strong> checkbox in the browser popup to stream the movie sound!
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Configurations Summary -->
+            <div class="glass-panel" style="padding: 1.5rem;">
+                <div class="card-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem;">
+                    <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+                        <i class="ti ti-adjustments" style="color: var(--secondary); font-size: 1.3rem;"></i> Active
+                        Config
+                    </h4>
+                </div>
+                <ul
+                    style="list-style: none; padding: 0; margin: 0; font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.75rem;">
+                    <li style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-muted);">Streaming Mode:</span>
+                        <strong id="config-summary-mode">
+                            <%= stream.isRaw ? 'Raw (Direct Copy)' : 'Transcoded' %>
+                        </strong>
+                    </li>
+                    <li id="config-summary-resolutions-row"
+                        class="<%= stream.isRaw ? 'hidden-row' : 'flex-row-layout' %>">
+                        <span style="color: var(--text-muted);">Target Formats:</span>
+                        <strong id="config-summary-resolutions">
+                            <%= stream.resolutions %>
+                        </strong>
+                    </li>
+                    <li style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-muted);">Key Status:</span>
+                        <span id="config-key-status"
+                            class="badge <%= stream.isLive ? 'badge-success' : 'badge-danger' %>"
+                            style="padding: 0.1rem 0.5rem; font-size: 0.75rem;">
+                            <%= stream.isLive ? 'Authorized' : 'Locked' %>
+                        </span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal Popup -->
+    <div id="settings-modal" class="modal-backdrop"
+        style="display: none; position: fixed; inset: 0; z-index: 100; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(8px); transition: var(--transition);">
+        <div class="modal-content-wrapper"
+            style="background: #1e293b; border: 1px solid var(--panel-border); border-radius: var(--radius); width: 100%; max-width: 480px; padding: 2rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); transform: scale(0.9); opacity: 0; transition: var(--transition);">
+            <div class="card-header"
+                style="margin-bottom: 1.5rem; padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
+                <h4 style="font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: #fff;">
+                    <i class="ti ti-settings" style="color: var(--warning);"></i> Stream Settings
+                </h4>
+                <button onclick="closeSettingsModal()"
+                    style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.25rem; display: flex; align-items: center; justify-content: center; transition: var(--transition);">
+                    <i class="ti ti-x"></i>
+                </button>
+            </div>
+
+            <!-- Mode Selector: Raw vs Transcoded -->
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Streaming
+                    Mode</label>
+                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+                    <label
+                        style="display: flex; align-items: flex-start; gap: 0.75rem; font-size: 0.95rem; cursor: pointer;">
+                        <input type="radio" name="stream-mode" id="mode-raw" value="raw" <%=stream.isRaw ? 'checked'
+                            : '' %> onchange="onModeChange()" style="accent-color: var(--primary); width: 18px; height:
+                        18px; margin-top: 0.15rem;">
+                        <div style="display: flex; flex-direction: column;">
+                            <span style="font-weight: 600; color: #fff;">Raw Mode (Zero-Transcode)</span>
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Pushes source output directly
+                                without re-encoding. Best for high-performance servers, lower CPU usage.</span>
+                        </div>
+                    </label>
+                    <label
+                        style="display: flex; align-items: flex-start; gap: 0.75rem; font-size: 0.95rem; cursor: pointer;">
+                        <input type="radio" name="stream-mode" id="mode-transcode" value="transcode" <%=!stream.isRaw
+                            ? 'checked' : '' %> onchange="onModeChange()" style="accent-color: var(--primary); width:
+                        18px; height: 18px; margin-top: 0.15rem;">
+                        <div style="display: flex; flex-direction: column;">
+                            <span style="font-weight: 600; color: #fff;">Transcoded Mode (Multi-Compression)</span>
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Generates multiple compression
+                                variants for adaptiveness (recommended for viewers on slower bandwidths).</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Transcoded Resolutions -->
+            <div id="resolutions-config-section" class="form-group <%= stream.isRaw ? 'hidden-row' : '' %>"
+                style="margin-bottom: 1.5rem;">
+                <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Target
+                    Resolutions</label>
+                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+                    <label
+                        style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
+                        <input type="checkbox" id="res-480p" <%=stream.resolutions.includes('480p') ? 'checked' : '' %>
+                        style="accent-color: var(--primary); width: 16px; height: 16px;">
+                        <span>480p SD (Mobile Friendly)</span>
+                    </label>
+                    <label
+                        style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
+                        <input type="checkbox" id="res-720p" <%=stream.resolutions.includes('720p') ? 'checked' : '' %>
+                        style="accent-color: var(--primary); width: 16px; height: 16px;">
+                        <span>720p HD (Balanced)</span>
+                    </label>
+                    <label
+                        style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
+                        <input type="checkbox" id="res-1080p" <%=stream.resolutions.includes('1080p') ? 'checked' : ''
+                            %> style="accent-color: var(--primary); width: 16px; height: 16px;">
+                        <span>1080p Full HD (High Quality)</span>
+                    </label>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; margin-top: 2rem; gap: 0.75rem;">
+                <button class="btn btn-secondary" onclick="closeSettingsModal()"
+                    style="padding: 0.5rem 1.25rem; font-size: 0.9rem; border-radius: 8px;">
+                    Cancel
+                </button>
+                <button class="btn btn-primary" onclick="saveSettings()"
+                    style="padding: 0.5rem 1.5rem; font-size: 0.9rem; border-radius: 8px;">
+                    Save & Apply
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Read config properties initialized by server side (prevents IDE template syntax confusion)
+        const studioConfig = document.getElementById("studio-config");
+        const streamKey = studioConfig.dataset.streamKey;
+        let isLive = studioConfig.dataset.isLive === "true";
+
+        let isStreaming = false; // WebRTC Peer Connection is actively sending data
+        let streamStartTime = null;
+        let durationInterval = null;
+
+        let pc = null;
+        let captureStream = null;
+        let currentSourceType = null; // 'file' or 'screen'
+
+        const movieFileInput = document.getElementById("movie-file-input");
+        const previewPlayer = document.getElementById("preview-player");
+        const previewPlaceholder = document.getElementById("preview-placeholder");
+
+        // Handle local video file selection
+        movieFileInput.addEventListener("change", (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Reset current stream state if active
+            if (isStreaming) {
+                triggerStopLive();
             }
-          });
+
+            // Stop active screen share tracks if any
+            stopMediaTracks();
+
+            const fileUrl = URL.createObjectURL(file);
+            previewPlayer.srcObject = null;
+            previewPlayer.src = fileUrl;
+            previewPlayer.load();
+
+            currentSourceType = 'file';
+            document.getElementById("active-source-text").textContent = `Movie File: ${file.name}`;
+
+            // Show player preview, hide default state
+            previewPlayer.style.display = "block";
+            previewPlaceholder.style.display = "none";
+
+            updateUI();
+        });
+
+        // Handle local screen sharing
+        async function startScreenShare() {
+            try {
+                if (isStreaming) {
+                    triggerStopLive();
+                }
+
+                stopMediaTracks();
+                if (movieFileInput.value) {
+                    movieFileInput.value = "";
+                    previewPlayer.src = "";
+                }
+
+                // Prompt screen capture with system audio request
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 30 }
+                    },
+                    audio: true
+                });
+
+                captureStream = stream;
+                previewPlayer.src = null;
+                previewPlayer.srcObject = stream;
+                previewPlayer.play().catch(e => console.log("Local preview play error:", e));
+
+                currentSourceType = 'screen';
+                document.getElementById("active-source-text").textContent = "Screen Sharing (with system audio)";
+
+                previewPlayer.style.display = "block";
+                previewPlaceholder.style.display = "none";
+
+                // Listen for the browser's native "Stop Sharing" button click
+                const videoTrack = stream.getVideoTracks()[0];
+                if (videoTrack) {
+                    videoTrack.onended = () => {
+                        console.log("Screen share track ended by browser controls.");
+                        triggerStopLive();
+                    };
+                }
+
+                updateUI();
+            } catch (err) {
+                alert("Screen sharing cancelled or failed: " + err.message);
+            }
         }
-      } catch (codecErr) {
-        console.warn("Codec preference configuration ignored:", codecErr);
-      }
 
-      // Create and negotiate WebRTC SDP Offer
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+        function stopMediaTracks() {
+            if (captureStream) {
+                captureStream.getTracks().forEach(track => track.stop());
+                captureStream = null;
+            }
+        }
 
-      const whipUrl = `/whip/live/${streamKey}/whip`;
-      const whipRes = await fetch(whipUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/sdp"
-        },
-        body: offer.sdp
-      });
+        async function triggerGoLive() {
+            if (isStreaming) return;
 
-      if (!whipRes.ok) {
-        const errText = await whipRes.text();
-        throw new Error(`WHIP server rejected connection: ${whipRes.status} ${errText}`);
-      }
+            let mediaStream = null;
 
-      const answerSdp = await whipRes.text();
-      await pc.setRemoteDescription(new RTCSessionDescription({
-        type: "answer",
-        sdp: answerSdp
-      }));
+            // Obtain the media tracks based on selected source type
+            if (currentSourceType === 'file') {
+                // Capture stream from the playing video element (requesting full steady 30 fps)
+                if (previewPlayer.captureStream) {
+                    mediaStream = previewPlayer.captureStream(30);
+                } else if (previewPlayer.mozCaptureStream) {
+                    mediaStream = previewPlayer.mozCaptureStream(30);
+                } else {
+                    alert("Your browser does not support video capturing API.");
+                    return;
+                }
 
-    } catch (err) {
-      alert("Broadcasting failed: " + err.message);
-      triggerStopLive();
-    }
-  }
+                // Play the movie if it's paused so streaming starts
+                if (previewPlayer.paused) {
+                    previewPlayer.play().catch(e => console.warn("Player play error:", e));
+                }
+            } else if (currentSourceType === 'screen') {
+                mediaStream = captureStream;
+            }
 
-  async function triggerStopLive() {
-    console.log("[Studio WHIP] Stopping stream...");
-    
-    // Stop WebRTC peer connection
-    if (pc) {
-      pc.close();
-      pc = null;
-    }
+            // Set video track contentHint to prioritize smooth motion and framerate
+            if (mediaStream) {
+                mediaStream.getVideoTracks().forEach(track => {
+                    if ('contentHint' in track) {
+                        track.contentHint = 'motion';
+                        console.log("[WebRTC] Set video track contentHint to 'motion'");
+                    }
+                });
+            }
 
-    // Stop duration timers
-    if (durationInterval) {
-      clearInterval(durationInterval);
-      durationInterval = null;
-    }
-    document.getElementById("duration-badge").style.display = "none";
+            if (!mediaStream || mediaStream.getTracks().length === 0) {
+                alert("No active media tracks found. Please play the video or start screen sharing first.");
+                return;
+            }
 
-    isStreaming = false;
+            try {
+                // 1. Authorize stream in database
+                const authRes = await fetch(`/api/stream/${streamKey}/golive`, { method: "POST" });
+                if (!authRes.ok) throw new Error("Database authorization failed.");
 
-    // Call Stop endpoint on database (revokes auth and kicks media session)
-    try {
-      await fetch(`/api/stream/${streamKey}/stop`, { method: "POST" });
-    } catch (_) {}
+                isLive = true;
+                updateUI();
 
-    isLive = false;
-    updateUI();
-  }
+                // 2. Establish WebRTC WHIP connection
+                console.log("[Studio WHIP] Connecting to MediaMTX WHIP endpoint...");
+                pc = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
 
-  function updateUI() {
-    const statusBadge = document.getElementById("status-badge");
-    const btnGoLive = document.getElementById("btn-golive");
-    const btnStop = document.getElementById("btn-stop");
-    const playerEl = document.getElementById("preview-player");
-    const placeholderEl = document.getElementById("preview-placeholder");
-    const configKeyStatus = document.getElementById("config-key-status");
-    
-    const iconElement = document.getElementById("icon-element");
-    const placeholderTitle = document.getElementById("placeholder-title");
-    const placeholderText = document.getElementById("placeholder-text");
+                // Track PC state changes
+                pc.onconnectionstatechange = () => {
+                    console.log("[WebRTC state]:", pc.connectionState);
+                    if (pc.connectionState === 'connected') {
+                        isStreaming = true;
+                        updateUI();
 
-    const hasMediaSelected = (currentSourceType !== null);
+                        // Optimize WebRTC video sender encoding parameters for high-quality movie streaming
+                        try {
+                            const senders = pc.getSenders();
+                            senders.forEach(sender => {
+                                if (sender.track && sender.track.kind === 'video') {
+                                    const parameters = sender.getParameters();
+                                    if (parameters && parameters.encodings && parameters.encodings.length > 0) {
+                                        parameters.encodings[0].maxBitrate = 8000000; // 8 Mbps
+                                        parameters.encodings[0].maxFramerate = 30; // Force 30fps
+                                        parameters.encodings[0].scaleResolutionDownBy = 1.0; // Prevent scaling down
+                                        parameters.degradationPreference = 'maintain-resolution'; // Prioritize resolution quality over adaptive latency drops
 
-    if (isStreaming) {
-      // Stream is actively broadcasting
-      statusBadge.className = "badge badge-success";
-      statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
-      
-      btnGoLive.disabled = true;
-      btnGoLive.style.opacity = "0.5";
-      btnStop.disabled = false;
-      btnStop.style.opacity = "1";
-    } else if (isLive) {
-      // DB authorized, establishing WebRTC connection
-      statusBadge.className = "badge badge-primary";
-      statusBadge.innerHTML = '<i class="ti ti-loader animate-spin"></i> Connecting';
-      
-      btnGoLive.disabled = true;
-      btnGoLive.style.opacity = "0.5";
-      btnStop.disabled = false;
-      btnStop.style.opacity = "1";
-    } else {
-      // Offline (either has preview or completely empty)
-      statusBadge.className = "badge badge-danger";
-      statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> Offline';
-      
-      if (hasMediaSelected) {
-        btnGoLive.disabled = false;
-        btnGoLive.style.opacity = "1";
-      } else {
-        btnGoLive.disabled = true;
-        btnGoLive.style.opacity = "0.5";
-      }
+                                        sender.setParameters(parameters).then(() => {
+                                            console.log("[WebRTC Sender] Configured: 8 Mbps, maxFramerate=30, scale=1.0, degradationPreference=maintain-resolution.");
+                                        }).catch(e => console.warn("Failed to set sender parameters:", e));
+                                    }
+                                }
+                            });
+                        } catch (err) {
+                            console.warn("Failed to configure WebRTC sender parameters:", err);
+                        }
 
-      btnStop.disabled = true;
-      btnStop.style.opacity = "0.5";
-    }
+                        // Start stream duration counter
+                        streamStartTime = Date.now();
+                        document.getElementById("duration-badge").style.display = "inline-flex";
+                        if (durationInterval) clearInterval(durationInterval);
+                        durationInterval = setInterval(updateDuration, 1000);
+                    } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                        triggerStopLive();
+                    }
+                };
 
-    const downloadRawBtn = document.getElementById("btn-download-raw");
-    if (isStreaming || isLive) {
-      downloadRawBtn.style.display = "none";
-    } else {
-      downloadRawBtn.style.display = "inline-flex";
-      downloadRawBtn.href = `/media/raw_${streamKey}.mkv`;
-    }
+                // Add local captured tracks to peer connection
+                mediaStream.getTracks().forEach(track => {
+                    pc.addTrack(track, mediaStream);
+                });
 
-    if (isLive || isStreaming) {
-      configKeyStatus.className = "badge badge-success";
-      configKeyStatus.textContent = "Authorized";
-    } else {
-      configKeyStatus.className = "badge badge-danger";
-      configKeyStatus.textContent = "Locked";
-    }
+                // Prefer H.264 for high-quality WebRTC ingest
+                try {
+                    if (typeof RTCRtlTransceiver !== 'undefined' && 'setCodecPreferences' in RTCRtlTransceiver.prototype) {
+                        const transceivers = pc.getTransceivers();
+                        transceivers.forEach(transceiver => {
+                            if (transceiver.sender && transceiver.sender.track && transceiver.sender.track.kind === 'video') {
+                                const capabilities = RTCRtlSender.getCapabilities('video');
+                                if (capabilities && capabilities.codecs) {
+                                    const h264Codecs = capabilities.codecs.filter(c =>
+                                        c.mimeType.toLowerCase() === 'video/h264' &&
+                                        c.sdpFmtpLine && c.sdpFmtpLine.includes('profile-level-id=42e01f')
+                                    );
+                                    if (h264Codecs.length > 0) {
+                                        const otherCodecs = capabilities.codecs.filter(c => c.mimeType.toLowerCase() !== 'video/h264');
+                                        transceiver.setCodecPreferences([...h264Codecs, ...otherCodecs]);
+                                        console.log("[WebRTC Codec] H.264 preferred successfully.");
+                                    }
+                                }
+                            }
+                        });
+                    }
+                } catch (codecErr) {
+                    console.warn("Codec preference configuration ignored:", codecErr);
+                }
 
-    // Update placeholder text if media selection changes
-    if (!hasMediaSelected) {
-      playerEl.style.display = "none";
-      placeholderEl.style.display = "flex";
-      iconElement.className = "ti ti-video-off";
-      iconElement.style.color = "var(--danger)";
-      placeholderTitle.textContent = "No Media Selected";
-      placeholderText.innerHTML = 'Select a local movie file or share your screen using the control panel on the right, then click <strong>Go Live</strong> to start streaming.';
-    }
-  }
+                // Create and negotiate WebRTC SDP Offer
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
 
-  function updateDuration() {
-    if (!streamStartTime) return;
-    const elapsedMs = Date.now() - streamStartTime;
-    const totalSecs = Math.floor(elapsedMs / 1000);
-    const hrs = Math.floor(totalSecs / 3600).toString().padStart(2, '0');
-    const mins = Math.floor((totalSecs % 3600) / 60).toString().padStart(2, '0');
-    const secs = (totalSecs % 60).toString().padStart(2, '0');
-    document.getElementById('duration-badge').textContent = `${hrs}:${mins}:${secs}`;
-  }
+                const whipUrl = `/whip/live/${streamKey}/whip`;
+                const whipRes = await fetch(whipUrl, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/sdp"
+                    },
+                    body: offer.sdp
+                });
 
-  function copyViewerLink() {
-    const link = window.location.origin + "/live/" + streamKey;
-    navigator.clipboard.writeText(link).then(() => {
-      alert("Viewer link copied to clipboard!");
-    }).catch(err => {
-      console.error("Copy failed:", err);
-    });
-  }
+                if (!whipRes.ok) {
+                    const errText = await whipRes.text();
+                    throw new Error(`WHIP server rejected connection: ${whipRes.status} ${errText}`);
+                }
 
-  // Modal open / close handlers
-  function openSettingsModal() {
-    const modal = document.getElementById("settings-modal");
-    modal.style.display = "flex";
-    setTimeout(() => {
-      modal.firstElementChild.style.transform = "scale(1)";
-      modal.firstElementChild.style.opacity = "1";
-    }, 50);
-  }
+                const answerSdp = await whipRes.text();
+                await pc.setRemoteDescription(new RTCSessionDescription({
+                    type: "answer",
+                    sdp: answerSdp
+                }));
 
-  function closeSettingsModal() {
-    const modal = document.getElementById("settings-modal");
-    modal.firstElementChild.style.transform = "scale(0.9)";
-    modal.firstElementChild.style.opacity = "0";
-    setTimeout(() => {
-      modal.style.display = "none";
-    }, 200);
-  }
+            } catch (err) {
+                alert("Broadcasting failed: " + err.message);
+                triggerStopLive();
+            }
+        }
 
-  window.onclick = function(event) {
-    const modal = document.getElementById("settings-modal");
-    if (event.target == modal) {
-      closeSettingsModal();
-    }
-  }
+        async function triggerStopLive() {
+            console.log("[Studio WHIP] Stopping stream...");
 
-  function onModeChange() {
-    const isRaw = document.getElementById("mode-raw").checked;
-    const resSection = document.getElementById("resolutions-config-section");
-    if (isRaw) {
-      resSection.classList.add("hidden-row");
-    } else {
-      resSection.classList.remove("hidden-row");
-    }
-  }
+            // Stop WebRTC peer connection
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
 
-  async function saveSettings() {
-    const isRaw = document.getElementById("mode-raw").checked;
-    const resolutions = [];
-    if (document.getElementById("res-480p").checked) resolutions.push("480p");
-    if (document.getElementById("res-720p").checked) resolutions.push("720p");
-    if (document.getElementById("res-1080p").checked) resolutions.push("1080p");
+            // Stop duration timers
+            if (durationInterval) {
+                clearInterval(durationInterval);
+                durationInterval = null;
+            }
+            document.getElementById("duration-badge").style.display = "none";
 
-    if (!isRaw && resolutions.length === 0) {
-      alert("Please check at least one compression format or select Raw Mode.");
-      return;
-    }
+            isStreaming = false;
 
-    try {
-      const res = await fetch(`/api/stream/${streamKey}/settings`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          isRaw,
-          resolutions: resolutions.join(",")
-        })
-      });
+            // Call Stop endpoint on database (revokes auth and kicks media session)
+            try {
+                await fetch(`/api/stream/${streamKey}/stop`, { method: "POST" });
+            } catch (_) { }
 
-      if (!res.ok) throw new Error("Failed to save settings.");
+            isLive = false;
+            updateUI();
+        }
 
-      // Update UI config summary panel
-      document.getElementById("config-summary-mode").textContent = isRaw ? "Raw (Direct Copy)" : "Transcoded";
-      const resRow = document.getElementById("config-summary-resolutions-row");
-      if (isRaw) {
-        resRow.className = "hidden-row";
-      } else {
-        resRow.className = "flex-row-layout";
-        document.getElementById("config-summary-resolutions").textContent = resolutions.join(",");
-      }
+        function updateUI() {
+            const statusBadge = document.getElementById("status-badge");
+            const btnGoLive = document.getElementById("btn-golive");
+            const btnStop = document.getElementById("btn-stop");
+            const playerEl = document.getElementById("preview-player");
+            const placeholderEl = document.getElementById("preview-placeholder");
+            const configKeyStatus = document.getElementById("config-key-status");
 
-      closeSettingsModal();
-    } catch (err) {
-      alert("Error: " + err.message);
-    }
-  }
-</script>
+            const iconElement = document.getElementById("icon-element");
+            const placeholderTitle = document.getElementById("placeholder-title");
+            const placeholderText = document.getElementById("placeholder-text");
 
-<%- include('footer') %>
+            const hasMediaSelected = (currentSourceType !== null);
+
+            if (isStreaming) {
+                // Stream is actively broadcasting
+                statusBadge.className = "badge badge-success";
+                statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
+
+                btnGoLive.disabled = true;
+                btnGoLive.style.opacity = "0.5";
+                btnStop.disabled = false;
+                btnStop.style.opacity = "1";
+            } else if (isLive) {
+                // DB authorized, establishing WebRTC connection
+                statusBadge.className = "badge badge-primary";
+                statusBadge.innerHTML = '<i class="ti ti-loader animate-spin"></i> Connecting';
+
+                btnGoLive.disabled = true;
+                btnGoLive.style.opacity = "0.5";
+                btnStop.disabled = false;
+                btnStop.style.opacity = "1";
+            } else {
+                // Offline (either has preview or completely empty)
+                statusBadge.className = "badge badge-danger";
+                statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> Offline';
+
+                if (hasMediaSelected) {
+                    btnGoLive.disabled = false;
+                    btnGoLive.style.opacity = "1";
+                } else {
+                    btnGoLive.disabled = true;
+                    btnGoLive.style.opacity = "0.5";
+                }
+
+                btnStop.disabled = true;
+                btnStop.style.opacity = "0.5";
+            }
+
+            const downloadRawBtn = document.getElementById("btn-download-raw");
+            if (isStreaming || isLive) {
+                downloadRawBtn.style.display = "none";
+            } else {
+                downloadRawBtn.style.display = "inline-flex";
+                downloadRawBtn.href = `/media/raw_${streamKey}.mkv`;
+            }
+
+            if (isLive || isStreaming) {
+                configKeyStatus.className = "badge badge-success";
+                configKeyStatus.textContent = "Authorized";
+            } else {
+                configKeyStatus.className = "badge badge-danger";
+                configKeyStatus.textContent = "Locked";
+            }
+
+            // Update placeholder text if media selection changes
+            if (!hasMediaSelected) {
+                playerEl.style.display = "none";
+                placeholderEl.style.display = "flex";
+                iconElement.className = "ti ti-video-off";
+                iconElement.style.color = "var(--danger)";
+                placeholderTitle.textContent = "No Media Selected";
+                placeholderText.innerHTML = 'Select a local movie file or share your screen using the control panel on the right, then click <strong>Go Live</strong> to start streaming.';
+            }
+        }
+
+        function updateDuration() {
+            if (!streamStartTime) return;
+            const elapsedMs = Date.now() - streamStartTime;
+            const totalSecs = Math.floor(elapsedMs / 1000);
+            const hrs = Math.floor(totalSecs / 3600).toString().padStart(2, '0');
+            const mins = Math.floor((totalSecs % 3600) / 60).toString().padStart(2, '0');
+            const secs = (totalSecs % 60).toString().padStart(2, '0');
+            document.getElementById('duration-badge').textContent = `${hrs}:${mins}:${secs}`;
+        }
+
+        function copyViewerLink() {
+            const link = window.location.origin + "/live/" + streamKey;
+            navigator.clipboard.writeText(link).then(() => {
+                alert("Viewer link copied to clipboard!");
+            }).catch(err => {
+                console.error("Copy failed:", err);
+            });
+        }
+
+        // Modal open / close handlers
+        function openSettingsModal() {
+            const modal = document.getElementById("settings-modal");
+            modal.style.display = "flex";
+            setTimeout(() => {
+                modal.firstElementChild.style.transform = "scale(1)";
+                modal.firstElementChild.style.opacity = "1";
+            }, 50);
+        }
+
+        function closeSettingsModal() {
+            const modal = document.getElementById("settings-modal");
+            modal.firstElementChild.style.transform = "scale(0.9)";
+            modal.firstElementChild.style.opacity = "0";
+            setTimeout(() => {
+                modal.style.display = "none";
+            }, 200);
+        }
+
+        window.onclick = function (event) {
+            const modal = document.getElementById("settings-modal");
+            if (event.target == modal) {
+                closeSettingsModal();
+            }
+        }
+
+        function onModeChange() {
+            const isRaw = document.getElementById("mode-raw").checked;
+            const resSection = document.getElementById("resolutions-config-section");
+            if (isRaw) {
+                resSection.classList.add("hidden-row");
+            } else {
+                resSection.classList.remove("hidden-row");
+            }
+        }
+
+        async function saveSettings() {
+            const isRaw = document.getElementById("mode-raw").checked;
+            const resolutions = [];
+            if (document.getElementById("res-480p").checked) resolutions.push("480p");
+            if (document.getElementById("res-720p").checked) resolutions.push("720p");
+            if (document.getElementById("res-1080p").checked) resolutions.push("1080p");
+
+            if (!isRaw && resolutions.length === 0) {
+                alert("Please check at least one compression format or select Raw Mode.");
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/stream/${streamKey}/settings`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        isRaw,
+                        resolutions: resolutions.join(",")
+                    })
+                });
+
+                if (!res.ok) throw new Error("Failed to save settings.");
+
+                // Update UI config summary panel
+                document.getElementById("config-summary-mode").textContent = isRaw ? "Raw (Direct Copy)" : "Transcoded";
+                const resRow = document.getElementById("config-summary-resolutions-row");
+                if (isRaw) {
+                    resRow.className = "hidden-row";
+                } else {
+                    resRow.className = "flex-row-layout";
+                    document.getElementById("config-summary-resolutions").textContent = resolutions.join(",");
+                }
+
+                closeSettingsModal();
+            } catch (err) {
+                alert("Error: " + err.message);
+            }
+        }
+    </script>
+
+    <%- include('footer') %>
