@@ -23,7 +23,8 @@ const port = process.env.PORT || 3000;
 
 const HLS_SEGMENT_SECONDS = 2;
 const STREAM_RETENTION_SECONDS = 600;
-const MAX_FPS = 30;
+const DEFAULT_FPS = 24;
+const MAX_FPS = 24;
 const MIN_VIDEO_BITRATE_KBPS = 400;
 const MAX_VIDEO_BITRATE_KBPS = 2200;
 const AUDIO_BITRATE_KBPS = 96;
@@ -149,8 +150,8 @@ wss.on("connection", async (ws: WebSocket, request) => {
     const parsedUrl = new URL(request.url || "", `http://${request.headers.host}`);
     const streamKey = parsedUrl.searchParams.get("key");
     const resolutionsParam = parsedUrl.searchParams.get("resolutions") || "720p";
-    const requestedFps = parseInt(parsedUrl.searchParams.get("fps") || "30", 10);
-    const fpsParam = clampNumber(Number.isFinite(requestedFps) ? requestedFps : 30, 24, MAX_FPS);
+    const requestedFps = parseInt(parsedUrl.searchParams.get("fps") || DEFAULT_FPS.toString(), 10);
+    const fpsParam = clampNumber(Number.isFinite(requestedFps) ? requestedFps : DEFAULT_FPS, DEFAULT_FPS, MAX_FPS);
     const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "900", 10);
     const bitrateParam = clampNumber(
         Number.isFinite(requestedBitrate) ? requestedBitrate : 900,
@@ -264,8 +265,8 @@ wss.on("connection", async (ws: WebSocket, request) => {
             `-keyint_min:v:${idx}`, keyInterval.toString(),
             `-force_key_frames:v:${idx}`, `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,
             `-sc_threshold:v:${idx}`, "0",
-            `-preset:v:${idx}`, "fast",
-            `-tune:v:${idx}`, "film",
+            `-preset:v:${idx}`, "ultrafast",
+            `-tune:v:${idx}`, "zerolatency",
             `-profile:v:${idx}`, "main",
             `-pix_fmt:v:${idx}`, "yuv420p"
         );
