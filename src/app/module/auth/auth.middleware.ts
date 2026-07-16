@@ -9,7 +9,7 @@ export interface AuthenticatedRequest extends Request {
 export const requireAuth = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const session = await auth.api.getSession({
-      headers: req.headers,
+      headers: new Headers(req.headers as any),
     });
 
     if (!session) {
@@ -28,7 +28,7 @@ export const requireAuth = async (req: AuthenticatedRequest, res: Response, next
 export const redirectIfAuth = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const session = await auth.api.getSession({
-      headers: req.headers,
+      headers: new Headers(req.headers as any),
     });
 
     if (session) {

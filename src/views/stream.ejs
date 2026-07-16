@@ -107,7 +107,7 @@
       <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Available Resolutions</label>
       <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-480p" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <input type="checkbox" id="res-480p" style="accent-color: var(--primary); width: 16px; height: 16px;">
           <span>480p SD</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
@@ -115,7 +115,7 @@
           <span>720p HD</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-1080p" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <input type="checkbox" id="res-1080p" style="accent-color: var(--primary); width: 16px; height: 16px;">
           <span>1080p Full HD</span>
         </label>
       </div>
@@ -140,9 +140,9 @@
     <div class="form-group" style="margin-bottom: 1.5rem;">
       <label class="form-label" style="display: flex; justify-content: space-between; font-weight: 600;">
         <span>Target Bitrate</span>
-        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">2500 Kbps</span>
+        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">2000 Kbps</span>
       </label>
-      <input type="range" id="bitrate-input" min="500" max="10000" step="100" value="2500" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
+      <input type="range" id="bitrate-input" min="500" max="10000" step="100" value="2000" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
     </div>
 
     <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
@@ -250,8 +250,8 @@
       document.getElementById('bitrate-input').value = recBitrate;
       updateBitrateVal(recBitrate);
 
-      document.getElementById('res-480p').checked = (recRes === '480p' || recRes === '720p' || recRes === '1080p');
-      document.getElementById('res-720p').checked = (recRes === '720p' || recRes === '1080p');
+      document.getElementById('res-480p').checked = (recRes === '480p');
+      document.getElementById('res-720p').checked = (recRes === '720p');
       document.getElementById('res-1080p').checked = (recRes === '1080p');
 
       if (recFps === '60') {
@@ -303,7 +303,7 @@
     }
   }
 
-  function startStreaming() {
+  async function startStreaming() {
     if (!localStream) return;
 
     // Get selected configurations
@@ -323,6 +323,26 @@
 
     const fps = document.querySelector('input[name="fps"]:checked').value;
     const bitrate = document.getElementById('bitrate-input').value; // In Kbps
+
+    // Dynamically apply video track constraints to avoid capturing at higher resolutions than needed
+    const videoTrack = localStream.getVideoTracks()[0];
+    if (videoTrack) {
+      const maxRes = res1080 ? '1080p' : (res720 ? '720p' : '480p');
+      const targetWidth = maxRes === '1080p' ? 1920 : (maxRes === '720p' ? 1280 : 854);
+      const targetHeight = maxRes === '1080p' ? 1080 : (maxRes === '720p' ? 720 : 480);
+      const targetFps = parseInt(fps);
+
+      console.log(`Applying track constraints: ${targetWidth}x${targetHeight} @ ${targetFps} FPS`);
+      try {
+        await videoTrack.applyConstraints({
+          width: { ideal: targetWidth },
+          height: { ideal: targetHeight },
+          frameRate: { ideal: targetFps }
+        });
+      } catch (constraintErr) {
+        console.warn('Failed to apply video track constraints:', constraintErr);
+      }
+    }
 
     // Check if localStream has audio tracks
     const hasAudio = localStream.getAudioTracks().length > 0;

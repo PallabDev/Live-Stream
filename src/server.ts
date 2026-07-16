@@ -149,6 +149,10 @@ wss.on("connection", async (ws: WebSocket, request) => {
     }
 
     const ffmpegArgs = [
+        "-fflags", "nobuffer", // Reduce input latency by disabling buffer
+        "-flags", "low_delay", // Lower processing latency
+        "-probesize", "100k", // Reduce probesize to analyze container format faster
+        "-analyzeduration", "100k", // Reduce analyzeduration to avoid startup delays
         "-f", "matroska", // Explicitly define input format as Matroska (WebM) to prevent probing errors
         "-i", "pipe:0", // Read input from standard input (WebSocket packets)
         "-y", // Overwrite output files
@@ -167,7 +171,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
             videoBitrate = `${bitrateParam}k`;
         }
 
-        const keyInterval = fpsParam * 6; // Keyframe every 4 seconds for perfect HLS splitting
+        const keyInterval = fpsParam * 2; // Keyframe every 2 seconds for perfect HLS splitting
 
         ffmpegArgs.push("-map", `[v${idx + 1}out]`);
         if (hasAudio) {
@@ -183,7 +187,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
             `-g:v:${idx}`, keyInterval.toString(),
             `-keyint_min:v:${idx}`, keyInterval.toString(),
             `-sc_threshold:v:${idx}`, "0",
-            `-preset:v:${idx}`, "veryfast",
+            `-preset:v:${idx}`, "ultrafast",
             `-tune:v:${idx}`, "zerolatency"
         );
 
@@ -204,8 +208,8 @@ wss.on("connection", async (ws: WebSocket, request) => {
     const varStreamMap = resolutions.map((_, idx) => hasAudio ? `v:${idx},a:${idx}` : `v:${idx}`).join(" ");
     ffmpegArgs.push(
         "-f", "hls",
-        "-hls_time", "4", // 4 second chunks for more stable remote network streaming
-        "-hls_list_size", "5", // Keep last 5 chunks
+        "-hls_time", "2", // 2 second chunks for lower latency and faster loading
+        "-hls_list_size", "10", // Keep last 10 chunks to give viewers a larger buffer window
         "-hls_flags", "delete_segments+omit_endlist", // Auto-delete older chunks, don't write EOF tag to keep playlist live
         "-hls_segment_filename", path.join(mediaDir, "%v", "file%03d.ts"),
         "-master_pl_name", "master.m3u8",
