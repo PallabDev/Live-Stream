@@ -430,24 +430,49 @@
                 console.log("[Studio] Initialising MediaRecorder...");
                 
                 // Configure recorder to capture visual-lossless video + good quality audio
-                // Request 8 Mbps video and 256kbps audio
+                // Request 2.5 Mbps video (optimized for upload reliability) and 256kbps audio
                 mediaRecorder = new MediaRecorder(mediaStream, {
                     mimeType: 'video/webm;codecs=vp8,opus',
-                    videoBitsPerSecond: 8000000,
+                    videoBitsPerSecond: 2500000,
                     audioBitsPerSecond: 256000
                 });
 
-                mediaRecorder.ondataavailable = async (e) => {
-                    if (e.data && e.data.size > 0 && isLive) {
-                        try {
-                            fetch(`/api/stream/${streamKey}/video`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'video/webm' },
-                                body: e.data
-                            });
-                        } catch (err) {
-                            console.error("Chunk transmit failure:", err);
+                // Sequential upload queue to guarantee in-order delivery and prevent HTTP connection starvation
+                let chunkQueue = [];
+                let isUploading = false;
+
+                async function processQueue() {
+                    if (isUploading || chunkQueue.length === 0 || !isLive) return;
+                    isUploading = true;
+                    const chunk = chunkQueue.shift();
+
+                    try {
+                        const res = await fetch(`/api/stream/${streamKey}/video`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'video/webm' },
+                            body: chunk
+                        });
+                        if (!res.ok) {
+                            console.warn("[Studio] Video chunk upload failed with status:", res.status);
                         }
+                    } catch (err) {
+                        console.error("[Studio] Video chunk transmit failure:", err);
+                    } finally {
+                        isUploading = false;
+                        // Trigger next upload immediately
+                        setTimeout(processQueue, 0);
+                    }
+                }
+
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0 && isLive) {
+                        chunkQueue.push(e.data);
+                        // Prevent infinite buffer expansion on extremely slow connections (keep latency budget at ~15s)
+                        if (chunkQueue.length > 15) {
+                            console.warn("[Studio] Upload queue too large. Dropping oldest chunk to catch up.");
+                            chunkQueue.shift();
+                        }
+                        processQueue();
                     }
                 };
 

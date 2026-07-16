@@ -205,11 +205,11 @@ export class StreamController {
         }
       });
 
-      // Setup inactivity timeout (disconnect if no chunks received for 10 seconds)
+      // Setup inactivity timeout (disconnect if no chunks received for 30 seconds)
       const inactivityTimeout = setTimeout(() => {
         console.log(`Inactivity detected on stream ${key}. Cleaning up.`);
         StreamController.stopStreamSession(key);
-      }, 10000);
+      }, 30000);
 
       // Save active session
       StreamController.activeSessions.set(key, {
@@ -242,7 +242,7 @@ export class StreamController {
       session.inactivityTimeout = setTimeout(() => {
         console.log(`Inactivity detected on stream ${key}. Cleaning up.`);
         StreamController.stopStreamSession(key);
-      }, 10000);
+      }, 30000);
 
       return res.sendStatus(200);
     } catch (err) {
