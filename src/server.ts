@@ -24,13 +24,13 @@ const port = process.env.PORT || 3000;
 const HLS_SEGMENT_SECONDS = 2;
 const STREAM_RETENTION_SECONDS = 600;
 const MAX_FPS = 30;
-const MIN_VIDEO_BITRATE_KBPS = 500;
-const MAX_VIDEO_BITRATE_KBPS = 2800;
+const MIN_VIDEO_BITRATE_KBPS = 400;
+const MAX_VIDEO_BITRATE_KBPS = 2200;
 const AUDIO_BITRATE_KBPS = 96;
 const RESOLUTION_CONFIG = {
-    "480p": { height: 480, defaultBitrate: 800, maxBitrate: 800 },
-    "720p": { height: 720, defaultBitrate: 1200, maxBitrate: 1200 },
-    "1080p": { height: 1080, defaultBitrate: 2800, maxBitrate: 2800 },
+    "480p": { height: 480, defaultBitrate: 500, maxBitrate: 500 },
+    "720p": { height: 720, defaultBitrate: 900, maxBitrate: 900 },
+    "1080p": { height: 1080, defaultBitrate: 2200, maxBitrate: 2200 },
 } as const;
 
 type StreamResolution = keyof typeof RESOLUTION_CONFIG;
@@ -144,9 +144,9 @@ wss.on("connection", async (ws: WebSocket, request) => {
     const resolutionsParam = parsedUrl.searchParams.get("resolutions") || "720p";
     const requestedFps = parseInt(parsedUrl.searchParams.get("fps") || "30", 10);
     const fpsParam = clampNumber(Number.isFinite(requestedFps) ? requestedFps : 30, 24, MAX_FPS);
-    const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "1200", 10);
+    const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "900", 10);
     const bitrateParam = clampNumber(
-        Number.isFinite(requestedBitrate) ? requestedBitrate : 1200,
+        Number.isFinite(requestedBitrate) ? requestedBitrate : 900,
         MIN_VIDEO_BITRATE_KBPS,
         MAX_VIDEO_BITRATE_KBPS
     );
@@ -191,11 +191,17 @@ wss.on("connection", async (ws: WebSocket, request) => {
     }
 
     // Parse resolutions array
-    const resolutions = resolutionsParam
+    let resolutions = resolutionsParam
         .split(",")
         .filter((r): r is StreamResolution => r in RESOLUTION_CONFIG);
     if (resolutions.length === 0) {
         resolutions.push("720p");
+    }
+    if ((resolutions.includes("720p") || resolutions.includes("1080p")) && !resolutions.includes("480p")) {
+        resolutions = ["480p", ...resolutions];
+    }
+    if (resolutions.includes("1080p") && !resolutions.includes("720p")) {
+        resolutions = ["480p", "720p", "1080p"];
     }
 
     // 3. Mark stream active in database

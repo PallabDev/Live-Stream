@@ -452,8 +452,10 @@ html, body {
 
   const playlistUrl = "/media/<%= stream.streamKey %>/master.m3u8?_t=" + Date.now();
   const primaryVariantPlaylistUrl = "/media/<%= stream.streamKey %>/0/index.m3u8";
-  const STABLE_LIVE_SEGMENT_LAG = 5;
+  const STABLE_LIVE_SEGMENT_LAG = 10;
   const MIN_STARTUP_SEGMENTS = STABLE_LIVE_SEGMENT_LAG + 2;
+  const MIN_PLAY_BUFFER_SECONDS = 14;
+  const RESUME_PLAY_BUFFER_SECONDS = 8;
   let hlsInstance = null;
   let levels = [];
   let isFullscreen = false;
@@ -463,6 +465,8 @@ html, body {
   let checkInterval = null;
   let segmentDebugInterval = null;
   let waitingForStartupBuffer = false;
+  let playbackStarted = false;
+  let waitingForPlayBuffer = false;
 
   // Stream status checker
   async function checkStreamStatus() {
@@ -475,7 +479,7 @@ html, body {
 
         if (!hlsInstance) {
           await initHLSWhenBufferReady();
-        } else {
+        } else if (playbackStarted && !waitingForPlayBuffer) {
           video.play().catch(e => console.log("Auto play prevented", e));
         }
       } else {
@@ -514,6 +518,54 @@ html, body {
     }
 
     return 0;
+  }
+
+  function maybeStartPlayback(reason) {
+    if (!hlsInstance || playbackStarted) return;
+
+    const bufferAhead = getBufferAheadSeconds();
+    if (bufferAhead < MIN_PLAY_BUFFER_SECONDS) {
+      waitingForPlayBuffer = true;
+      showLoading();
+      video.pause();
+      console.log('[CoWatch Debug] waiting-for-play-buffer', {
+        reason,
+        bufferAheadSec: Number(bufferAhead.toFixed(2)),
+        requiredSec: MIN_PLAY_BUFFER_SECONDS,
+      });
+      return;
+    }
+
+    waitingForPlayBuffer = false;
+    playbackStarted = true;
+    hideLoading();
+    console.log('[CoWatch Debug] starting-playback', {
+      reason,
+      bufferAheadSec: Number(bufferAhead.toFixed(2)),
+    });
+    video.play().catch(e => console.log("Play interrupted", e));
+  }
+
+  function maybeResumeAfterStall(reason) {
+    if (!playbackStarted || !video.paused) return;
+
+    const bufferAhead = getBufferAheadSeconds();
+    if (bufferAhead < RESUME_PLAY_BUFFER_SECONDS) {
+      showLoading();
+      console.log('[CoWatch Debug] waiting-for-resume-buffer', {
+        reason,
+        bufferAheadSec: Number(bufferAhead.toFixed(2)),
+        requiredSec: RESUME_PLAY_BUFFER_SECONDS,
+      });
+      return;
+    }
+
+    hideLoading();
+    console.log('[CoWatch Debug] resuming-playback', {
+      reason,
+      bufferAheadSec: Number(bufferAhead.toFixed(2)),
+    });
+    video.play().catch(e => console.log("Resume interrupted", e));
   }
 
   function getActiveLevelIndex() {
@@ -560,7 +612,7 @@ html, body {
       try {
         const levelIndex = getActiveLevelIndex();
         const stats = await getPlaylistStats(levelIndex);
-        const currentFrag = hlsInstance.currentLevel >= 0 && hlsInstance.streamController
+        const currentFrag = hlsInstance.streamController
           ? hlsInstance.streamController.fragCurrent
           : null;
         const playingSegment = currentFrag
@@ -613,6 +665,8 @@ html, body {
   function showOffline() {
     offlineScreen.style.display = 'flex';
     stopSegmentDebug();
+    playbackStarted = false;
+    waitingForPlayBuffer = false;
     if (hlsInstance) {
       hlsInstance.destroy();
       hlsInstance = null;
@@ -630,6 +684,7 @@ html, body {
         initialLiveManifestSize: MIN_STARTUP_SEGMENTS,
         capLevelToPlayerSize: true,
         testBandwidth: true,
+        autoStartLoad: true,
 
         // === PRE-BUFFERING FIX ===
         // Without this, Hls.js plays a segment completely before downloading the next one.
@@ -672,8 +727,12 @@ html, body {
         hlsInstance.nextLoadLevel = 0;
         buildQualityMenu(levels);
         startSegmentDebug();
-        hideLoading();
-        video.play().catch(e => console.log("Play interrupted", e));
+        waitingForPlayBuffer = true;
+        showLoading();
+        console.log('[CoWatch Debug] manifest-ready-waiting-for-buffer', {
+          levels: levels.length,
+          requiredBufferSec: MIN_PLAY_BUFFER_SECONDS,
+        });
       });
 
       hlsInstance.on(Hls.Events.FRAG_CHANGED, function (event, data) {
@@ -698,6 +757,8 @@ html, body {
           bufferAheadSec: Number(getBufferAheadSeconds().toFixed(2)),
         });
         updateBufferProgress();
+        maybeStartPlayback('frag-buffered');
+        maybeResumeAfterStall('frag-buffered');
       });
 
       hlsInstance.on(Hls.Events.ERROR, function (event, data) {
@@ -789,6 +850,12 @@ html, body {
 
   video.addEventListener('play', updatePlayIcon);
   video.addEventListener('pause', updatePlayIcon);
+  video.addEventListener('play', () => {
+    if (hlsInstance && !playbackStarted) {
+      video.pause();
+      maybeStartPlayback('premature-play-event');
+    }
+  });
 
   // Time + progress
   video.addEventListener('timeupdate', () => {

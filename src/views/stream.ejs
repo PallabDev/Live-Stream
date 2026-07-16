@@ -140,9 +140,9 @@
     <div class="form-group" style="margin-bottom: 1.5rem;">
       <label class="form-label" style="display: flex; justify-content: space-between; font-weight: 600;">
         <span>Target Bitrate</span>
-        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">1200 Kbps</span>
+        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">900 Kbps</span>
       </label>
-      <input type="range" id="bitrate-input" min="500" max="2800" step="100" value="1200" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
+      <input type="range" id="bitrate-input" min="400" max="2200" step="100" value="900" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
     </div>
 
     <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
@@ -161,12 +161,12 @@
   let durationInterval = null;
   let broadcastState = 'idle';
   const AUDIO_BITS_PER_SECOND = 96000;
-  const MAX_VIDEO_BITRATE_KBPS = 2800;
+  const MAX_VIDEO_BITRATE_KBPS = 2200;
   const MAX_FRAME_RATE = 30;
   const RESOLUTION_LIMITS = {
-    '480p': { width: 854, height: 480, bitrate: 800 },
-    '720p': { width: 1280, height: 720, bitrate: 1200 },
-    '1080p': { width: 1920, height: 1080, bitrate: 2800 }
+    '480p': { width: 854, height: 480, bitrate: 500 },
+    '720p': { width: 1280, height: 720, bitrate: 900 },
+    '1080p': { width: 1920, height: 1080, bitrate: 2200 }
   };
 
   function clampNumber(value, min, max) {
@@ -186,7 +186,7 @@
     const resolutionBitrate = RESOLUTION_LIMITS[maxRes].bitrate;
     const bitrate = clampNumber(
       Number.isFinite(selectedBitrate) ? Math.max(selectedBitrate, resolutionBitrate) : resolutionBitrate,
-      500,
+      400,
       MAX_VIDEO_BITRATE_KBPS
     );
 
@@ -309,23 +309,23 @@
       resultEl.innerHTML = `Speed: <strong style="color: var(--accent); font-size: 1.1rem;">${speedMbps.toFixed(2)} Mbps</strong>`;
       
       let recResolutions = ['720p'];
-      let recBitrate = 1200; // Kbps
+      let recBitrate = 900; // Kbps
 
       if (speedMbps < 2) {
         recResolutions = ['480p'];
-        recBitrate = 800;
+        recBitrate = 500;
         statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 30 FPS</strong>';
       } else if (speedMbps < 6) {
         recResolutions = ['480p'];
-        recBitrate = 800;
+        recBitrate = 500;
         statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 30 FPS</strong>';
       } else if (speedMbps < 35) {
         recResolutions = ['720p'];
-        recBitrate = 1200;
+        recBitrate = 900;
         statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">720p @ 30 FPS</strong>';
       } else {
         recResolutions = ['720p'];
-        recBitrate = 1200;
+        recBitrate = 900;
         statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">720p @ 30 FPS</strong>';
       }
 
