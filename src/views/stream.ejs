@@ -491,8 +491,8 @@
         }
       };
 
-      // Smaller chunks reduce live ingest delay and recover faster after short network dips.
-      mediaRecorder.start(750);
+      // Larger chunks reduce WebM fragmentation and produce cleaner ffmpeg input.
+      mediaRecorder.start(2000);
       broadcastState = 'live';
 
       // UI states

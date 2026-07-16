@@ -206,12 +206,12 @@ wss.on("connection", async (ws: WebSocket, request) => {
     let filterComplex = "";
     if (resolutions.length > 1) {
         const splits = resolutions.map((_, idx) => `[v${idx + 1}]`).join("");
-        filterComplex += `[0:v]fps=fps=${fpsParam}:round=down[vfps];[vfps]split=${resolutions.length}${splits};`;
+        filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB)[vfps];[vfps]split=${resolutions.length}${splits};`;
         resolutions.forEach((res, idx) => {
             filterComplex += `[v${idx + 1}]scale=w=-2:h=${RESOLUTION_CONFIG[res].height}:flags=fast_bilinear[v${idx + 1}out];`;
         });
     } else {
-        filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0]].height}:flags=fast_bilinear[v1out]`;
+        filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB),scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0]].height}:flags=fast_bilinear[v1out]`;
     }
 
     // Strip trailing semicolon to prevent FFmpeg "No such filter: ''" syntax error
@@ -224,7 +224,6 @@ wss.on("connection", async (ws: WebSocket, request) => {
         "-loglevel", "warning",
         "-fflags", "+genpts+discardcorrupt",
         "-err_detect", "ignore_err",
-        "-use_wallclock_as_timestamps", "1",
         "-thread_queue_size", "1024",
         "-probesize", "2M",
         "-analyzeduration", "2M",
@@ -254,6 +253,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
             `-bufsize:v:${idx}`, `${bitrateKbps * 2}k`,
             `-g:v:${idx}`, keyInterval.toString(),
             `-keyint_min:v:${idx}`, keyInterval.toString(),
+            `-force_key_frames:v:${idx}`, `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,
             `-sc_threshold:v:${idx}`, "0",
             `-preset:v:${idx}`, "veryfast",
             `-tune:v:${idx}`, "film",
@@ -282,6 +282,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
     // NO delete_segments; we manage deletion ourselves with a rolling 10-minute window.
     const varStreamMap = resolutions.map((_, idx) => hasAudio ? `v:${idx},a:${idx}` : `v:${idx}`).join(" ");
     ffmpegArgs.push(
+        "-max_muxing_queue_size", "1024",
         "-f", "hls",
         "-hls_time", HLS_SEGMENT_SECONDS.toString(),
         "-hls_list_size", Math.ceil(STREAM_RETENTION_SECONDS / HLS_SEGMENT_SECONDS).toString(),
