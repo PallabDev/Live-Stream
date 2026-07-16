@@ -38,10 +38,16 @@ type ActiveIngest = {
     ws: WebSocket;
     ffmpegProcess: ChildProcessWithoutNullStreams;
     rollingInterval: NodeJS.Timeout;
+    healthInterval: NodeJS.Timeout;
 };
 
 function clampNumber(value: number, min: number, max: number) {
     return Math.min(Math.max(value, min), max);
+}
+
+function getSegmentNumber(fileName: string) {
+    const match = fileName.match(/^file(\d+)\.ts$/);
+    return match ? parseInt(match[1], 10) : null;
 }
 
 function stopActiveIngest(streamKey: string, reason: string) {
@@ -52,6 +58,7 @@ function stopActiveIngest(streamKey: string, reason: string) {
     activeIngests.delete(streamKey);
     activeRollingCleanups.delete(streamKey);
     clearInterval(active.rollingInterval);
+    clearInterval(active.healthInterval);
 
     try {
         if (active.ws.readyState === WebSocket.OPEN || active.ws.readyState === WebSocket.CONNECTING) {
@@ -228,6 +235,8 @@ wss.on("connection", async (ws: WebSocket, request) => {
     const ffmpegArgs = [
         "-hide_banner",
         "-loglevel", "warning",
+        "-stats_period", "5",
+        "-progress", "pipe:2",
         "-fflags", "+genpts+discardcorrupt",
         "-err_detect", "ignore_err",
         "-thread_queue_size", "1024",
@@ -312,9 +321,33 @@ wss.on("connection", async (ws: WebSocket, request) => {
         // console.log(`[ffmpeg stdout]: ${data}`);
     });
 
+    const ffmpegProgress: Record<string, string> = {};
+    let stderrBuffer = "";
+
     ffmpegProcess.stderr.on("data", (data) => {
-        // ffmpeg writes transcode statistics to stderr
-        console.error(`[ffmpeg stderr]: ${data}`);
+        stderrBuffer += data.toString();
+        const lines = stderrBuffer.split(/\r?\n/);
+        stderrBuffer = lines.pop() || "";
+
+        for (const line of lines) {
+            if (!line.trim()) continue;
+
+            const progressMatch = line.match(/^([a-zA-Z_]+)=(.*)$/);
+            if (progressMatch) {
+                ffmpegProgress[progressMatch[1]] = progressMatch[2];
+
+                if (progressMatch[1] === "progress") {
+                    console.log(
+                        `[ffmpeg progress] stream=${streamKey} fps=${ffmpegProgress.fps || "?"} ` +
+                        `out=${ffmpegProgress.out_time || "?"} speed=${ffmpegProgress.speed || "?"} ` +
+                        `frame=${ffmpegProgress.frame || "?"}`
+                    );
+                }
+                continue;
+            }
+
+            console.error(`[ffmpeg stderr]: ${line}`);
+        }
     });
 
     ffmpegProcess.on("close", (code) => {
@@ -355,7 +388,48 @@ wss.on("connection", async (ws: WebSocket, request) => {
     }, 60_000); // run every 60 seconds
 
     activeRollingCleanups.set(streamKey, rollingInterval);
-    activeIngests.set(streamKey, { ws, ffmpegProcess, rollingInterval });
+
+    const lastPublishedByVariant = new Map<number, { segment: number; at: number }>();
+    const healthInterval = setInterval(() => {
+        const now = Date.now();
+
+        resolutions.forEach((res, idx) => {
+            const variantDir = path.join(mediaDir, idx.toString());
+            try {
+                const segmentFiles = fs.readdirSync(variantDir)
+                    .map((file) => ({ file, segment: getSegmentNumber(file) }))
+                    .filter((item): item is { file: string; segment: number } => item.segment !== null)
+                    .sort((a, b) => a.segment - b.segment);
+
+                if (segmentFiles.length === 0) {
+                    console.log(`[segment health] stream=${streamKey} variant=${idx}:${res} no_segments_yet`);
+                    return;
+                }
+
+                const latest = segmentFiles[segmentFiles.length - 1];
+                const latestPath = path.join(variantDir, latest.file);
+                const latestStat = fs.statSync(latestPath);
+                const previous = lastPublishedByVariant.get(idx);
+                let publishGapSec: number | null = null;
+
+                if (!previous || previous.segment !== latest.segment) {
+                    publishGapSec = previous ? (now - previous.at) / 1000 : null;
+                    lastPublishedByVariant.set(idx, { segment: latest.segment, at: now });
+                }
+
+                console.log(
+                    `[segment health] stream=${streamKey} variant=${idx}:${res} ` +
+                    `latest=${latest.segment} count=${segmentFiles.length} ` +
+                    `latestAgeSec=${((now - latestStat.mtimeMs) / 1000).toFixed(2)} ` +
+                    `publishGapSec=${publishGapSec === null ? "n/a" : publishGapSec.toFixed(2)}`
+                );
+            } catch (err: any) {
+                console.warn(`[segment health] stream=${streamKey} variant=${idx}:${res} error=${err.message}`);
+            }
+        });
+    }, 5_000);
+
+    activeIngests.set(streamKey, { ws, ffmpegProcess, rollingInterval, healthInterval });
 
     ws.on("message", (message: Buffer) => {
         if (ffmpegProcess.stdin.writable) {
@@ -370,6 +444,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
 
         if (!isCurrentIngest) {
             clearInterval(rollingInterval);
+            clearInterval(healthInterval);
             try {
                 if (ffmpegProcess.stdin.writable) {
                     ffmpegProcess.stdin.end();
@@ -390,6 +465,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
             clearInterval(rollingCleanup);
             activeRollingCleanups.delete(streamKey);
         }
+        clearInterval(healthInterval);
 
         // Set stream inactive
         await StreamService.setStreamActive(streamKey, false);
