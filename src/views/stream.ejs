@@ -107,7 +107,7 @@
       <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Available Resolutions</label>
       <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-480p" checked onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <input type="checkbox" id="res-480p" onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
           <span>480p SD</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
@@ -115,7 +115,7 @@
           <span>720p HD</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-1080p" onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <input type="checkbox" id="res-1080p" checked onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
           <span>1080p Full HD</span>
         </label>
       </div>
@@ -140,9 +140,9 @@
     <div class="form-group" style="margin-bottom: 1.5rem;">
       <label class="form-label" style="display: flex; justify-content: space-between; font-weight: 600;">
         <span>Target Bitrate</span>
-        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">1000 Kbps</span>
+        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">6000 Kbps</span>
       </label>
-      <input type="range" id="bitrate-input" min="400" max="4500" step="100" value="1000" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
+      <input type="range" id="bitrate-input" min="800" max="8000" step="100" value="6000" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
     </div>
 
     <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
@@ -160,13 +160,13 @@
   let durationInterval = null;
   let broadcastState = 'idle';
   const AUDIO_BITS_PER_SECOND = 96000;
-  const MAX_VIDEO_BITRATE_KBPS = 4500;
+  const MAX_VIDEO_BITRATE_KBPS = 8000;
   const DEFAULT_FRAME_RATE = 30;
   const MAX_FRAME_RATE = 30;
   const RESOLUTION_LIMITS = {
-    '480p': { width: 854, height: 480, bitrate: 1000 },
-    '720p': { width: 1280, height: 720, bitrate: 2000 },
-    '1080p': { width: 1920, height: 1080, bitrate: 4000 }
+    '480p': { width: 854, height: 480, bitrate: 1500 },
+    '720p': { width: 1280, height: 720, bitrate: 3000 },
+    '1080p': { width: 1920, height: 1080, bitrate: 6000 }
   };
 
   function clampNumber(value, min, max) {
@@ -536,7 +536,7 @@
         }
         parameters.encodings[0].maxBitrate = bitrate * 1000; // Kbps to bps
         parameters.encodings[0].maxFramerate = fps;
-        parameters.degradationPreference = 'maintain-framerate';
+        parameters.degradationPreference = 'maintain-resolution';
         
         console.log(`[WebRTC] Set video maxBitrate to: ${bitrate} Kbps, maxFramerate to: ${fps} FPS`);
         try {

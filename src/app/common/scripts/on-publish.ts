@@ -11,12 +11,12 @@ const HLS_SEGMENT_SECONDS = 2;
 const STREAM_RETENTION_SECONDS = 600;
 const DEFAULT_FPS = 30;
 const X264_PRESET = process.env.X264_PRESET || "veryfast";
-const X264_TUNE = process.env.X264_TUNE || "film";
+const X264_TUNE = process.env.X264_TUNE || "zerolatency";
 
 const RESOLUTION_CONFIG = {
-  "480p": { height: 480, defaultBitrate: 1000 },
-  "720p": { height: 720, defaultBitrate: 2000 },
-  "1080p": { height: 1080, defaultBitrate: 4000 },
+  "480p": { height: 480, defaultBitrate: 1500 },
+  "720p": { height: 720, defaultBitrate: 3000 },
+  "1080p": { height: 1080, defaultBitrate: 6000 },
 } as const;
 
 type StreamResolution = keyof typeof RESOLUTION_CONFIG;
@@ -57,6 +57,7 @@ async function main() {
   const fpsParam = Math.min(Math.max(parseInt(queryParams.get("fps") || `${DEFAULT_FPS}`), 10), 30);
   const hasAudio = queryParams.get("hasAudio") === "true";
   const codecParam = queryParams.get("codec") || "vp8";
+  const bitrateParam = parseInt(queryParams.get("bitrate") || "0", 10);
 
   // 1. Verify Stream Key in database
   const streamInfo = await StreamService.getStreamByKey(streamKey);
@@ -118,16 +119,16 @@ async function main() {
     fs.mkdirSync(path.join(mediaDir, "0"), { recursive: true });
   } else {
     console.log(`[on-publish] Transcoding stream (codec: ${codecParam}, resolutions: ${resolutions.join(",")}) using software transcoder.`);
-    // Filter complex to scale video to multiple variants
+    // Filter complex to scale video to multiple variants using high quality bicubic scaling
     let filterComplex = "";
     if (resolutions.length > 1) {
       const splits = resolutions.map((_, idx) => `[v${idx + 1}]`).join("");
       filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB)[vfps];[vfps]split=${resolutions.length}${splits};`;
       resolutions.forEach((res, idx) => {
-        filterComplex += `[v${idx + 1}]scale=w=-2:h=${RESOLUTION_CONFIG[res].height}:flags=fast_bilinear[v${idx + 1}out];`;
+        filterComplex += `[v${idx + 1}]scale=w=-2:h=${RESOLUTION_CONFIG[res].height}:flags=bicubic[v${idx + 1}out];`;
       });
     } else {
-      filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB),scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0]].height}:flags=fast_bilinear[v1out]`;
+      filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB),scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0]].height}:flags=bicubic[v1out]`;
     }
 
     // Strip trailing semicolon
@@ -151,7 +152,17 @@ async function main() {
     // Map video profiles and configurations for each resolution
     resolutions.forEach((res, idx) => {
       const config = RESOLUTION_CONFIG[res];
-      const bitrateKbps = config.defaultBitrate;
+      
+      // Determine bitrate: use custom bitrate for the highest resolution variant if specified
+      let bitrateKbps: number = config.defaultBitrate;
+      if (idx === resolutions.length - 1 && bitrateParam > 0) {
+        bitrateKbps = bitrateParam;
+      } else if (resolutions.length > 1 && bitrateParam > 0) {
+        // Scale down lower resolutions proportionally relative to user's custom bitrate
+        if (res === "720p") bitrateKbps = Math.min(3000, Math.round(bitrateParam * 0.6));
+        if (res === "480p") bitrateKbps = Math.min(1500, Math.round(bitrateParam * 0.3));
+      }
+
       const videoBitrate = `${bitrateKbps}k`;
       const keyInterval = fpsParam * HLS_SEGMENT_SECONDS;
 
