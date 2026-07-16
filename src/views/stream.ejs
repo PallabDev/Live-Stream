@@ -548,9 +548,9 @@
     const isRaw = document.getElementById("mode-raw").checked;
     const resSection = document.getElementById("resolutions-config-section");
     if (isRaw) {
-      resSection.style.display = "none";
+      resSection.classList.add("hidden-row");
     } else {
-      resSection.style.display = "block";
+      resSection.classList.remove("hidden-row");
     }
   }
 
@@ -584,9 +584,9 @@
       document.getElementById("config-summary-mode").textContent = isRaw ? "Raw (Direct Copy)" : "Transcoded";
       const resRow = document.getElementById("config-summary-resolutions-row");
       if (isRaw) {
-        resRow.style.display = "none";
+        resRow.className = "hidden-row";
       } else {
-        resRow.style.display = "flex";
+        resRow.className = "flex-row-layout";
         document.getElementById("config-summary-resolutions").textContent = resolutions.join(",");
       }
 
