@@ -68,9 +68,9 @@ export class StreamController {
 
         // Video encoding settings: High quality libx264, zero-latency tune
         "-c:v", "libx264",
-        "-preset", "veryfast",
+        "-preset", "ultrafast",
         "-tune", "zerolatency",
-        "-crf", "20",
+        "-crf", "26",
         "-pix_fmt", "yuv420p",
 
         // Audio encoding settings: High quality 256kbps stereo AAC
