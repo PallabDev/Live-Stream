@@ -24,13 +24,13 @@ const port = process.env.PORT || 3000;
 const HLS_SEGMENT_SECONDS = 4;
 const STREAM_RETENTION_SECONDS = 600;
 const MAX_FPS = 30;
-const MIN_VIDEO_BITRATE_KBPS = 450;
+const MIN_VIDEO_BITRATE_KBPS = 800;
 const MAX_VIDEO_BITRATE_KBPS = 2500;
 const AUDIO_BITRATE_KBPS = 96;
 const RESOLUTION_CONFIG = {
-    "480p": { height: 480, defaultBitrate: 650, maxBitrate: 900 },
-    "720p": { height: 720, defaultBitrate: 1500, maxBitrate: 1800 },
-    "1080p": { height: 1080, defaultBitrate: 2200, maxBitrate: 2500 },
+    "480p": { height: 480, defaultBitrate: 1600, maxBitrate: 1600 },
+    "720p": { height: 720, defaultBitrate: 2500, maxBitrate: 2500 },
+    "1080p": { height: 1080, defaultBitrate: 2500, maxBitrate: 2500 },
 } as const;
 
 type StreamResolution = keyof typeof RESOLUTION_CONFIG;
@@ -108,12 +108,12 @@ server.on("upgrade", (request, socket, head) => {
 wss.on("connection", async (ws: WebSocket, request) => {
     const parsedUrl = new URL(request.url || "", `http://${request.headers.host}`);
     const streamKey = parsedUrl.searchParams.get("key");
-    const resolutionsParam = parsedUrl.searchParams.get("resolutions") || "480p,720p";
+    const resolutionsParam = parsedUrl.searchParams.get("resolutions") || "720p";
     const requestedFps = parseInt(parsedUrl.searchParams.get("fps") || "30", 10);
     const fpsParam = clampNumber(Number.isFinite(requestedFps) ? requestedFps : 30, 24, MAX_FPS);
-    const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "1600", 10);
+    const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "2500", 10);
     const bitrateParam = clampNumber(
-        Number.isFinite(requestedBitrate) ? requestedBitrate : 1600,
+        Number.isFinite(requestedBitrate) ? requestedBitrate : 2500,
         MIN_VIDEO_BITRATE_KBPS,
         MAX_VIDEO_BITRATE_KBPS
     );
@@ -160,7 +160,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
         .split(",")
         .filter((r): r is StreamResolution => r in RESOLUTION_CONFIG);
     if (resolutions.length === 0) {
-        resolutions.push("480p", "720p");
+        resolutions.push("720p");
     }
 
     // 3. Mark stream active in database
@@ -222,8 +222,8 @@ wss.on("connection", async (ws: WebSocket, request) => {
             `-g:v:${idx}`, keyInterval.toString(),
             `-keyint_min:v:${idx}`, keyInterval.toString(),
             `-sc_threshold:v:${idx}`, "0",
-            `-preset:v:${idx}`, "superfast",
-            `-tune:v:${idx}`, "zerolatency",
+            `-preset:v:${idx}`, "veryfast",
+            `-tune:v:${idx}`, "film",
             `-profile:v:${idx}`, "main",
             `-pix_fmt:v:${idx}`, "yuv420p"
         );

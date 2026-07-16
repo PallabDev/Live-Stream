@@ -107,7 +107,7 @@
       <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Available Resolutions</label>
       <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-480p" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <input type="checkbox" id="res-480p" style="accent-color: var(--primary); width: 16px; height: 16px;">
           <span>480p SD</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
@@ -140,9 +140,9 @@
     <div class="form-group" style="margin-bottom: 1.5rem;">
       <label class="form-label" style="display: flex; justify-content: space-between; font-weight: 600;">
         <span>Target Bitrate</span>
-        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">1600 Kbps</span>
+        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">2500 Kbps</span>
       </label>
-      <input type="range" id="bitrate-input" min="500" max="2500" step="100" value="1600" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
+      <input type="range" id="bitrate-input" min="800" max="2500" step="100" value="2500" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
     </div>
 
     <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
@@ -182,7 +182,7 @@
     const selectedFps = parseInt(document.querySelector('input[name="fps"]:checked').value, 10);
     const fps = clampNumber(Number.isFinite(selectedFps) ? selectedFps : 30, 24, MAX_FRAME_RATE);
     const selectedBitrate = parseInt(document.getElementById('bitrate-input').value, 10);
-    const bitrate = clampNumber(Number.isFinite(selectedBitrate) ? selectedBitrate : 1600, 500, MAX_VIDEO_BITRATE_KBPS);
+    const bitrate = clampNumber(Number.isFinite(selectedBitrate) ? selectedBitrate : 2500, 800, MAX_VIDEO_BITRATE_KBPS);
     const maxRes = resolutions.includes('1080p') ? '1080p' : (resolutions.includes('720p') ? '720p' : '480p');
 
     return { resolutions, fps, bitrate, maxRes };
@@ -248,25 +248,25 @@
       
       resultEl.innerHTML = `Speed: <strong style="color: var(--accent); font-size: 1.1rem;">${speedMbps.toFixed(2)} Mbps</strong>`;
       
-      let recResolutions = ['480p', '720p'];
-      let recBitrate = 1600; // Kbps
+      let recResolutions = ['720p'];
+      let recBitrate = 2500; // Kbps
 
       if (speedMbps < 2) {
         recResolutions = ['480p'];
-        recBitrate = 700;
+        recBitrate = 1600;
         statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 30 FPS</strong>';
       } else if (speedMbps < 6) {
-        recResolutions = ['480p', '720p'];
-        recBitrate = 1200;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p + 720p @ 30 FPS</strong>';
-      } else if (speedMbps < 35) {
-        recResolutions = ['480p', '720p'];
+        recResolutions = ['480p'];
         recBitrate = 1600;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p + 720p @ 30 FPS</strong>';
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 30 FPS</strong>';
+      } else if (speedMbps < 35) {
+        recResolutions = ['720p'];
+        recBitrate = 2500;
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">720p @ 30 FPS</strong>';
       } else {
-        recResolutions = ['480p', '720p', '1080p'];
-        recBitrate = 2200;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p + 720p + 1080p @ 30 FPS</strong>';
+        recResolutions = ['720p'];
+        recBitrate = 2500;
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">720p @ 30 FPS</strong>';
       }
 
       // Apply recommendation
@@ -371,14 +371,14 @@
       
       // Setup MediaRecorder based on track presence to prevent NotSupportedError DOMExceptions
       const candidates = hasAudio ? [
-        'video/webm; codecs=h264,opus',
         'video/webm; codecs=vp8,opus',
         'video/webm; codecs=vp9,opus',
+        'video/webm; codecs=h264,opus',
         'video/webm'
       ] : [
-        'video/webm; codecs=h264',
         'video/webm; codecs=vp8',
         'video/webm; codecs=vp9',
+        'video/webm; codecs=h264',
         'video/webm'
       ];
 
