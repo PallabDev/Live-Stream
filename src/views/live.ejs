@@ -451,6 +451,9 @@ html, body {
   const offlineScreen = document.getElementById('offline-screen');
 
   const playlistUrl = "/media/<%= stream.streamKey %>/master.m3u8?_t=" + Date.now();
+  const primaryVariantPlaylistUrl = "/media/<%= stream.streamKey %>/0/index.m3u8";
+  const STABLE_LIVE_SEGMENT_LAG = 6;
+  const MIN_STARTUP_SEGMENTS = STABLE_LIVE_SEGMENT_LAG + 2;
   let hlsInstance = null;
   let levels = [];
   let isFullscreen = false;
@@ -458,6 +461,7 @@ html, body {
   let scrubbing = false;
   let controlsHidden = false;
   let checkInterval = null;
+  let waitingForStartupBuffer = false;
 
   // Stream status checker
   async function checkStreamStatus() {
@@ -466,17 +470,46 @@ html, body {
       if (res.ok) {
         if (offlineScreen.style.display !== 'none') {
           offlineScreen.style.display = 'none';
-          if (!hlsInstance) {
-            initHLS();
-          } else {
-            video.play().catch(e => console.log("Auto play prevented", e));
-          }
+        }
+
+        if (!hlsInstance) {
+          await initHLSWhenBufferReady();
+        } else {
+          video.play().catch(e => console.log("Auto play prevented", e));
         }
       } else {
         showOffline();
       }
     } catch (e) {
       showOffline();
+    }
+  }
+
+  async function getAvailableSegmentCount() {
+    const url = primaryVariantPlaylistUrl + '?_cb=' + Date.now();
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return 0;
+
+    const playlist = await res.text();
+    const matches = playlist.match(/^#EXTINF:/gm);
+    return matches ? matches.length : 0;
+  }
+
+  async function initHLSWhenBufferReady() {
+    if (waitingForStartupBuffer) return;
+
+    waitingForStartupBuffer = true;
+    showLoading();
+
+    try {
+      const segmentCount = await getAvailableSegmentCount();
+      if (!hlsInstance && segmentCount >= MIN_STARTUP_SEGMENTS) {
+        initHLS();
+      }
+    } catch (e) {
+      console.warn('Waiting for live buffer before playback:', e);
+    } finally {
+      waitingForStartupBuffer = false;
     }
   }
 
@@ -496,6 +529,7 @@ html, body {
         enableWorker: true,
         lowLatencyMode: false,
         startLevel: 0,
+        initialLiveManifestSize: MIN_STARTUP_SEGMENTS,
         capLevelToPlayerSize: true,
         testBandwidth: true,
 
@@ -506,9 +540,9 @@ html, body {
 
         // Buffer settings for 4s live segments
         backBufferLength: 60,
-        maxBufferLength: 45,
-        maxMaxBufferLength: 90,
-        maxBufferSize: 40 * 1000 * 1000,
+        maxBufferLength: 90,
+        maxMaxBufferLength: 180,
+        maxBufferSize: 80 * 1000 * 1000,
         maxStarvationDelay: 2,
         fragLoadingTimeOut: 12000,
         manifestLoadingTimeOut: 10000,
@@ -519,8 +553,8 @@ html, body {
         abrEwmaSlowLive: 8,
 
         // Stay behind live edge so the next segment is ready before playback needs it.
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 8,
+        liveSyncDurationCount: STABLE_LIVE_SEGMENT_LAG,
+        liveMaxLatencyDurationCount: STABLE_LIVE_SEGMENT_LAG * 2,
         liveDurationInfinity: true,
 
         // Cache-bust every playlist fetch so the browser never replays stale segments
