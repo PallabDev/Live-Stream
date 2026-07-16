@@ -37,4 +37,3 @@ paths:
   # Default fallback path configuration for raw incoming streams
   all:
     runOnPublish: /app/node_modules/.bin/tsx /app/src/app/common/scripts/on-publish.ts
-    runOnPublishRestart: yes
