@@ -56,6 +56,7 @@ async function main() {
   const resolutionsParam = queryParams.get("resolutions") || "480p";
   const fpsParam = Math.min(Math.max(parseInt(queryParams.get("fps") || `${DEFAULT_FPS}`), 10), 30);
   const hasAudio = queryParams.get("hasAudio") === "true";
+  const codecParam = queryParams.get("codec") || "vp8";
 
   // 1. Verify Stream Key in database
   const streamInfo = await StreamService.getStreamByKey(streamKey);
@@ -89,68 +90,94 @@ async function main() {
   console.log(`[on-publish] Set stream "${streamInfo.title}" active in database.`);
 
   // 4. Build dynamic ffmpeg process arguments
-  // Input RTSP stream URL served by MediaMTX
   const inputRtspUrl = `rtsp://localhost:8554/${rawPath}`;
-  
-  // Filter complex to scale video to multiple variants
-  let filterComplex = "";
-  if (resolutions.length > 1) {
-    const splits = resolutions.map((_, idx) => `[v${idx + 1}]`).join("");
-    filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB)[vfps];[vfps]split=${resolutions.length}${splits};`;
-    resolutions.forEach((res, idx) => {
-      filterComplex += `[v${idx + 1}]scale=w=-2:h=${RESOLUTION_CONFIG[res].height}:flags=fast_bilinear[v${idx + 1}out];`;
-    });
-  } else {
-    filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB),scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0]].height}:flags=fast_bilinear[v1out]`;
-  }
+  const isDirectH264Copy = codecParam === "h264" && resolutions.length === 1;
 
-  // Strip trailing semicolon
-  if (filterComplex.endsWith(";")) {
-    filterComplex = filterComplex.slice(0, -1);
-  }
+  let ffmpegArgs: string[] = [];
 
-  const ffmpegArgs = [
-    "-hide_banner",
-    "-loglevel", "warning",
-    "-stats_period", "5",
-    "-progress", "pipe:2",
-    "-fflags", "+genpts+discardcorrupt",
-    "-err_detect", "ignore_err",
-    "-thread_queue_size", "1024",
-    "-i", inputRtspUrl, // Read input from RTSP
-    "-y",
-    "-filter_complex", filterComplex
-  ];
-
-  // Map video profiles and configurations for each resolution
-  resolutions.forEach((res, idx) => {
-    const config = RESOLUTION_CONFIG[res];
-    const bitrateKbps = config.defaultBitrate;
-    const videoBitrate = `${bitrateKbps}k`;
-    const keyInterval = fpsParam * HLS_SEGMENT_SECONDS;
-
-    ffmpegArgs.push("-map", `[v${idx + 1}out]`);
+  if (isDirectH264Copy) {
+    console.log(`[on-publish] Stream is H.264 video. Enabling ZERO-TRANSCODE direct copy mode.`);
+    ffmpegArgs = [
+      "-hide_banner",
+      "-loglevel", "warning",
+      "-stats_period", "5",
+      "-progress", "pipe:2",
+      "-fflags", "+genpts+discardcorrupt",
+      "-err_detect", "ignore_err",
+      "-thread_queue_size", "1024",
+      "-i", inputRtspUrl, // Read input from RTSP
+      "-y",
+      "-map", "0:v:0"
+    ];
     if (hasAudio) {
       ffmpegArgs.push("-map", "0:a?");
     }
-
     ffmpegArgs.push(
-      `-c:v:${idx}`, "libx264",
-      `-b:v:${idx}`, videoBitrate,
-      `-maxrate:v:${idx}`, videoBitrate,
-      `-bufsize:v:${idx}`, `${Math.round(bitrateKbps * 1.5)}k`,
-      `-g:v:${idx}`, keyInterval.toString(),
-      `-keyint_min:v:${idx}`, keyInterval.toString(),
-      `-force_key_frames:v:${idx}`, `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,
-      `-sc_threshold:v:${idx}`, "0",
-      `-preset:v:${idx}`, X264_PRESET,
-      `-tune:v:${idx}`, X264_TUNE,
-      `-profile:v:${idx}`, "main",
-      `-pix_fmt:v:${idx}`, "yuv420p"
+      "-c:v:0", "copy"
     );
+    fs.mkdirSync(path.join(mediaDir, "0"), { recursive: true });
+  } else {
+    console.log(`[on-publish] Transcoding stream (codec: ${codecParam}, resolutions: ${resolutions.join(",")}) using software transcoder.`);
+    // Filter complex to scale video to multiple variants
+    let filterComplex = "";
+    if (resolutions.length > 1) {
+      const splits = resolutions.map((_, idx) => `[v${idx + 1}]`).join("");
+      filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB)[vfps];[vfps]split=${resolutions.length}${splits};`;
+      resolutions.forEach((res, idx) => {
+        filterComplex += `[v${idx + 1}]scale=w=-2:h=${RESOLUTION_CONFIG[res].height}:flags=fast_bilinear[v${idx + 1}out];`;
+      });
+    } else {
+      filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB),scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0]].height}:flags=fast_bilinear[v1out]`;
+    }
 
-    fs.mkdirSync(path.join(mediaDir, idx.toString()), { recursive: true });
-  });
+    // Strip trailing semicolon
+    if (filterComplex.endsWith(";")) {
+      filterComplex = filterComplex.slice(0, -1);
+    }
+
+    ffmpegArgs = [
+      "-hide_banner",
+      "-loglevel", "warning",
+      "-stats_period", "5",
+      "-progress", "pipe:2",
+      "-fflags", "+genpts+discardcorrupt",
+      "-err_detect", "ignore_err",
+      "-thread_queue_size", "1024",
+      "-i", inputRtspUrl, // Read input from RTSP
+      "-y",
+      "-filter_complex", filterComplex
+    ];
+
+    // Map video profiles and configurations for each resolution
+    resolutions.forEach((res, idx) => {
+      const config = RESOLUTION_CONFIG[res];
+      const bitrateKbps = config.defaultBitrate;
+      const videoBitrate = `${bitrateKbps}k`;
+      const keyInterval = fpsParam * HLS_SEGMENT_SECONDS;
+
+      ffmpegArgs.push("-map", `[v${idx + 1}out]`);
+      if (hasAudio) {
+        ffmpegArgs.push("-map", "0:a?");
+      }
+
+      ffmpegArgs.push(
+        `-c:v:${idx}`, "libx264",
+        `-b:v:${idx}`, videoBitrate,
+        `-maxrate:v:${idx}`, videoBitrate,
+        `-bufsize:v:${idx}`, `${Math.round(bitrateKbps * 1.5)}k`,
+        `-g:v:${idx}`, keyInterval.toString(),
+        `-keyint_min:v:${idx}`, keyInterval.toString(),
+        `-force_key_frames:v:${idx}`, `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,
+        `-sc_threshold:v:${idx}`, "0",
+        `-preset:v:${idx}`, X264_PRESET,
+        `-tune:v:${idx}`, X264_TUNE,
+        `-profile:v:${idx}`, "main",
+        `-pix_fmt:v:${idx}`, "yuv420p"
+      );
+
+      fs.mkdirSync(path.join(mediaDir, idx.toString()), { recursive: true });
+    });
+  }
 
   if (hasAudio) {
     ffmpegArgs.push(

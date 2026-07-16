@@ -445,6 +445,29 @@
         peerConnection.addTrack(track, localStream);
       });
 
+      // Prioritize H.264 video codec if supported by the browser
+      try {
+        const transceivers = peerConnection.getTransceivers();
+        transceivers.forEach(transceiver => {
+          if (transceiver.sender && transceiver.sender.track && transceiver.sender.track.kind === 'video') {
+            if (typeof RTCRtpReceiver.getCapabilities === 'function') {
+              const capabilities = RTCRtpReceiver.getCapabilities('video');
+              if (capabilities && capabilities.codecs) {
+                const codecs = capabilities.codecs;
+                const h264Codecs = codecs.filter(codec => codec.mimeType.toLowerCase() === 'video/h264');
+                const otherCodecs = codecs.filter(codec => codec.mimeType.toLowerCase() !== 'video/h264');
+                if (h264Codecs.length > 0) {
+                  transceiver.setCodecPreferences([...h264Codecs, ...otherCodecs]);
+                  console.log('[WebRTC] Prioritized H.264 video codec preferences');
+                }
+              }
+            }
+          }
+        });
+      } catch (codecErr) {
+        console.warn('Failed to set video codec preferences:', codecErr);
+      }
+
       // Configure encoding parameters for the video sender to output the selected bitrate
       const senders = peerConnection.getSenders();
       const videoSender = senders.find(s => s.track && s.track.kind === 'video');
@@ -497,8 +520,14 @@
         }
       });
 
+      // Detect codec in local SDP offer
+      const offerSdp = peerConnection.localDescription.sdp;
+      const isH264 = offerSdp.includes('H264') || offerSdp.includes('h264');
+      const codec = isH264 ? 'h264' : 'vp8';
+      console.log(`[WebRTC] SDP offer codec detected: ${codec}`);
+
       // Build WHIP signaling URL (sends query parameters for FFmpeg transcoding config)
-      const whipUrl = `${window.location.protocol}//${window.location.host}/whip/<%= stream.streamKey %>/whip?resolutions=${resolutions.join(',')}&fps=${fps}&bitrate=${bitrate}&hasAudio=${hasAudio}`;
+      const whipUrl = `${window.location.protocol}//${window.location.host}/whip/<%= stream.streamKey %>/whip?resolutions=${resolutions.join(',')}&fps=${fps}&bitrate=${bitrate}&hasAudio=${hasAudio}&codec=${codec}`;
       console.log('Connecting WHIP to URL:', whipUrl);
 
       const response = await fetch(whipUrl, {
