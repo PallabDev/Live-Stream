@@ -48,7 +48,7 @@ export class StreamController {
       // Write a master playlist format that live.ejs expects (pointing to variant 0)
       fs.writeFileSync(
         path.join(streamDir, "master.m3u8"),
-        `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=8000000\n0/index.m3u8\n`
+        `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=6000000\n0/index.m3u8\n`
       );
 
       console.log(`Spawning FFmpeg for stream key: ${key} inside ${variantDir}`);
@@ -71,12 +71,14 @@ export class StreamController {
         "-preset", "ultrafast",
         "-tune", "zerolatency",
         "-crf", "26",
+        "-maxrate", "6M",
+        "-bufsize", "12M",
         "-pix_fmt", "yuv420p",
 
-        // Audio encoding settings: High quality 256kbps stereo AAC
+        // Audio encoding settings: 128kbps stereo AAC
         "-c:a", "aac",
-        "-b:a", "256k",
-        "-ar", "48000",
+        "-b:a", "128k",
+        "-ar", "44100",
         "-ac", "2",
 
         // HLS output configuration inside variant directory
