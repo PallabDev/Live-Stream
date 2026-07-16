@@ -121,13 +121,13 @@
       </div>
     </div>
 
-    <!-- Frame rate toggle (24 or 60) -->
+    <!-- Frame rate toggle (20 or 60) -->
     <div class="form-group" style="margin-bottom: 1.5rem;">
       <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Target Frame Rate</label>
       <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="radio" name="fps" id="fps-24" value="24" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
-          <span>24 FPS</span>
+          <input type="radio" name="fps" id="fps-20" value="20" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <span>20 FPS</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
           <input type="radio" name="fps" id="fps-60" value="60" disabled style="accent-color: var(--primary); width: 16px; height: 16px;">
@@ -140,9 +140,9 @@
     <div class="form-group" style="margin-bottom: 1.5rem;">
       <label class="form-label" style="display: flex; justify-content: space-between; font-weight: 600;">
         <span>Target Bitrate</span>
-        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">500 Kbps</span>
+        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">400 Kbps</span>
       </label>
-      <input type="range" id="bitrate-input" min="400" max="2200" step="100" value="500" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
+      <input type="range" id="bitrate-input" min="400" max="2200" step="100" value="400" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
     </div>
 
     <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
@@ -162,10 +162,10 @@
   let broadcastState = 'idle';
   const AUDIO_BITS_PER_SECOND = 96000;
   const MAX_VIDEO_BITRATE_KBPS = 2200;
-  const DEFAULT_FRAME_RATE = 24;
-  const MAX_FRAME_RATE = 24;
+  const DEFAULT_FRAME_RATE = 20;
+  const MAX_FRAME_RATE = 20;
   const RESOLUTION_LIMITS = {
-    '480p': { width: 854, height: 480, bitrate: 500 },
+    '480p': { width: 854, height: 480, bitrate: 400 },
     '720p': { width: 1280, height: 720, bitrate: 900 },
     '1080p': { width: 1920, height: 1080, bitrate: 2200 }
   };
@@ -210,7 +210,7 @@
     document.getElementById('res-480p').disabled = disabled;
     document.getElementById('res-720p').disabled = disabled;
     document.getElementById('res-1080p').disabled = disabled;
-    document.getElementById('fps-24').disabled = disabled;
+    document.getElementById('fps-20').disabled = disabled;
     document.getElementById('fps-60').disabled = true;
     document.getElementById('bitrate-input').disabled = disabled;
   }
@@ -310,24 +310,24 @@
       resultEl.innerHTML = `Speed: <strong style="color: var(--accent); font-size: 1.1rem;">${speedMbps.toFixed(2)} Mbps</strong>`;
       
       let recResolutions = ['480p'];
-      let recBitrate = 500; // Kbps
+      let recBitrate = 400; // Kbps
 
       if (speedMbps < 2) {
         recResolutions = ['480p'];
-        recBitrate = 500;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 24 FPS</strong>';
+        recBitrate = 400;
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 20 FPS</strong>';
       } else if (speedMbps < 6) {
         recResolutions = ['480p'];
-        recBitrate = 500;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 24 FPS</strong>';
+        recBitrate = 400;
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 20 FPS</strong>';
       } else if (speedMbps < 35) {
         recResolutions = ['480p'];
-        recBitrate = 500;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 24 FPS</strong>';
+        recBitrate = 400;
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 20 FPS</strong>';
       } else {
         recResolutions = ['480p'];
-        recBitrate = 500;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 24 FPS</strong>';
+        recBitrate = 400;
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 20 FPS</strong>';
       }
 
       // Apply recommendation
@@ -338,7 +338,7 @@
       document.getElementById('res-720p').checked = recResolutions.includes('720p');
       document.getElementById('res-1080p').checked = recResolutions.includes('1080p');
 
-      document.getElementById('fps-24').checked = true;
+      document.getElementById('fps-20').checked = true;
 
     } catch (err) {
       statusEl.textContent = 'Test failed: ' + err.message;
@@ -492,8 +492,8 @@
         }
       };
 
-      // Larger chunks reduce WebM fragmentation and produce cleaner ffmpeg input.
-      mediaRecorder.start(2000);
+      // Smaller chunks keep ffmpeg input steadier and reduce live stalls.
+      mediaRecorder.start(1000);
       broadcastState = 'live';
 
       // UI states

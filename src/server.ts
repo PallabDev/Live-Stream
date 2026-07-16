@@ -3,6 +3,7 @@ import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import path from "path";
 import fs from "fs";
+import os from "os";
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
@@ -23,13 +24,13 @@ const port = process.env.PORT || 3000;
 
 const HLS_SEGMENT_SECONDS = 2;
 const STREAM_RETENTION_SECONDS = 600;
-const DEFAULT_FPS = 24;
-const MAX_FPS = 24;
+const DEFAULT_FPS = 20;
+const MAX_FPS = 20;
 const MIN_VIDEO_BITRATE_KBPS = 400;
 const MAX_VIDEO_BITRATE_KBPS = 2200;
 const AUDIO_BITRATE_KBPS = 96;
 const RESOLUTION_CONFIG = {
-    "480p": { height: 480, defaultBitrate: 500, maxBitrate: 500 },
+    "480p": { height: 480, defaultBitrate: 400, maxBitrate: 400 },
     "720p": { height: 720, defaultBitrate: 900, maxBitrate: 900 },
     "1080p": { height: 1080, defaultBitrate: 2200, maxBitrate: 2200 },
 } as const;
@@ -43,6 +44,11 @@ type ActiveIngest = {
     ingestInterval: NodeJS.Timeout;
 };
 
+type CpuSnapshot = {
+    idle: number;
+    total: number;
+};
+
 function clampNumber(value: number, min: number, max: number) {
     return Math.min(Math.max(value, min), max);
 }
@@ -50,6 +56,43 @@ function clampNumber(value: number, min: number, max: number) {
 function getSegmentNumber(fileName: string) {
     const match = fileName.match(/^file(\d+)\.ts$/);
     return match ? parseInt(match[1], 10) : null;
+}
+
+function getSystemCpuSnapshot(): CpuSnapshot {
+    return os.cpus().reduce<CpuSnapshot>((snapshot, cpu) => {
+        const total = Object.values(cpu.times).reduce((sum, value) => sum + value, 0);
+        snapshot.idle += cpu.times.idle;
+        snapshot.total += total;
+        return snapshot;
+    }, { idle: 0, total: 0 });
+}
+
+function getSystemCpuPercent(previous: CpuSnapshot, current: CpuSnapshot) {
+    const idleDelta = current.idle - previous.idle;
+    const totalDelta = current.total - previous.total;
+
+    if (totalDelta <= 0) return null;
+    return ((totalDelta - idleDelta) / totalDelta) * 100;
+}
+
+function getProcessCpuTicks(pid: number | undefined) {
+    if (!pid || process.platform !== "linux") return null;
+
+    try {
+        const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+        const afterProcessName = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
+        const userTicks = Number(afterProcessName[11]);
+        const systemTicks = Number(afterProcessName[12]);
+
+        if (!Number.isFinite(userTicks) || !Number.isFinite(systemTicks)) return null;
+        return userTicks + systemTicks;
+    } catch (_) {
+        return null;
+    }
+}
+
+function formatCpuPercent(value: number | null) {
+    return value === null ? "n/a" : `${value.toFixed(1)}%`;
 }
 
 function stopActiveIngest(streamKey: string, reason: string) {
@@ -154,9 +197,9 @@ wss.on("connection", async (ws: WebSocket, request) => {
     const resolutionsParam = parsedUrl.searchParams.get("resolutions") || "480p";
     const requestedFps = parseInt(parsedUrl.searchParams.get("fps") || DEFAULT_FPS.toString(), 10);
     const fpsParam = clampNumber(Number.isFinite(requestedFps) ? requestedFps : DEFAULT_FPS, DEFAULT_FPS, MAX_FPS);
-    const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "500", 10);
+    const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "400", 10);
     const bitrateParam = clampNumber(
-        Number.isFinite(requestedBitrate) ? requestedBitrate : 500,
+        Number.isFinite(requestedBitrate) ? requestedBitrate : 400,
         MIN_VIDEO_BITRATE_KBPS,
         MAX_VIDEO_BITRATE_KBPS
     );
@@ -429,14 +472,44 @@ wss.on("connection", async (ws: WebSocket, request) => {
     let ingestBytes = 0;
     let ingestMessages = 0;
     let lastIngestMessageAt = Date.now();
+    let previousCpuAt = Date.now();
+    let previousSystemCpu = getSystemCpuSnapshot();
+    let previousNodeCpu = process.cpuUsage();
+    let previousFfmpegCpuTicks = getProcessCpuTicks(ffmpegProcess.pid);
+
     const ingestInterval = setInterval(() => {
+        const now = Date.now();
         const kbps = Math.round((ingestBytes * 8) / 5 / 1000);
-        const lastMessageAgeSec = ((Date.now() - lastIngestMessageAt) / 1000).toFixed(2);
+        const lastMessageAgeSec = ((now - lastIngestMessageAt) / 1000).toFixed(2);
+        const elapsedMs = now - previousCpuAt;
+
+        const currentSystemCpu = getSystemCpuSnapshot();
+        const systemCpuPercent = getSystemCpuPercent(previousSystemCpu, currentSystemCpu);
+        previousSystemCpu = currentSystemCpu;
+
+        const currentNodeCpu = process.cpuUsage();
+        const nodeCpuMicros =
+            (currentNodeCpu.user - previousNodeCpu.user) +
+            (currentNodeCpu.system - previousNodeCpu.system);
+        const nodeCpuPercent = elapsedMs > 0 ? nodeCpuMicros / (elapsedMs * 1000) * 100 : null;
+        previousNodeCpu = currentNodeCpu;
+
+        const currentFfmpegCpuTicks = getProcessCpuTicks(ffmpegProcess.pid);
+        let ffmpegCpuPercent: number | null = null;
+        if (previousFfmpegCpuTicks !== null && currentFfmpegCpuTicks !== null && elapsedMs > 0) {
+            // Linux process CPU ticks are normally reported at 100 ticks/sec.
+            ffmpegCpuPercent = ((currentFfmpegCpuTicks - previousFfmpegCpuTicks) / 100) / (elapsedMs / 1000) * 100;
+        }
+        previousFfmpegCpuTicks = currentFfmpegCpuTicks;
+        previousCpuAt = now;
 
         console.log(
             `[ingest health] stream=${streamKey} messages=${ingestMessages} ` +
             `kbps=${kbps} lastMessageAgeSec=${lastMessageAgeSec} ` +
-            `stdinBackpressure=${ffmpegProcess.stdin.writableNeedDrain}`
+            `stdinBackpressure=${ffmpegProcess.stdin.writableNeedDrain} ` +
+            `systemCpu=${formatCpuPercent(systemCpuPercent)} ` +
+            `nodeCpu=${formatCpuPercent(nodeCpuPercent)} ` +
+            `ffmpegCpu=${formatCpuPercent(ffmpegCpuPercent)}`
         );
 
         ingestBytes = 0;
