@@ -6,10 +6,6 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install MediaMTX
-ADD https://github.com/bluenviron/mediamtx/releases/download/v1.19.2/mediamtx_v1.19.2_linux_amd64.tar.gz /tmp/mediamtx.tar.gz
-RUN tar -xzf /tmp/mediamtx.tar.gz -C /usr/local/bin/ mediamtx && chmod +x /usr/local/bin/mediamtx && rm /tmp/mediamtx.tar.gz
-
 WORKDIR /app
 
 # Copy dependency files

@@ -4,8 +4,45 @@ import { StreamService } from "./stream.service.js";
 import { createStreamDto } from "./stream.dto.js";
 import fs from "fs";
 import path from "path";
+import { spawn, ChildProcess } from "child_process";
+
+interface StreamSession {
+  ffmpegProcess: ChildProcess;
+  inactivityTimeout: NodeJS.Timeout;
+  streamKey: string;
+}
 
 export class StreamController {
+  private static activeSessions = new Map<string, StreamSession>();
+
+  private static async stopStreamSession(streamKey: string) {
+    const session = StreamController.activeSessions.get(streamKey);
+    if (!session) return;
+
+    console.log(`Stopping stream session for key: ${streamKey}`);
+
+    // Clear timeout
+    clearTimeout(session.inactivityTimeout);
+
+    // Terminate FFmpeg process
+    try {
+      session.ffmpegProcess.stdin?.end();
+      session.ffmpegProcess.kill("SIGTERM");
+    } catch (err) {
+      console.error(`Error terminating FFmpeg for stream ${streamKey}:`, err);
+    }
+
+    // Remove from active map
+    StreamController.activeSessions.delete(streamKey);
+
+    // Update DB status to offline
+    try {
+      await StreamService.setStreamLive(streamKey, false);
+      console.log(`Stream database status updated to offline for key: ${streamKey}`);
+    } catch (err) {
+      console.error(`Error updating DB for stream ${streamKey}:`, err);
+    }
+  }
   static async createStream(req: AuthenticatedRequest, res: Response) {
     try {
       const { error, value } = createStreamDto.validate(req.body);
@@ -91,10 +128,126 @@ export class StreamController {
         return res.status(403).json({ success: false, error: "Unauthorized." });
       }
 
+      // Stop any existing session for this key first
+      if (StreamController.activeSessions.has(key)) {
+        await StreamController.stopStreamSession(key);
+      }
+
+      // Set up dedicated stream output directory
+      const mediaDir = path.join(process.cwd(), "media");
+      const streamDir = path.join(mediaDir, key);
+      
+      if (fs.existsSync(streamDir)) {
+        // Clear old stream chunks
+        fs.readdirSync(streamDir).forEach((file) => {
+          if (file.endsWith(".ts") || file.endsWith(".m3u8")) {
+            try {
+              fs.unlinkSync(path.join(streamDir, file));
+            } catch (err) {}
+          }
+        });
+      } else {
+        fs.mkdirSync(streamDir, { recursive: true });
+      }
+
+      // Write a master playlist format that live.ejs expects
+      fs.writeFileSync(
+        path.join(streamDir, "master.m3u8"),
+        `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=8000000\nindex.m3u8\n`
+      );
+
+      console.log(`Spawning FFmpeg for stream key: ${key} inside ${streamDir}`);
+
+      // Spawn FFmpeg with low latency settings + high quality output (CRF 20, 256k AAC audio)
+      const ffmpegProcess = spawn("ffmpeg", [
+        "-fflags", "+genpts",
+        "-f", "webm",
+        "-i", "pipe:0",
+
+        // Map first video and optional first audio streams
+        "-map", "0:v:0",
+        "-map", "0:a:0?",
+
+        // Video encoding settings: High quality libx264, zero-latency tune
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-tune", "zerolatency",
+        "-crf", "20",
+        "-pix_fmt", "yuv420p",
+
+        // Audio encoding settings: High quality 256kbps stereo AAC
+        "-c:a", "aac",
+        "-b:a", "256k",
+        "-ar", "48000",
+        "-ac", "2",
+
+        // HLS output configuration
+        "-f", "hls",
+        "-hls_time", "2", // Short segment size for responsive streaming
+        "-hls_list_size", "6", // Keep playlist small for low latency
+        "-hls_flags", "delete_segments+append_list+omit_endlist+independent_segments",
+        "-hls_segment_filename", path.join(streamDir, "segment_%05d.ts"),
+        path.join(streamDir, "index.m3u8"),
+      ]);
+
+      // Handle FFmpeg diagnostics
+      ffmpegProcess.stderr.on("data", (data) => {
+        const logMsg = data.toString();
+        if (logMsg.includes("Error") || logMsg.includes("Failed")) {
+          console.warn(`[FFmpeg-Error - ${key}]:`, logMsg.trim());
+        }
+      });
+
+      ffmpegProcess.on("close", (code) => {
+        console.log(`FFmpeg exited for stream ${key} with code: ${code}`);
+        if (StreamController.activeSessions.has(key)) {
+          StreamController.stopStreamSession(key);
+        }
+      });
+
+      // Setup inactivity timeout (disconnect if no chunks received for 10 seconds)
+      const inactivityTimeout = setTimeout(() => {
+        console.log(`Inactivity detected on stream ${key}. Cleaning up.`);
+        StreamController.stopStreamSession(key);
+      }, 10000);
+
+      // Save active session
+      StreamController.activeSessions.set(key, {
+        ffmpegProcess,
+        inactivityTimeout,
+        streamKey: key,
+      });
+
       await StreamService.setStreamLive(key, true);
-      return res.json({ success: true, message: "Stream is now active and ready for OBS connection." });
+      return res.json({ success: true, message: "Stream started dynamically via FFmpeg." });
     } catch (error: any) {
       return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  static async receiveVideo(req: Request, res: Response) {
+    const { key } = req.params;
+    const session = StreamController.activeSessions.get(key);
+
+    if (!session) {
+      return res.status(404).json({ error: "No active stream session found for this key." });
+    }
+
+    try {
+      // Write chunk to FFmpeg
+      session.ffmpegProcess.stdin?.write(req.body);
+
+      // Reset inactivity timeout
+      clearTimeout(session.inactivityTimeout);
+      session.inactivityTimeout = setTimeout(() => {
+        console.log(`Inactivity detected on stream ${key}. Cleaning up.`);
+        StreamController.stopStreamSession(key);
+      }, 10000);
+
+      return res.sendStatus(200);
+    } catch (err) {
+      console.error(`Error feeding video chunk to FFmpeg for ${key}:`, err);
+      return res.status(500).send("Error feeding video stream.");
     }
   }
 
@@ -109,30 +262,7 @@ export class StreamController {
         return res.status(403).json({ success: false, error: "Unauthorized." });
       }
 
-      await StreamService.setStreamLive(key, false);
-
-      // Kick session in MediaMTX Control API
-      try {
-        const listRes = await fetch("http://127.0.0.1:9997/v3/rtmpsessions/list");
-        if (listRes.ok) {
-          const data: any = await listRes.json();
-          const sessions = data.items || [];
-          const sessionToKick = sessions.find((s: any) => {
-            const pathKey = s.path.split("/").pop();
-            return pathKey === key;
-          });
-
-          if (sessionToKick) {
-            console.log(`[MediaMTX Kick] Kicking active RTMP session ID ${sessionToKick.id} for key ${key}`);
-            await fetch(`http://127.0.0.1:9997/v3/rtmpsessions/kick/${sessionToKick.id}`, {
-              method: "POST"
-            });
-          }
-        }
-      } catch (err: any) {
-        console.error("[MediaMTX Kick Error]", err.message);
-      }
-
+      await StreamController.stopStreamSession(key);
       return res.json({ success: true, message: "Stream stopped successfully." });
     } catch (error: any) {
       return res.status(500).json({ success: false, error: error.message });

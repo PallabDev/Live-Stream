@@ -1,4 +1,4 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import { StreamController } from "./stream.controller.js";
 import { requireAuth, requireAccess } from "../auth/auth.middleware.js";
 
@@ -17,6 +17,15 @@ router.post("/api/stream/auth", StreamController.mediaMtxAuth);
 
 // Stream control endpoints (require auth)
 router.post("/api/stream/:key/golive", requireAuth, StreamController.goLive);
+router.post(
+  "/api/stream/:key/video",
+  requireAuth,
+  express.raw({
+    type: "*/*",
+    limit: "50mb"
+  }),
+  StreamController.receiveVideo
+);
 router.post("/api/stream/:key/stop", requireAuth, StreamController.stopLive);
 router.post("/api/stream/:key/settings", requireAuth, StreamController.updateSettings);
 

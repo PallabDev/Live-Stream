@@ -286,6 +286,7 @@
         let durationInterval = null;
 
         let pc = null;
+        let mediaRecorder = null;
         let captureStream = null;
         let currentSourceType = null; // 'file' or 'screen'
 
@@ -425,104 +426,50 @@
                 isLive = true;
                 updateUI();
 
-                // 2. Establish WebRTC WHIP connection
-                console.log("[Studio WHIP] Connecting to MediaMTX WHIP endpoint...");
-                pc = new RTCPeerConnection({
-                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                // 2. Start MediaRecorder to capture and POST chunks
+                console.log("[Studio] Initialising MediaRecorder...");
+                
+                // Configure recorder to capture visual-lossless video + good quality audio
+                // Request 8 Mbps video and 256kbps audio
+                mediaRecorder = new MediaRecorder(mediaStream, {
+                    mimeType: 'video/webm;codecs=vp8,opus',
+                    videoBitsPerSecond: 8000000,
+                    audioBitsPerSecond: 256000
                 });
 
-                // Track PC state changes
-                pc.onconnectionstatechange = () => {
-                    console.log("[WebRTC state]:", pc.connectionState);
-                    if (pc.connectionState === 'connected') {
-                        isStreaming = true;
-                        updateUI();
-
-                        // Optimize WebRTC video sender encoding parameters for high-quality movie streaming
+                mediaRecorder.ondataavailable = async (e) => {
+                    if (e.data && e.data.size > 0 && isLive) {
                         try {
-                            const senders = pc.getSenders();
-                            senders.forEach(sender => {
-                                if (sender.track && sender.track.kind === 'video') {
-                                    const parameters = sender.getParameters();
-                                    if (parameters && parameters.encodings && parameters.encodings.length > 0) {
-                                        parameters.encodings[0].maxBitrate = 8000000; // 8 Mbps
-                                        parameters.encodings[0].maxFramerate = 30; // Force 30fps
-                                        parameters.encodings[0].scaleResolutionDownBy = 1.0; // Prevent scaling down
-                                        parameters.degradationPreference = 'maintain-resolution'; // Prioritize resolution quality over adaptive latency drops
-
-                                        sender.setParameters(parameters).then(() => {
-                                            console.log("[WebRTC Sender] Configured: 8 Mbps, maxFramerate=30, scale=1.0, degradationPreference=maintain-resolution.");
-                                        }).catch(e => console.warn("Failed to set sender parameters:", e));
-                                    }
-                                }
+                            fetch(`/api/stream/${streamKey}/video`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'video/webm' },
+                                body: e.data
                             });
                         } catch (err) {
-                            console.warn("Failed to configure WebRTC sender parameters:", err);
+                            console.error("Chunk transmit failure:", err);
                         }
-
-                        // Start stream duration counter
-                        streamStartTime = Date.now();
-                        document.getElementById("duration-badge").style.display = "inline-flex";
-                        if (durationInterval) clearInterval(durationInterval);
-                        durationInterval = setInterval(updateDuration, 1000);
-                    } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-                        triggerStopLive();
                     }
                 };
 
-                // Add local captured tracks to peer connection
-                mediaStream.getTracks().forEach(track => {
-                    pc.addTrack(track, mediaStream);
-                });
+                // Track stream state change
+                mediaRecorder.onstart = () => {
+                    isStreaming = true;
+                    updateUI();
+                    
+                    // Start stream duration counter
+                    streamStartTime = Date.now();
+                    document.getElementById("duration-badge").style.display = "inline-flex";
+                    if (durationInterval) clearInterval(durationInterval);
+                    durationInterval = setInterval(updateDuration, 1000);
+                };
 
-                // Prefer H.264 for high-quality WebRTC ingest
-                try {
-                    if (typeof RTCRtlTransceiver !== 'undefined' && 'setCodecPreferences' in RTCRtlTransceiver.prototype) {
-                        const transceivers = pc.getTransceivers();
-                        transceivers.forEach(transceiver => {
-                            if (transceiver.sender && transceiver.sender.track && transceiver.sender.track.kind === 'video') {
-                                const capabilities = RTCRtlSender.getCapabilities('video');
-                                if (capabilities && capabilities.codecs) {
-                                    const h264Codecs = capabilities.codecs.filter(c =>
-                                        c.mimeType.toLowerCase() === 'video/h264' &&
-                                        c.sdpFmtpLine && c.sdpFmtpLine.includes('profile-level-id=42e01f')
-                                    );
-                                    if (h264Codecs.length > 0) {
-                                        const otherCodecs = capabilities.codecs.filter(c => c.mimeType.toLowerCase() !== 'video/h264');
-                                        transceiver.setCodecPreferences([...h264Codecs, ...otherCodecs]);
-                                        console.log("[WebRTC Codec] H.264 preferred successfully.");
-                                    }
-                                }
-                            }
-                        });
-                    }
-                } catch (codecErr) {
-                    console.warn("Codec preference configuration ignored:", codecErr);
-                }
+                mediaRecorder.onstop = () => {
+                    isStreaming = false;
+                    updateUI();
+                };
 
-                // Create and negotiate WebRTC SDP Offer
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-
-                const whipUrl = `/whip/live/${streamKey}/whip`;
-                const whipRes = await fetch(whipUrl, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/sdp"
-                    },
-                    body: offer.sdp
-                });
-
-                if (!whipRes.ok) {
-                    const errText = await whipRes.text();
-                    throw new Error(`WHIP server rejected connection: ${whipRes.status} ${errText}`);
-                }
-
-                const answerSdp = await whipRes.text();
-                await pc.setRemoteDescription(new RTCSessionDescription({
-                    type: "answer",
-                    sdp: answerSdp
-                }));
+                // Send chunks every 1 second
+                mediaRecorder.start(1000);
 
             } catch (err) {
                 alert("Broadcasting failed: " + err.message);
@@ -531,12 +478,11 @@
         }
 
         async function triggerStopLive() {
-            console.log("[Studio WHIP] Stopping stream...");
+            console.log("[Studio] Stopping stream...");
 
-            // Stop WebRTC peer connection
-            if (pc) {
-                pc.close();
-                pc = null;
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                mediaRecorder = null;
             }
 
             // Stop duration timers
@@ -548,7 +494,7 @@
 
             isStreaming = false;
 
-            // Call Stop endpoint on database (revokes auth and kicks media session)
+            // Call Stop endpoint on database (revokes auth and kills FFmpeg)
             try {
                 await fetch(`/api/stream/${streamKey}/stop`, { method: "POST" });
             } catch (_) { }
