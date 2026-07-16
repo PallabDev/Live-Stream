@@ -10,13 +10,13 @@ dotenv.config();
 const HLS_SEGMENT_SECONDS = 2;
 const STREAM_RETENTION_SECONDS = 600;
 const DEFAULT_FPS = 30;
-const X264_PRESET = process.env.X264_PRESET || "veryfast";
-const X264_TUNE = process.env.X264_TUNE || "zerolatency";
+const X264_PRESET = process.env.X264_PRESET || "superfast";
+const X264_TUNE = process.env.X264_TUNE || "film";
 
 const RESOLUTION_CONFIG = {
-  "480p": { height: 480, defaultBitrate: 1500 },
-  "720p": { height: 720, defaultBitrate: 3000 },
-  "1080p": { height: 1080, defaultBitrate: 6000 },
+  "480p": { height: 480, defaultBitrate: 1000 },
+  "720p": { height: 720, defaultBitrate: 2000 },
+  "1080p": { height: 1080, defaultBitrate: 3500 },
 } as const;
 
 type StreamResolution = keyof typeof RESOLUTION_CONFIG;
@@ -118,17 +118,12 @@ async function main() {
     let filterComplex = "";
     if (resolutions.length > 1) {
       const splits = resolutions.map((_, idx) => `[v${idx + 1}]`).join("");
-      filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB)[vfps];[vfps]split=${resolutions.length}${splits};`;
+      filterComplex += `[0:v]split=${resolutions.length}${splits};`;
       resolutions.forEach((res, idx) => {
         filterComplex += `[v${idx + 1}]scale=w=-2:h=${RESOLUTION_CONFIG[res as StreamResolution].height}:flags=bicubic[v${idx + 1}out];`;
       });
     } else {
-      filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,setpts=N/(${fpsParam}*TB),scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0] as StreamResolution].height}:flags=bicubic[v1out]`;
-    }
-
-    // Strip trailing semicolon
-    if (filterComplex.endsWith(";")) {
-      filterComplex = filterComplex.slice(0, -1);
+      filterComplex += `[0:v]scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0] as StreamResolution].height}:flags=bicubic[v1out]`;
     }
 
     ffmpegArgs = [
@@ -158,6 +153,7 @@ async function main() {
 
       ffmpegArgs.push(
         `-c:v:${idx}`, "libx264",
+        `-r:v:${idx}`, fpsParam.toString(),
         `-b:v:${idx}`, videoBitrate,
         `-maxrate:v:${idx}`, videoBitrate,
         `-bufsize:v:${idx}`, `${Math.round(config.defaultBitrate * 1.5)}k`,
@@ -187,6 +183,8 @@ async function main() {
 
   const varStreamMap = resolutions.map((_, idx) => hasAudio ? `v:${idx},a:${idx}` : `v:${idx}`).join(" ");
   ffmpegArgs.push(
+    "-vsync", "cfr",
+    "-async", "1",
     "-max_muxing_queue_size", "1024",
     "-f", "hls",
     "-hls_time", HLS_SEGMENT_SECONDS.toString(),
