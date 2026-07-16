@@ -340,6 +340,37 @@
     }
   }
 
+  function preferH264InSdp(sdp) {
+    const lines = sdp.split('\r\n');
+    let mVideoIdx = -1;
+    const h264Payloads = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('m=video')) {
+        mVideoIdx = i;
+      }
+      const match = lines[i].match(/^a=rtpmap:(\d+)\s+H264\/\d+/i);
+      if (match) {
+        h264Payloads.push(match[1]);
+      }
+    }
+
+    if (mVideoIdx === -1 || h264Payloads.length === 0) {
+      return sdp;
+    }
+
+    const mLine = lines[mVideoIdx];
+    const parts = mLine.split(' ');
+    const header = parts.slice(0, 3);
+    const payloads = parts.slice(3);
+
+    const otherPayloads = payloads.filter(pt => !h264Payloads.includes(pt));
+    const newPayloads = [...h264Payloads, ...otherPayloads];
+
+    lines[mVideoIdx] = header.join(' ') + ' ' + newPayloads.join(' ');
+    return lines.join('\r\n');
+  }
+
   async function setupMedia() {
     if (broadcastState !== 'idle') return;
 
@@ -468,23 +499,6 @@
         console.warn('Failed to set video codec preferences:', codecErr);
       }
 
-      // Configure encoding parameters for the video sender to output the selected bitrate
-      const senders = peerConnection.getSenders();
-      const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-      if (videoSender) {
-        const parameters = videoSender.getParameters();
-        if (!parameters.encodings || parameters.encodings.length === 0) {
-          parameters.encodings = [{}];
-        }
-        parameters.encodings[0].maxBitrate = bitrate * 1000; // Kbps to bps
-        console.log(`[WebRTC] Set video maxBitrate to: ${bitrate} Kbps`);
-        try {
-          await videoSender.setParameters(parameters);
-        } catch (setParamErr) {
-          console.warn('Failed to set WebRTC video encoding parameters:', setParamErr);
-        }
-      }
-
       // Handle connection state changes
       peerConnection.onconnectionstatechange = () => {
         console.log('WebRTC connection state:', peerConnection.connectionState);
@@ -503,7 +517,34 @@
 
       // Create offer
       const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
+      
+      // Force H.264 prioritization in SDP text
+      const preferredSdp = preferH264InSdp(offer.sdp);
+      
+      await peerConnection.setLocalDescription({
+        type: 'offer',
+        sdp: preferredSdp
+      });
+
+      // Configure encoding parameters for the video sender to output the selected bitrate
+      const senders = peerConnection.getSenders();
+      const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+      if (videoSender) {
+        const parameters = videoSender.getParameters();
+        if (!parameters.encodings || parameters.encodings.length === 0) {
+          parameters.encodings = [{}];
+        }
+        parameters.encodings[0].maxBitrate = bitrate * 1000; // Kbps to bps
+        parameters.encodings[0].maxFramerate = fps;
+        parameters.degradationPreference = 'maintain-framerate';
+        
+        console.log(`[WebRTC] Set video maxBitrate to: ${bitrate} Kbps, maxFramerate to: ${fps} FPS`);
+        try {
+          await videoSender.setParameters(parameters);
+        } catch (setParamErr) {
+          console.warn('Failed to set WebRTC video encoding parameters:', setParamErr);
+        }
+      }
 
       // Wait for ICE gathering to complete before sending SDP to MediaMTX
       await new Promise((resolve) => {
