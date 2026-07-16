@@ -104,6 +104,8 @@ async function main() {
       "-err_detect", "ignore_err",
       "-thread_queue_size", "1024",
       "-rtsp_transport", "tcp",
+      "-analyzeduration", "3000000",
+      "-probesize", "10000000",
       "-i", inputRtspUrl, // Read input from RTSP
       "-y",
       "-map", "0:v:0"
@@ -144,6 +146,8 @@ async function main() {
       "-err_detect", "ignore_err",
       "-thread_queue_size", "2048",
       "-rtsp_transport", "tcp",
+      "-analyzeduration", "3000000",
+      "-probesize", "10000000",
       "-i", inputRtspUrl, // Read input from RTSP
       "-y",
       "-filter_complex", filterComplex
