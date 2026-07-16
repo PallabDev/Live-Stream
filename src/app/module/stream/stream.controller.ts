@@ -62,6 +62,11 @@ export class StreamController {
         "-map", "0:v:0",
         "-map", "0:a:0?",
 
+        // Force keyframe interval of 60 frames (2 seconds at 30 fps) to allow precise segment slicing
+        "-keyint_min", "60",
+        "-g", "60",
+        "-sc_threshold", "0",
+
         // Video encoding settings: High quality libx264, zero-latency tune
         "-c:v", "libx264",
         "-preset", "ultrafast",
