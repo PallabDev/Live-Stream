@@ -3,6 +3,8 @@ import http from "http";
 import path from "path";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
+import { WebSocketServer } from "ws";
+import { StreamController } from "./app/module/stream/stream.controller.js";
 
 // Import routes
 import authRoutes from "./app/module/auth/auth.routes.js";
@@ -63,6 +65,26 @@ app.use(authRoutes);
 app.use(streamRoutes);
 app.use(dashboardRoutes);
 app.use(liveRoutes);
+
+// Setup WebSocket Server for stream chunks
+const wss = new WebSocketServer({ noServer: true });
+
+wss.on("connection", (ws: any, request: any, key: any) => {
+  StreamController.handleWebSocket(ws, key as string);
+});
+
+server.on("upgrade", (request, socket, head) => {
+  const pathname = new URL(request.url || "", `http://${request.headers.host}`).pathname;
+  const match = pathname.match(/^\/api\/stream\/([^\/]+)\/ws$/);
+  if (match) {
+    const key = match[1];
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit("connection", ws, request, key);
+    });
+  } else {
+    socket.destroy();
+  }
+});
 
 // General fallback page for 404s
 app.use((req, res) => {

@@ -287,6 +287,7 @@
 
         let pc = null;
         let mediaRecorder = null;
+        let mediaSocket = null;
         let captureStream = null;
         let currentSourceType = null; // 'file' or 'screen'
 
@@ -419,82 +420,62 @@
             }
 
             try {
-                // 1. Authorize stream in database
-                const authRes = await fetch(`/api/stream/${streamKey}/golive`, { method: "POST" });
-                if (!authRes.ok) throw new Error("Database authorization failed.");
-
-                isLive = true;
-                updateUI();
-
-                // 2. Start MediaRecorder to capture and POST chunks
-                console.log("[Studio] Initialising MediaRecorder...");
+                // Initialize WebSocket connection to server
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/api/stream/${streamKey}/ws`;
                 
-                // Configure recorder to capture visual-lossless video + good quality audio
-                // Request 2.5 Mbps video (optimized for upload reliability) and 256kbps audio
-                mediaRecorder = new MediaRecorder(mediaStream, {
-                    mimeType: 'video/webm;codecs=vp8,opus',
-                    videoBitsPerSecond: 2500000,
-                    audioBitsPerSecond: 256000
-                });
+                console.log("[Studio] Connecting stream WebSocket to:", wsUrl);
+                mediaSocket = new WebSocket(wsUrl);
 
-                // Sequential upload queue to guarantee in-order delivery and prevent HTTP connection starvation
-                let chunkQueue = [];
-                let isUploading = false;
-
-                async function processQueue() {
-                    if (isUploading || chunkQueue.length === 0 || !isLive) return;
-                    isUploading = true;
-                    const chunk = chunkQueue.shift();
-
-                    try {
-                        const res = await fetch(`/api/stream/${streamKey}/video`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'video/webm' },
-                            body: chunk
-                        });
-                        if (!res.ok) {
-                            console.warn("[Studio] Video chunk upload failed with status:", res.status);
-                        }
-                    } catch (err) {
-                        console.error("[Studio] Video chunk transmit failure:", err);
-                    } finally {
-                        isUploading = false;
-                        // Trigger next upload immediately
-                        setTimeout(processQueue, 0);
-                    }
-                }
-
-                mediaRecorder.ondataavailable = (e) => {
-                    if (e.data && e.data.size > 0 && isLive) {
-                        chunkQueue.push(e.data);
-                        // Prevent infinite buffer expansion on extremely slow connections (keep latency budget at ~15s)
-                        if (chunkQueue.length > 15) {
-                            console.warn("[Studio] Upload queue too large. Dropping oldest chunk to catch up.");
-                            chunkQueue.shift();
-                        }
-                        processQueue();
-                    }
-                };
-
-                // Track stream state change
-                mediaRecorder.onstart = () => {
-                    isStreaming = true;
+                mediaSocket.onopen = () => {
+                    console.log("[Studio] WebSocket connection established successfully.");
+                    isLive = true;
                     updateUI();
+
+                    // Start MediaRecorder to capture chunks
+                    console.log("[Studio] Initialising MediaRecorder...");
                     
-                    // Start stream duration counter
-                    streamStartTime = Date.now();
-                    document.getElementById("duration-badge").style.display = "inline-flex";
-                    if (durationInterval) clearInterval(durationInterval);
-                    durationInterval = setInterval(updateDuration, 1000);
+                    mediaRecorder = new MediaRecorder(mediaStream, {
+                        mimeType: 'video/webm;codecs=vp8,opus',
+                        videoBitsPerSecond: 2500000,
+                        audioBitsPerSecond: 256000
+                    });
+
+                    mediaRecorder.ondataavailable = (e) => {
+                        if (e.data && e.data.size > 0 && isLive && mediaSocket && mediaSocket.readyState === WebSocket.OPEN) {
+                            mediaSocket.send(e.data);
+                        }
+                    };
+
+                    mediaRecorder.onstart = () => {
+                        isStreaming = true;
+                        updateUI();
+                        
+                        // Start stream duration counter
+                        streamStartTime = Date.now();
+                        document.getElementById("duration-badge").style.display = "inline-flex";
+                        if (durationInterval) clearInterval(durationInterval);
+                        durationInterval = setInterval(updateDuration, 1000);
+                    };
+
+                    mediaRecorder.onstop = () => {
+                        isStreaming = false;
+                        updateUI();
+                    };
+
+                    // Send chunks every 1 second
+                    mediaRecorder.start(1000);
                 };
 
-                mediaRecorder.onstop = () => {
-                    isStreaming = false;
-                    updateUI();
+                mediaSocket.onclose = (event) => {
+                    console.warn("[Studio] WebSocket connection closed:", event.code, event.reason);
+                    triggerStopLive();
                 };
 
-                // Send chunks every 1 second
-                mediaRecorder.start(1000);
+                mediaSocket.onerror = (err) => {
+                    console.error("[Studio] WebSocket error:", err);
+                    triggerStopLive();
+                };
 
             } catch (err) {
                 alert("Broadcasting failed: " + err.message);
@@ -510,6 +491,13 @@
                 mediaRecorder = null;
             }
 
+            if (mediaSocket) {
+                if (mediaSocket.readyState === WebSocket.OPEN || mediaSocket.readyState === WebSocket.CONNECTING) {
+                    mediaSocket.close(1000, "Broadcaster stopped streaming.");
+                }
+                mediaSocket = null;
+            }
+
             // Stop duration timers
             if (durationInterval) {
                 clearInterval(durationInterval);
@@ -518,12 +506,6 @@
             document.getElementById("duration-badge").style.display = "none";
 
             isStreaming = false;
-
-            // Call Stop endpoint on database (revokes auth and kills FFmpeg)
-            try {
-                await fetch(`/api/stream/${streamKey}/stop`, { method: "POST" });
-            } catch (_) { }
-
             isLive = false;
             updateUI();
         }

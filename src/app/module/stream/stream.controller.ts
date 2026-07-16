@@ -5,15 +5,155 @@ import { createStreamDto } from "./stream.dto.js";
 import fs from "fs";
 import path from "path";
 import { spawn, ChildProcess } from "child_process";
+import { WebSocket } from "ws";
 
 interface StreamSession {
   ffmpegProcess: ChildProcess;
   inactivityTimeout: NodeJS.Timeout;
   streamKey: string;
+  ws?: WebSocket;
 }
 
 export class StreamController {
   private static activeSessions = new Map<string, StreamSession>();
+
+  static async handleWebSocket(ws: WebSocket, key: string) {
+    try {
+      console.log(`WebSocket connection opened for stream key: ${key}`);
+      
+      const streamInfo = await StreamService.getStreamByKey(key);
+      if (!streamInfo) {
+        console.warn(`[WS] Rejected: Stream key "${key}" not found in database.`);
+        ws.close(4004, "Stream not found.");
+        return;
+      }
+
+      // Stop any existing session for this key first
+      if (StreamController.activeSessions.has(key)) {
+        await StreamController.stopStreamSession(key);
+      }
+
+      // Set up dedicated stream output directory and variant subdirectory '0'
+      const mediaDir = path.join(process.cwd(), "media");
+      const streamDir = path.join(mediaDir, key);
+      const variantDir = path.join(streamDir, "0");
+      
+      if (fs.existsSync(streamDir)) {
+        try {
+          fs.rmSync(streamDir, { recursive: true, force: true });
+        } catch (err) {}
+      }
+      fs.mkdirSync(variantDir, { recursive: true });
+
+      // Write a master playlist format that live.ejs expects (pointing to variant 0)
+      fs.writeFileSync(
+        path.join(streamDir, "master.m3u8"),
+        `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=8000000\n0/index.m3u8\n`
+      );
+
+      console.log(`Spawning FFmpeg for stream key: ${key} inside ${variantDir}`);
+
+      // Spawn FFmpeg with low latency settings + high quality output (CRF 20, 256k AAC audio)
+      const ffmpegProcess = spawn("ffmpeg", [
+        "-fflags", "+genpts",
+        "-f", "webm",
+        "-i", "pipe:0",
+
+        // Map first video and optional first audio streams
+        "-map", "0:v:0",
+        "-map", "0:a:0?",
+
+        // Video encoding settings: High quality libx264, zero-latency tune
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-tune", "zerolatency",
+        "-crf", "20",
+        "-pix_fmt", "yuv420p",
+
+        // Audio encoding settings: High quality 256kbps stereo AAC
+        "-c:a", "aac",
+        "-b:a", "256k",
+        "-ar", "48000",
+        "-ac", "2",
+
+        // HLS output configuration inside variant directory
+        "-f", "hls",
+        "-hls_time", "2", // Short segment size for responsive streaming
+        "-hls_list_size", "6", // Keep playlist small for low latency
+        "-hls_flags", "delete_segments+append_list+omit_endlist+independent_segments",
+        "-hls_segment_filename", path.join(variantDir, "segment_%05d.ts"),
+        path.join(variantDir, "index.m3u8"),
+      ]);
+
+      ffmpegProcess.stderr.on("data", (data) => {
+        console.log(`[FFmpeg - ${key}]:`, data.toString().trim());
+      });
+
+      ffmpegProcess.on("close", (code) => {
+        console.log(`FFmpeg exited for stream ${key} with code: ${code}`);
+        if (StreamController.activeSessions.has(key)) {
+          StreamController.stopStreamSession(key);
+        }
+      });
+
+      // Setup 30 seconds inactivity timeout
+      let inactivityTimeout = setTimeout(() => {
+        console.log(`Inactivity detected on stream ${key}. Cleaning up.`);
+        try {
+          ws.close(4008, "Stream inactivity timeout.");
+        } catch (err) {}
+        StreamController.stopStreamSession(key);
+      }, 30000);
+
+      // Save active session
+      StreamController.activeSessions.set(key, {
+        ffmpegProcess,
+        inactivityTimeout,
+        streamKey: key,
+        ws,
+      });
+
+      await StreamService.setStreamLive(key, true);
+
+      // Listen for incoming chunks
+      ws.on("message", (message: Buffer, isBinary) => {
+        if (!isBinary) return;
+
+        // Reset inactivity timeout
+        clearTimeout(inactivityTimeout);
+        inactivityTimeout = setTimeout(() => {
+          console.log(`Inactivity detected on stream ${key}. Cleaning up.`);
+          try {
+            ws.close(4008, "Stream inactivity timeout.");
+          } catch (err) {}
+          StreamController.stopStreamSession(key);
+        }, 30000);
+
+        const session = StreamController.activeSessions.get(key);
+        if (session) {
+          session.ffmpegProcess.stdin?.write(message);
+        }
+      });
+
+      ws.on("close", () => {
+        console.log(`WebSocket closed for stream key: ${key}`);
+        clearTimeout(inactivityTimeout);
+        StreamController.stopStreamSession(key);
+      });
+
+      ws.on("error", (err) => {
+        console.error(`WebSocket error for stream key ${key}:`, err);
+        clearTimeout(inactivityTimeout);
+        StreamController.stopStreamSession(key);
+      });
+
+    } catch (err: any) {
+      console.error(`Error establishing WebSocket stream for key ${key}:`, err);
+      try {
+        ws.close(4500, "Internal server error.");
+      } catch (e) {}
+    }
+  }
 
   private static async stopStreamSession(streamKey: string) {
     const session = StreamController.activeSessions.get(streamKey);
@@ -30,6 +170,13 @@ export class StreamController {
       session.ffmpegProcess.kill("SIGTERM");
     } catch (err) {
       console.error(`Error terminating FFmpeg for stream ${streamKey}:`, err);
+    }
+
+    // Close WebSocket if still open
+    if (session.ws && session.ws.readyState === 1) { // 1 === OPEN
+      try {
+        session.ws.close(1000, "Stream stopped.");
+      } catch (err) {}
     }
 
     // Remove from active map
