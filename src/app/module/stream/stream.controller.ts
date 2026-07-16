@@ -44,10 +44,11 @@ export class StreamController {
       }
       fs.mkdirSync(path.join(streamDir, "0"), { recursive: true });
       fs.mkdirSync(path.join(streamDir, "1"), { recursive: true });
+      fs.mkdirSync(path.join(streamDir, "2"), { recursive: true });
 
-      console.log(`Spawning ABR FFmpeg for stream key: ${key}`);
+      console.log(`Spawning 3-tier ABR FFmpeg for stream key: ${key}`);
 
-      // Spawn FFmpeg to transcode incoming WebM stream into two H.264 variants in parallel (480p @ 600kbps & 1080p @ 2.5Mbps)
+      // Spawn FFmpeg to transcode incoming WebM stream into three H.264 variants in parallel (480p, 720p & 1080p)
       const ffmpegProcess = spawn("ffmpeg", [
         "-f", "webm",
         "-i", "pipe:0",
@@ -56,7 +57,11 @@ export class StreamController {
         "-map", "0:v:0",
         "-map", "0:a:0?",
 
-        // Map first video and optional first audio streams for Variant 1 (1080p)
+        // Map first video and optional first audio streams for Variant 1 (720p)
+        "-map", "0:v:0",
+        "-map", "0:a:0?",
+
+        // Map first video and optional first audio streams for Variant 2 (1080p)
         "-map", "0:v:0",
         "-map", "0:a:0?",
 
@@ -82,15 +87,22 @@ export class StreamController {
         "-maxrate:v:0", "600k",
         "-bufsize:v:0", "1.2M",
 
-        // Video configuration for Variant 1 (1080p - High Quality profile for fast connections)
-        "-filter:v:1", "scale=-2:1080",
-        "-crf:v:1", "24",
-        "-maxrate:v:1", "2.5M",
-        "-bufsize:v:1", "5M",
+        // Video configuration for Variant 1 (720p - Medium Quality balance for standard mobile/broadband connections)
+        "-filter:v:1", "scale=-2:720",
+        "-crf:v:1", "26",
+        "-maxrate:v:1", "1.2M",
+        "-bufsize:v:1", "2.4M",
+
+        // Video configuration for Variant 2 (1080p - High Quality profile for fast connections)
+        "-filter:v:2", "scale=-2:1080",
+        "-crf:v:2", "24",
+        "-maxrate:v:2", "2.5M",
+        "-bufsize:v:2", "5M",
 
         // Audio bitrate configuration per variant
         "-b:a:0", "64k",
-        "-b:a:1", "128k",
+        "-b:a:1", "96k",
+        "-b:a:2", "128k",
 
         // HLS Multiplexer settings
         "-f", "hls",
@@ -98,8 +110,8 @@ export class StreamController {
         "-hls_list_size", "6", // Keep playlist small for low latency
         "-hls_flags", "delete_segments+append_list+omit_endlist+independent_segments",
         
-        // Define variant stream map linking video/audio indexes
-        "-var_stream_map", "v:0,a:0 v:1,a:1",
+        // Define variant stream map linking video/audio indexes (0=480p, 1=720p, 2=1080p)
+        "-var_stream_map", "v:0,a:0 v:1,a:1 v:2,a:2",
 
         // Output configuration with automatic master playlist generation
         "-hls_segment_filename", path.join(streamDir, "%v", "segment_%05d.ts"),
