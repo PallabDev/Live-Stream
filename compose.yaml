@@ -5,11 +5,19 @@ services:
     restart: always
     env_file:
       - .env
+    ports:
+      - "8189:8189/udp"
+      - "8189:8189/tcp"
     volumes:
       - ./sqlite.db:/app/sqlite.db
     labels:
       caddy: watch.pallabdev.in
-      caddy.reverse_proxy: "{{upstreams 5678}}"
+      caddy.route_0: /whip/*
+      caddy.route_0.reverse_proxy: "{{upstreams 8889}}"
+      caddy.route_1: /whep/*
+      caddy.route_1.reverse_proxy: "{{upstreams 8889}}"
+      caddy.route_2: /*
+      caddy.route_2.reverse_proxy: "{{upstreams 5678}}"
     networks:
       - default
       - caddy_net

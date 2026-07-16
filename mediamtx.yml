@@ -1,0 +1,40 @@
+# MediaMTX Configuration File
+
+# Log level
+logLevel: info
+
+# Enable RTSP (needed for internal communication with FFmpeg)
+rtsp: yes
+rtspAddress: 127.0.0.1:8554
+
+# Enable RTMP (for local fallback/monitoring if needed)
+rtmp: yes
+rtmpAddress: 127.0.0.1:1935
+
+# Disable internal HLS (our script generates the actual HLS segments)
+hls: no
+
+# Enable WebRTC / WHIP / WHEP
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcAdditionalHosts:
+  - localhost
+  - watch.pallabdev.in
+
+# Authentication configuration (delegates validation to Node/Express)
+authMethod: http
+authHTTPAddress: http://127.0.0.1:5678/api/stream/auth
+
+# Path routing & hooks
+paths:
+  # Path pattern matching transcoded AAC streams
+  "~^(.+)_aac$":
+    runOnPublish: ""
+    runOnUnpublish: ""
+
+  # Default fallback path configuration for raw incoming streams
+  all:
+    runOnPublish: /app/node_modules/.bin/tsx /app/src/app/common/scripts/on-publish.ts
+    runOnPublishRestart: yes

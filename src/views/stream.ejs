@@ -155,8 +155,7 @@
 
 <script>
   let localStream = null;
-  let mediaRecorder = null;
-  let webSocket = null;
+  let peerConnection = null;
   let streamStartTime = null;
   let durationInterval = null;
   let broadcastState = 'idle';
@@ -428,121 +427,97 @@
     const hasAudio = localStream.getAudioTracks().length > 0;
     console.log('Stream tracks - Video:', localStream.getVideoTracks().length, 'Audio:', localStream.getAudioTracks().length);
 
-    // Build socket URL
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/stream/ws?key=<%= stream.streamKey %>&resolutions=${resolutions.join(',')}&fps=${fps}&bitrate=${bitrate}&hasAudio=${hasAudio}`;
+    try {
+      peerConnection = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
 
-    webSocket = new WebSocket(wsUrl);
+      // Add tracks to the peer connection
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
 
-    webSocket.onopen = () => {
-      if (broadcastState !== 'starting') return;
-
-      console.log('WS Connection established for streaming.');
-      
-      // Setup MediaRecorder based on track presence to prevent NotSupportedError DOMExceptions
-      const candidates = hasAudio ? [
-        'video/webm; codecs=vp8,opus',
-        'video/webm; codecs=vp9,opus',
-        'video/webm; codecs=h264,opus',
-        'video/webm'
-      ] : [
-        'video/webm; codecs=vp8',
-        'video/webm; codecs=vp9',
-        'video/webm; codecs=h264',
-        'video/webm'
-      ];
-
-      let selectedMimeType = '';
-      for (const mime of candidates) {
-        if (MediaRecorder.isTypeSupported(mime)) {
-          selectedMimeType = mime;
-          break;
-        }
-      }
-
-      console.log('Selected Recording MimeType:', selectedMimeType);
-
-      let options = {
-        videoBitsPerSecond: Math.max(300000, (bitrate * 1000) - (hasAudio ? AUDIO_BITS_PER_SECOND : 0))
-      };
-      if (hasAudio) {
-        options.audioBitsPerSecond = AUDIO_BITS_PER_SECOND;
-      }
-      if (selectedMimeType) {
-        options.mimeType = selectedMimeType;
-      }
-
-      try {
-        mediaRecorder = new MediaRecorder(localStream, options);
-      } catch (err) {
-        console.warn('Failed to create MediaRecorder with preferred options, trying fallback...', err);
-        try {
-          mediaRecorder = new MediaRecorder(localStream);
-        } catch (fallbackErr) {
-          broadcastState = 'idle';
-          alert('Could not start MediaRecorder: ' + fallbackErr.message);
-          stopStreaming();
-          return;
-        }
-      }
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0 && webSocket.readyState === WebSocket.OPEN) {
-          webSocket.send(event.data);
+      // Handle connection state changes
+      peerConnection.onconnectionstatechange = () => {
+        console.log('WebRTC connection state:', peerConnection.connectionState);
+        if (peerConnection.connectionState === 'connected') {
+          broadcastState = 'live';
+          setLiveUi();
+          streamStartTime = Date.now();
+          document.getElementById('duration-badge').style.display = 'inline-flex';
+          durationInterval = setInterval(updateDuration, 1000);
+        } else if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
+          if (broadcastState !== 'idle') {
+            stopStreaming();
+          }
         }
       };
 
-      // Smaller chunks keep ffmpeg input steadier and reduce live stalls.
-      mediaRecorder.start(1000);
-      broadcastState = 'live';
+      // Create offer
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
 
-      // UI states
-      setLiveUi();
+      // Wait for ICE gathering to complete before sending SDP to MediaMTX
+      await new Promise((resolve) => {
+        if (peerConnection.iceGatheringState === 'complete') {
+          resolve();
+        } else {
+          function checkState() {
+            if (peerConnection.iceGatheringState === 'complete') {
+              peerConnection.removeEventListener('icegatheringstatechange', checkState);
+              resolve();
+            }
+          }
+          peerConnection.addEventListener('icegatheringstatechange', checkState);
+        }
+      });
 
-      // Start duration counter
-      streamStartTime = Date.now();
-      document.getElementById('duration-badge').style.display = 'inline-flex';
-      durationInterval = setInterval(updateDuration, 1000);
-    };
+      // Build WHIP signaling URL (sends query parameters for FFmpeg transcoding config)
+      const whipUrl = `${window.location.protocol}//${window.location.host}/whip/<%= stream.streamKey %>/whip?resolutions=${resolutions.join(',')}&fps=${fps}&bitrate=${bitrate}&hasAudio=${hasAudio}`;
+      console.log('Connecting WHIP to URL:', whipUrl);
 
-    webSocket.onerror = (error) => {
-      console.error('WebSocket Error:', error);
-      alert('WebSocket streaming error occurred.');
+      const response = await fetch(whipUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/sdp'
+        },
+        body: peerConnection.localDescription.sdp
+      });
+
+      if (!response.ok) {
+        throw new Error(`WHIP signaling gateway returned status ${response.status}`);
+      }
+
+      const answerSdp = await response.text();
+      await peerConnection.setRemoteDescription({
+        type: 'answer',
+        sdp: answerSdp
+      });
+
+    } catch (err) {
+      console.error('WebRTC Streaming Start Error:', err);
+      alert('Failed to start streaming: ' + err.message);
       stopStreaming();
-    };
-
-    webSocket.onclose = () => {
-      console.log('WebSocket closed.');
-      if (broadcastState !== 'idle') {
-        stopStreaming();
-      }
-    };
+    }
   }
 
   function stopStreaming() {
-    if (broadcastState === 'idle' && !mediaRecorder && !webSocket) {
+    if (broadcastState === 'idle' && !peerConnection) {
       resetStreamUi();
       return;
     }
 
     broadcastState = 'stopping';
 
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop();
-    }
-    
-    if (webSocket) {
-      if (webSocket.readyState === WebSocket.OPEN || webSocket.readyState === WebSocket.CONNECTING) {
-        webSocket.close();
-      }
+    if (peerConnection) {
+      peerConnection.close();
+      peerConnection = null;
     }
 
     if (durationInterval) {
       clearInterval(durationInterval);
     }
 
-    mediaRecorder = null;
-    webSocket = null;
     broadcastState = 'idle';
     resetStreamUi();
   }

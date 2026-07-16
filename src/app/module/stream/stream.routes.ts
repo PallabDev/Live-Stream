@@ -13,4 +13,7 @@ router.delete("/api/stream/:id", requireAuth, StreamController.deleteStream);
 // Bandwidth test endpoint (requires auth)
 router.post("/api/stream/speedtest", requireAuth, StreamController.speedTest);
 
+// MediaMTX external authentication endpoint (public, validated internally)
+router.post("/api/stream/auth", StreamController.mediaMtxAuth);
+
 export default router;
