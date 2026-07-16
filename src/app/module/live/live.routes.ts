@@ -22,7 +22,7 @@ router.get("/live/:key", async (req, res) => {
     let user = null;
     try {
       const session = await auth.api.getSession({
-        headers: req.headers,
+        headers: new Headers(req.headers as any),
       });
       if (session) {
         user = session.user;
