@@ -130,6 +130,11 @@ async function main() {
       filterComplex += `[0:v]scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0] as StreamResolution].height}:flags=bicubic[v1out]`;
     }
 
+    // Strip trailing semicolon to prevent FFmpeg "No such filter: ''" crash
+    if (filterComplex.endsWith(";")) {
+      filterComplex = filterComplex.slice(0, -1);
+    }
+
     ffmpegArgs = [
       "-hide_banner",
       "-loglevel", "warning",
