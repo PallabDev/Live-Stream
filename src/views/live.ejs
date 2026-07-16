@@ -461,6 +461,7 @@ html, body {
   let scrubbing = false;
   let controlsHidden = false;
   let checkInterval = null;
+  let segmentDebugInterval = null;
   let waitingForStartupBuffer = false;
 
   // Stream status checker
@@ -495,6 +496,102 @@ html, body {
     return matches ? matches.length : 0;
   }
 
+  function getSegmentNumberFromUrl(url) {
+    const match = String(url || '').match(/file(\d+)\.ts/);
+    return match ? parseInt(match[1], 10) : null;
+  }
+
+  function getBufferAheadSeconds() {
+    if (!video.buffered || video.buffered.length === 0) return 0;
+
+    const currentTime = video.currentTime || 0;
+    for (let i = 0; i < video.buffered.length; i++) {
+      const start = video.buffered.start(i);
+      const end = video.buffered.end(i);
+      if (currentTime >= start && currentTime <= end) {
+        return Math.max(0, end - currentTime);
+      }
+    }
+
+    return 0;
+  }
+
+  function getActiveLevelIndex() {
+    if (!hlsInstance) return 0;
+    if (hlsInstance.currentLevel >= 0) return hlsInstance.currentLevel;
+    if (hlsInstance.loadLevel >= 0) return hlsInstance.loadLevel;
+    if (hlsInstance.nextLoadLevel >= 0) return hlsInstance.nextLoadLevel;
+    return 0;
+  }
+
+  function getVariantPlaylistUrl(levelIndex) {
+    return "/media/<%= stream.streamKey %>/" + levelIndex + "/index.m3u8";
+  }
+
+  async function getPlaylistStats(levelIndex) {
+    const url = getVariantPlaylistUrl(levelIndex) + '?_cb=' + Date.now();
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) {
+      return { level: levelIndex, ok: false, status: res.status };
+    }
+
+    const playlist = await res.text();
+    const sequenceMatch = playlist.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/m);
+    const segmentNumbers = Array.from(playlist.matchAll(/file(\d+)\.ts/g))
+      .map((match) => parseInt(match[1], 10))
+      .filter((num) => Number.isFinite(num));
+
+    return {
+      level: levelIndex,
+      ok: true,
+      mediaSequence: sequenceMatch ? parseInt(sequenceMatch[1], 10) : null,
+      publishedCount: segmentNumbers.length,
+      publishedFirst: segmentNumbers.length ? segmentNumbers[0] : null,
+      publishedLast: segmentNumbers.length ? segmentNumbers[segmentNumbers.length - 1] : null,
+    };
+  }
+
+  function startSegmentDebug() {
+    stopSegmentDebug();
+
+    segmentDebugInterval = setInterval(async () => {
+      if (!hlsInstance) return;
+
+      try {
+        const levelIndex = getActiveLevelIndex();
+        const stats = await getPlaylistStats(levelIndex);
+        const currentFrag = hlsInstance.currentLevel >= 0 && hlsInstance.streamController
+          ? hlsInstance.streamController.fragCurrent
+          : null;
+        const playingSegment = currentFrag
+          ? (currentFrag.sn ?? getSegmentNumberFromUrl(currentFrag.url))
+          : null;
+
+        console.log('[CoWatch Debug] segment-state', {
+          level: levelIndex,
+          playing: playingSegment,
+          bufferAheadSec: Number(getBufferAheadSeconds().toFixed(2)),
+          videoTimeSec: Number((video.currentTime || 0).toFixed(2)),
+          publishedFirst: stats.publishedFirst,
+          publishedLast: stats.publishedLast,
+          publishedCount: stats.publishedCount,
+          mediaSequence: stats.mediaSequence,
+          playlistOk: stats.ok,
+          playlistStatus: stats.status || 200,
+        });
+      } catch (err) {
+        console.warn('[CoWatch Debug] segment-state failed', err);
+      }
+    }, 2000);
+  }
+
+  function stopSegmentDebug() {
+    if (segmentDebugInterval) {
+      clearInterval(segmentDebugInterval);
+      segmentDebugInterval = null;
+    }
+  }
+
   async function initHLSWhenBufferReady() {
     if (waitingForStartupBuffer) return;
 
@@ -515,6 +612,7 @@ html, body {
 
   function showOffline() {
     offlineScreen.style.display = 'flex';
+    stopSegmentDebug();
     if (hlsInstance) {
       hlsInstance.destroy();
       hlsInstance = null;
@@ -573,11 +671,32 @@ html, body {
         levels = data.levels || [];
         hlsInstance.nextLoadLevel = 0;
         buildQualityMenu(levels);
+        startSegmentDebug();
         hideLoading();
         video.play().catch(e => console.log("Play interrupted", e));
       });
 
-      hlsInstance.on(Hls.Events.FRAG_BUFFERED, function () {
+      hlsInstance.on(Hls.Events.FRAG_CHANGED, function (event, data) {
+        const frag = data.frag || {};
+        console.log('[CoWatch Debug] now-playing-segment', {
+          level: frag.level,
+          sn: frag.sn,
+          segmentFromUrl: getSegmentNumberFromUrl(frag.url),
+          durationSec: frag.duration,
+          url: frag.url,
+          bufferAheadSec: Number(getBufferAheadSeconds().toFixed(2)),
+        });
+      });
+
+      hlsInstance.on(Hls.Events.FRAG_BUFFERED, function (event, data) {
+        const frag = data.frag || {};
+        console.log('[CoWatch Debug] buffered-segment', {
+          level: frag.level,
+          sn: frag.sn,
+          segmentFromUrl: getSegmentNumberFromUrl(frag.url),
+          durationSec: frag.duration,
+          bufferAheadSec: Number(getBufferAheadSeconds().toFixed(2)),
+        });
         updateBufferProgress();
       });
 
