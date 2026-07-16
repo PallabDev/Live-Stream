@@ -180,15 +180,14 @@ wss.on("connection", async (ws: WebSocket, request) => {
 
         ffmpegArgs.push(
             `-c:v:${idx}`, "libx264",
-            `-b:v:${idx}`, videoBitrate,
-            `-maxrate:v:${idx}`, videoBitrate,
-            `-bufsize:v:${idx}`, `${parseInt(videoBitrate) * 2}k`,
+            "-crf", "26", // Use Constant Rate Factor for dynamic and efficient compression, perfect for screen sharing
+            `-maxrate:v:${idx}`, videoBitrate, // Prevent bandwidth spikes
+            `-bufsize:v:${idx}`, videoBitrate, // Strict buffer size for stable delivery
             `-r:v:${idx}`, fpsParam.toString(),
             `-g:v:${idx}`, keyInterval.toString(),
             `-keyint_min:v:${idx}`, keyInterval.toString(),
             `-sc_threshold:v:${idx}`, "0",
-            `-preset:v:${idx}`, "ultrafast",
-            `-tune:v:${idx}`, "zerolatency"
+            `-preset:v:${idx}`, "veryfast" // Balance CPU usage and compression efficiency, enabling CABAC and B-frames
         );
 
         // Create subdirectories for variant playlists
@@ -199,7 +198,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
     if (hasAudio) {
         ffmpegArgs.push(
             "-c:a", "aac",
-            "-b:a", "192k",
+            "-b:a", "128k",
             "-ac", "2"
         );
     }
