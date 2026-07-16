@@ -320,11 +320,11 @@
 
     // Obtain the media tracks based on selected source type
     if (currentSourceType === 'file') {
-      // Capture stream from the playing video element
+      // Capture stream from the playing video element (requesting full steady 30 fps)
       if (previewPlayer.captureStream) {
-        mediaStream = previewPlayer.captureStream();
+        mediaStream = previewPlayer.captureStream(30);
       } else if (previewPlayer.mozCaptureStream) {
-        mediaStream = previewPlayer.mozCaptureStream();
+        mediaStream = previewPlayer.mozCaptureStream(30);
       } else {
         alert("Your browser does not support video capturing API.");
         return;
@@ -336,6 +336,16 @@
       }
     } else if (currentSourceType === 'screen') {
       mediaStream = captureStream;
+    }
+
+    // Set video track contentHint to prioritize smooth motion and framerate
+    if (mediaStream) {
+      mediaStream.getVideoTracks().forEach(track => {
+        if ('contentHint' in track) {
+          track.contentHint = 'motion';
+          console.log("[WebRTC] Set video track contentHint to 'motion'");
+        }
+      });
     }
 
     if (!mediaStream || mediaStream.getTracks().length === 0) {
@@ -364,7 +374,7 @@
           isStreaming = true;
           updateUI();
           
-          // Maximize WebRTC video sender bitrate to 8 Mbps for maximum upload quality
+          // Optimize WebRTC video sender encoding parameters for high-quality movie streaming
           try {
             const senders = pc.getSenders();
             senders.forEach(sender => {
@@ -372,9 +382,13 @@
                 const parameters = sender.getParameters();
                 if (parameters && parameters.encodings && parameters.encodings.length > 0) {
                   parameters.encodings[0].maxBitrate = 8000000; // 8 Mbps
+                  parameters.encodings[0].maxFramerate = 30; // Force 30fps
+                  parameters.encodings[0].scaleResolutionDownBy = 1.0; // Prevent scaling down
+                  parameters.degradationPreference = 'maintain-resolution'; // Prioritize resolution quality over adaptive latency drops
+                  
                   sender.setParameters(parameters).then(() => {
-                    console.log("[WebRTC Sender] Bitrate optimized to 8 Mbps.");
-                  }).catch(e => console.warn("Failed to set maxBitrate:", e));
+                    console.log("[WebRTC Sender] Configured: 8 Mbps, maxFramerate=30, scale=1.0, degradationPreference=maintain-resolution.");
+                  }).catch(e => console.warn("Failed to set sender parameters:", e));
                 }
               }
             });
