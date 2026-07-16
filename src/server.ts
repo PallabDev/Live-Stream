@@ -21,16 +21,16 @@ const app = express();
 const server = http.createServer(app);
 const port = process.env.PORT || 3000;
 
-const HLS_SEGMENT_SECONDS = 4;
+const HLS_SEGMENT_SECONDS = 2;
 const STREAM_RETENTION_SECONDS = 600;
 const MAX_FPS = 30;
-const MIN_VIDEO_BITRATE_KBPS = 800;
-const MAX_VIDEO_BITRATE_KBPS = 4000;
+const MIN_VIDEO_BITRATE_KBPS = 500;
+const MAX_VIDEO_BITRATE_KBPS = 2800;
 const AUDIO_BITRATE_KBPS = 96;
 const RESOLUTION_CONFIG = {
-    "480p": { height: 480, defaultBitrate: 1600, maxBitrate: 1600 },
-    "720p": { height: 720, defaultBitrate: 2500, maxBitrate: 2500 },
-    "1080p": { height: 1080, defaultBitrate: 4000, maxBitrate: 4000 },
+    "480p": { height: 480, defaultBitrate: 800, maxBitrate: 800 },
+    "720p": { height: 720, defaultBitrate: 1200, maxBitrate: 1200 },
+    "1080p": { height: 1080, defaultBitrate: 2800, maxBitrate: 2800 },
 } as const;
 
 type StreamResolution = keyof typeof RESOLUTION_CONFIG;
@@ -144,9 +144,9 @@ wss.on("connection", async (ws: WebSocket, request) => {
     const resolutionsParam = parsedUrl.searchParams.get("resolutions") || "720p";
     const requestedFps = parseInt(parsedUrl.searchParams.get("fps") || "30", 10);
     const fpsParam = clampNumber(Number.isFinite(requestedFps) ? requestedFps : 30, 24, MAX_FPS);
-    const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "2500", 10);
+    const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "1200", 10);
     const bitrateParam = clampNumber(
-        Number.isFinite(requestedBitrate) ? requestedBitrate : 2500,
+        Number.isFinite(requestedBitrate) ? requestedBitrate : 1200,
         MIN_VIDEO_BITRATE_KBPS,
         MAX_VIDEO_BITRATE_KBPS
     );
@@ -250,12 +250,12 @@ wss.on("connection", async (ws: WebSocket, request) => {
             `-c:v:${idx}`, "libx264",
             `-b:v:${idx}`, videoBitrate,
             `-maxrate:v:${idx}`, videoBitrate,
-            `-bufsize:v:${idx}`, `${bitrateKbps * 2}k`,
+            `-bufsize:v:${idx}`, `${Math.round(bitrateKbps * 1.5)}k`,
             `-g:v:${idx}`, keyInterval.toString(),
             `-keyint_min:v:${idx}`, keyInterval.toString(),
             `-force_key_frames:v:${idx}`, `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,
             `-sc_threshold:v:${idx}`, "0",
-            `-preset:v:${idx}`, "veryfast",
+            `-preset:v:${idx}`, "fast",
             `-tune:v:${idx}`, "film",
             `-profile:v:${idx}`, "main",
             `-pix_fmt:v:${idx}`, "yuv420p"
