@@ -371,6 +371,40 @@
     return lines.join('\r\n');
   }
 
+  function addBandwidthToSdp(sdp, bitrateKbps) {
+    const lines = sdp.split('\r\n');
+    const newLines = [];
+    let inVideoSection = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      if (line.startsWith('m=video')) {
+        inVideoSection = true;
+        newLines.push(line);
+        newLines.push(`b=AS:${bitrateKbps}`);
+        newLines.push(`b=TIAS:${bitrateKbps * 1000}`);
+        continue;
+      } else if (line.startsWith('m=')) {
+        inVideoSection = false;
+      }
+      
+      if (inVideoSection) {
+        if (line.startsWith('b=AS:') || line.startsWith('b=TIAS:')) {
+          continue;
+        }
+        if (line.startsWith('a=fmtp:')) {
+          newLines.push(line + `;x-google-min-bitrate=${bitrateKbps};x-google-start-bitrate=${bitrateKbps};x-google-max-bitrate=${bitrateKbps}`);
+          continue;
+        }
+      }
+      
+      newLines.push(line);
+    }
+    
+    return newLines.join('\r\n');
+  }
+
   async function setupMedia() {
     if (broadcastState !== 'idle') return;
 
@@ -459,10 +493,10 @@
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       });
 
-      // Set content hints to optimize WebRTC for motion and high quality audio
+      // Set content hints to optimize WebRTC for detail and high quality audio
       localStream.getVideoTracks().forEach(track => {
         if ('contentHint' in track) {
-          track.contentHint = 'motion';
+          track.contentHint = 'detail';
         }
       });
       localStream.getAudioTracks().forEach(track => {
@@ -518,8 +552,9 @@
       // Create offer
       const offer = await peerConnection.createOffer();
       
-      // Force H.264 prioritization in SDP text
-      const preferredSdp = preferH264InSdp(offer.sdp);
+      // Force H.264 prioritization in SDP text and configure bitrates
+      let preferredSdp = preferH264InSdp(offer.sdp);
+      preferredSdp = addBandwidthToSdp(preferredSdp, bitrate);
       
       await peerConnection.setLocalDescription({
         type: 'offer',
