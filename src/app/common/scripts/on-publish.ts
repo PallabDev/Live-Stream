@@ -204,8 +204,8 @@ async function main() {
     path.join(mediaDir, "%v", "index.m3u8")
   );
 
-  // 2nd Output: Raw MP4 Ingest Dump (direct copy, fragmented for robustness)
-  const rawOutputPath = path.resolve(projectRoot, "media", `raw_${streamKey}.mp4`);
+  // 2nd Output: Raw MKV Ingest Dump (direct copy, Matroska format handles any codec and is robust against abrupt exits)
+  const rawOutputPath = path.resolve(projectRoot, "media", `raw_${streamKey}.mkv`);
   ffmpegArgs.push(
     "-map", "0:v",
   );
@@ -215,8 +215,7 @@ async function main() {
   ffmpegArgs.push(
     "-c:v", "copy",
     "-c:a", "copy",
-    "-f", "mp4",
-    "-movflags", "frag_keyframe+empty_moov",
+    "-f", "matroska",
     rawOutputPath
   );
 

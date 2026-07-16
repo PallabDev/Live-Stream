@@ -103,7 +103,7 @@
 
         <!-- Download Raw Ingest Button (visible when offline) -->
         <a id="btn-download-raw" class="btn btn-secondary" style="display: none; justify-content: flex-start; border-radius: 12px; padding: 0.8rem 1.2rem; width: 100%;" target="_blank">
-          <i class="ti ti-download" style="font-size: 1.2rem; color: var(--accent);"></i> Download Raw Ingest (MP4)
+          <i class="ti ti-download" style="font-size: 1.2rem; color: var(--accent);"></i> Download Raw Ingest (MKV)
         </a>
 
         <!-- Active Source Info -->
@@ -533,7 +533,7 @@
       downloadRawBtn.style.display = "none";
     } else {
       downloadRawBtn.style.display = "inline-flex";
-      downloadRawBtn.href = `/media/raw_${streamKey}.mp4`;
+      downloadRawBtn.href = `/media/raw_${streamKey}.mkv`;
     }
 
     if (isLive || isStreaming) {
