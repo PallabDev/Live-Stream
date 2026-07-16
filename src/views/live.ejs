@@ -495,16 +495,24 @@ html, body {
         enableWorker: true,
         lowLatencyMode: false,
 
-        // Buffer: build 30s ahead, sync 2 segments behind live edge (2 x 6s = 12s)
+        // === PRE-BUFFERING FIX ===
+        // Without this, Hls.js plays a segment completely before downloading the next one.
+        // With this, it downloads the next segment WHILE the current one is playing.
+        startFragPrefetch: true,
+
+        // Buffer settings for 6s segments
         backBufferLength: 60,
-        maxBufferLength: 30,        // buffer ~5 full 6s segments ahead
-        maxMaxBufferLength: 60,
-        liveSyncDurationCount: 2,       // stay 12s behind live edge (2 x 6s segments)
-        liveMaxLatencyDurationCount: 4, // if >24s behind, jump to live edge (4 x 6s)
+        maxBufferLength: 60,            // buffer up to 10 full 6s segments ahead
+        maxMaxBufferLength: 120,
+        maxBufferSize: 60 * 1000 * 1000, // 60 MB max buffer size
+        maxStarvationDelay: 4,           // start recovery after 4s without data
+
+        // Live sync: stay 1 segment (6s) behind live edge so the next segment is always ready
+        liveSyncDurationCount: 1,
+        liveMaxLatencyDurationCount: 4,  // jump to live edge if >24s behind
         liveDurationInfinity: true,
 
-        // FIX 1: Cache-bust every playlist request so the browser never
-        // serves a stale index.m3u8 and replays already-deleted segments.
+        // Cache-bust every playlist fetch so the browser never replays stale segments
         xhrSetup: function (xhr, url) {
           if (url.indexOf('.m3u8') !== -1) {
             var sep = url.indexOf('?') !== -1 ? '&' : '?';
