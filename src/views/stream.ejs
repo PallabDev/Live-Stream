@@ -159,6 +159,7 @@
   let webSocket = null;
   let streamStartTime = null;
   let durationInterval = null;
+  let broadcastState = 'idle';
   const AUDIO_BITS_PER_SECOND = 96000;
   const MAX_VIDEO_BITRATE_KBPS = 4000;
   const MAX_FRAME_RATE = 30;
@@ -202,6 +203,53 @@
     const bitrate = RESOLUTION_LIMITS[config.maxRes].bitrate;
     bitrateInput.value = bitrate;
     updateBitrateVal(bitrate);
+  }
+
+  function setStreamSettingsDisabled(disabled) {
+    document.getElementById('res-480p').disabled = disabled;
+    document.getElementById('res-720p').disabled = disabled;
+    document.getElementById('res-1080p').disabled = disabled;
+    document.getElementById('fps-30').disabled = disabled;
+    document.getElementById('fps-60').disabled = true;
+    document.getElementById('bitrate-input').disabled = disabled;
+  }
+
+  function setConnectingUi() {
+    document.getElementById('status-badge').className = 'badge badge-primary';
+    document.getElementById('status-badge').innerHTML = '<i class="ti ti-point-filled"></i> Connecting';
+    document.getElementById('btn-start').disabled = true;
+    document.getElementById('btn-start').classList.remove('btn-circle-active');
+    document.getElementById('btn-setup').disabled = true;
+    document.getElementById('btn-stop').disabled = false;
+    document.getElementById('btn-stop').classList.add('btn-circle-danger-active');
+    setStreamSettingsDisabled(true);
+  }
+
+  function setLiveUi() {
+    document.getElementById('status-badge').className = 'badge badge-success';
+    document.getElementById('status-badge').innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
+    document.getElementById('btn-start').disabled = true;
+    document.getElementById('btn-start').classList.remove('btn-circle-active');
+    document.getElementById('btn-setup').disabled = true;
+    document.getElementById('btn-stop').disabled = false;
+    document.getElementById('btn-stop').classList.add('btn-circle-danger-active');
+    setStreamSettingsDisabled(true);
+  }
+
+  function resetStreamUi() {
+    document.getElementById('status-badge').className = 'badge badge-danger';
+    document.getElementById('status-badge').innerHTML = '<i class="ti ti-point-filled"></i> Offline';
+    document.getElementById('btn-start').disabled = !localStream;
+    if (localStream) {
+      document.getElementById('btn-start').classList.add('btn-circle-active');
+    } else {
+      document.getElementById('btn-start').classList.remove('btn-circle-active');
+    }
+    document.getElementById('btn-setup').disabled = false;
+    document.getElementById('btn-stop').disabled = true;
+    document.getElementById('btn-stop').classList.remove('btn-circle-danger-active');
+    document.getElementById('duration-badge').style.display = 'none';
+    setStreamSettingsDisabled(false);
   }
 
   function openSettingsModal() {
@@ -297,6 +345,8 @@
   }
 
   async function setupMedia() {
+    if (broadcastState !== 'idle') return;
+
     try {
       const config = getSelectedStreamConfig();
       const captureSize = RESOLUTION_LIMITS[config.maxRes];
@@ -338,11 +388,16 @@
   }
 
   async function startStreaming() {
-    if (!localStream) return;
+    if (!localStream || broadcastState !== 'idle') return;
+
+    broadcastState = 'starting';
+    setConnectingUi();
 
     const config = getSelectedStreamConfig();
 
     if (config.resolutions.length === 0) {
+      broadcastState = 'idle';
+      resetStreamUi();
       alert('You must enable at least one resolution (480p, 720p, or 1080p).');
       return;
     }
@@ -379,6 +434,8 @@
     webSocket = new WebSocket(wsUrl);
 
     webSocket.onopen = () => {
+      if (broadcastState !== 'starting') return;
+
       console.log('WS Connection established for streaming.');
       
       // Setup MediaRecorder based on track presence to prevent NotSupportedError DOMExceptions
@@ -421,6 +478,7 @@
         try {
           mediaRecorder = new MediaRecorder(localStream);
         } catch (fallbackErr) {
+          broadcastState = 'idle';
           alert('Could not start MediaRecorder: ' + fallbackErr.message);
           stopStreaming();
           return;
@@ -435,23 +493,10 @@
 
       // Smaller chunks reduce live ingest delay and recover faster after short network dips.
       mediaRecorder.start(750);
+      broadcastState = 'live';
 
       // UI states
-      document.getElementById('status-badge').className = 'badge badge-success';
-      document.getElementById('status-badge').innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
-      document.getElementById('btn-start').disabled = true;
-      document.getElementById('btn-start').classList.remove('btn-circle-active');
-      document.getElementById('btn-setup').disabled = true;
-      document.getElementById('btn-stop').disabled = false;
-      document.getElementById('btn-stop').classList.add('btn-circle-danger-active');
-      
-      // Configure target inputs disabled during stream
-      document.getElementById('res-480p').disabled = true;
-      document.getElementById('res-720p').disabled = true;
-      document.getElementById('res-1080p').disabled = true;
-      document.getElementById('fps-30').disabled = true;
-      document.getElementById('fps-60').disabled = true;
-      document.getElementById('bitrate-input').disabled = true;
+      setLiveUi();
 
       // Start duration counter
       streamStartTime = Date.now();
@@ -467,11 +512,20 @@
 
     webSocket.onclose = () => {
       console.log('WebSocket closed.');
-      stopStreaming();
+      if (broadcastState !== 'idle') {
+        stopStreaming();
+      }
     };
   }
 
   function stopStreaming() {
+    if (broadcastState === 'idle' && !mediaRecorder && !webSocket) {
+      resetStreamUi();
+      return;
+    }
+
+    broadcastState = 'stopping';
+
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
     }
@@ -486,29 +540,10 @@
       clearInterval(durationInterval);
     }
 
-    // UI resets
-    document.getElementById('status-badge').className = 'badge badge-danger';
-    document.getElementById('status-badge').innerHTML = '<i class="ti ti-point-filled"></i> Offline';
-    document.getElementById('btn-start').disabled = !localStream;
-    if (localStream) {
-      document.getElementById('btn-start').classList.add('btn-circle-active');
-    } else {
-      document.getElementById('btn-start').classList.remove('btn-circle-active');
-    }
-    document.getElementById('btn-setup').disabled = false;
-    document.getElementById('btn-stop').disabled = true;
-    document.getElementById('btn-stop').classList.remove('btn-circle-danger-active');
-    document.getElementById('duration-badge').style.display = 'none';
-
-    document.getElementById('res-480p').disabled = false;
-    document.getElementById('res-720p').disabled = false;
-    document.getElementById('res-1080p').disabled = false;
-    document.getElementById('fps-30').disabled = false;
-    document.getElementById('fps-60').disabled = true;
-    document.getElementById('bitrate-input').disabled = false;
-
     mediaRecorder = null;
     webSocket = null;
+    broadcastState = 'idle';
+    resetStreamUi();
   }
 
   function updateDuration() {

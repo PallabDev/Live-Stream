@@ -452,7 +452,7 @@ html, body {
 
   const playlistUrl = "/media/<%= stream.streamKey %>/master.m3u8?_t=" + Date.now();
   const primaryVariantPlaylistUrl = "/media/<%= stream.streamKey %>/0/index.m3u8";
-  const STABLE_LIVE_SEGMENT_LAG = 6;
+  const STABLE_LIVE_SEGMENT_LAG = 5;
   const MIN_STARTUP_SEGMENTS = STABLE_LIVE_SEGMENT_LAG + 2;
   let hlsInstance = null;
   let levels = [];

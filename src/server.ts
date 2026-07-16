@@ -206,12 +206,12 @@ wss.on("connection", async (ws: WebSocket, request) => {
     let filterComplex = "";
     if (resolutions.length > 1) {
         const splits = resolutions.map((_, idx) => `[v${idx + 1}]`).join("");
-        filterComplex += `[0:v]split=${resolutions.length}${splits};`;
+        filterComplex += `[0:v]fps=fps=${fpsParam}:round=down[vfps];[vfps]split=${resolutions.length}${splits};`;
         resolutions.forEach((res, idx) => {
             filterComplex += `[v${idx + 1}]scale=w=-2:h=${RESOLUTION_CONFIG[res].height}:flags=fast_bilinear[v${idx + 1}out];`;
         });
     } else {
-        filterComplex += `[0:v]scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0]].height}:flags=fast_bilinear[v1out]`;
+        filterComplex += `[0:v]fps=fps=${fpsParam}:round=down,scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0]].height}:flags=fast_bilinear[v1out]`;
     }
 
     // Strip trailing semicolon to prevent FFmpeg "No such filter: ''" syntax error
@@ -222,10 +222,12 @@ wss.on("connection", async (ws: WebSocket, request) => {
     const ffmpegArgs = [
         "-hide_banner",
         "-loglevel", "warning",
-        "-fflags", "+genpts",
+        "-fflags", "+genpts+discardcorrupt",
+        "-err_detect", "ignore_err",
+        "-use_wallclock_as_timestamps", "1",
         "-thread_queue_size", "1024",
-        "-probesize", "500k",
-        "-analyzeduration", "500k",
+        "-probesize", "2M",
+        "-analyzeduration", "2M",
         "-f", "matroska", // Explicitly define input format as Matroska (WebM) to prevent probing errors
         "-i", "pipe:0", // Read input from standard input (WebSocket packets)
         "-y", // Overwrite output files
@@ -250,7 +252,6 @@ wss.on("connection", async (ws: WebSocket, request) => {
             `-b:v:${idx}`, videoBitrate,
             `-maxrate:v:${idx}`, videoBitrate,
             `-bufsize:v:${idx}`, `${bitrateKbps * 2}k`,
-            `-r:v:${idx}`, fpsParam.toString(),
             `-g:v:${idx}`, keyInterval.toString(),
             `-keyint_min:v:${idx}`, keyInterval.toString(),
             `-sc_threshold:v:${idx}`, "0",
