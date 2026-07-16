@@ -8,7 +8,7 @@ import { StreamService } from "../../module/stream/stream.service.js";
 // Load environment variables
 dotenv.config();
 
-const HLS_SEGMENT_SECONDS = 2;
+const HLS_SEGMENT_SECONDS = 4;
 const STREAM_RETENTION_SECONDS = 600;
 const DEFAULT_FPS = 30;
 const X264_PRESET = process.env.X264_PRESET || "superfast";
@@ -124,10 +124,10 @@ async function main() {
       const splits = resolutions.map((_, idx) => `[v${idx + 1}]`).join("");
       filterComplex += `[0:v]split=${resolutions.length}${splits};`;
       resolutions.forEach((res, idx) => {
-        filterComplex += `[v${idx + 1}]scale=w=-2:h=${RESOLUTION_CONFIG[res as StreamResolution].height}:flags=bicubic[v${idx + 1}out];`;
+        filterComplex += `[v${idx + 1}]scale=w=-2:h=${RESOLUTION_CONFIG[res as StreamResolution].height}:flags=lanczos[v${idx + 1}out];`;
       });
     } else {
-      filterComplex += `[0:v]scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0] as StreamResolution].height}:flags=bicubic[v1out]`;
+      filterComplex += `[0:v]scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0] as StreamResolution].height}:flags=lanczos[v1out]`;
     }
 
     // Strip trailing semicolon to prevent FFmpeg "No such filter: ''" crash

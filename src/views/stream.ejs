@@ -359,6 +359,24 @@
           isStreaming = true;
           updateUI();
           
+          // Maximize WebRTC video sender bitrate to 8 Mbps for maximum upload quality
+          try {
+            const senders = pc.getSenders();
+            senders.forEach(sender => {
+              if (sender.track && sender.track.kind === 'video') {
+                const parameters = sender.getParameters();
+                if (parameters && parameters.encodings && parameters.encodings.length > 0) {
+                  parameters.encodings[0].maxBitrate = 8000000; // 8 Mbps
+                  sender.setParameters(parameters).then(() => {
+                    console.log("[WebRTC Sender] Bitrate optimized to 8 Mbps.");
+                  }).catch(e => console.warn("Failed to set maxBitrate:", e));
+                }
+              }
+            });
+          } catch (err) {
+            console.warn("Failed to configure WebRTC sender parameters:", err);
+          }
+
           // Start stream duration counter
           streamStartTime = Date.now();
           document.getElementById("duration-badge").style.display = "inline-flex";
@@ -373,6 +391,31 @@
       mediaStream.getTracks().forEach(track => {
         pc.addTrack(track, mediaStream);
       });
+
+      // Prefer H.264 for high-quality WebRTC ingest
+      try {
+        if (typeof RTCRtlTransceiver !== 'undefined' && 'setCodecPreferences' in RTCRtlTransceiver.prototype) {
+          const transceivers = pc.getTransceivers();
+          transceivers.forEach(transceiver => {
+            if (transceiver.sender && transceiver.sender.track && transceiver.sender.track.kind === 'video') {
+              const capabilities = RTCRtlSender.getCapabilities('video');
+              if (capabilities && capabilities.codecs) {
+                const h264Codecs = capabilities.codecs.filter(c => 
+                  c.mimeType.toLowerCase() === 'video/h264' && 
+                  c.sdpFmtpLine && c.sdpFmtpLine.includes('profile-level-id=42e01f')
+                );
+                if (h264Codecs.length > 0) {
+                  const otherCodecs = capabilities.codecs.filter(c => c.mimeType.toLowerCase() !== 'video/h264');
+                  transceiver.setCodecPreferences([...h264Codecs, ...otherCodecs]);
+                  console.log("[WebRTC Codec] H.264 preferred successfully.");
+                }
+              }
+            }
+          });
+        }
+      } catch (codecErr) {
+        console.warn("Codec preference configuration ignored:", codecErr);
+      }
 
       // Create and negotiate WebRTC SDP Offer
       const offer = await pc.createOffer();
