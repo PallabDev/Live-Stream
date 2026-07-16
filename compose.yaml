@@ -7,11 +7,16 @@ services:
       - .env
     ports:
       - "1935:1935"
+      - "8189:8189/udp" # WebRTC ICE Media
     volumes:
       - ./sqlite.db:/app/sqlite.db
     labels:
       caddy: watch.pallabdev.in
-      caddy.reverse_proxy: "{{upstreams 5678}}"
+      caddy.route_0: "/whip/*"
+      caddy.route_0.uri: "strip_prefix /whip"
+      caddy.route_0.reverse_proxy: "{{upstreams 8889}}"
+      caddy.route_1: "/*"
+      caddy.route_1.reverse_proxy: "{{upstreams 5678}}"
     networks:
       - default
       - caddy_net

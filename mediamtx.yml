@@ -14,8 +14,12 @@ rtmpAddress: :1935
 # Disable internal HLS (our script generates the actual HLS segments)
 hls: no
 
-# Disable WebRTC / WHIP / WHEP (as browser streaming is removed)
-webrtc: no
+# Enable WebRTC / WHIP (for browser streaming cockpit)
+webrtc: yes
+webrtcAddress: :8889
+webrtcEncryption: no
+webrtcLocalUDPAddress: :8189
+webrtcIPs: [ "222.167.207.36" ]
 
 # Enable MediaMTX Control API on localhost (used to kick sessions on Stop Live)
 api: yes
