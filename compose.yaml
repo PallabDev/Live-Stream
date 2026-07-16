@@ -7,7 +7,8 @@ services:
       - .env
     ports:
       - "1935:1935"
-      - "8189:8189/udp" # WebRTC ICE Media
+      - "8189:8189/udp" # WebRTC ICE UDP
+      - "8189:8189/tcp" # WebRTC ICE TCP
     volumes:
       - ./sqlite.db:/app/sqlite.db
     labels:

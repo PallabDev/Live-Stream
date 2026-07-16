@@ -19,6 +19,7 @@ webrtc: yes
 webrtcAddress: :8889
 webrtcEncryption: no
 webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
 webrtcAdditionalHosts:
   - 222.167.207.36
 

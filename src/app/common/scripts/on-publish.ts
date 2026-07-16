@@ -133,7 +133,7 @@ async function main() {
       "-progress", "pipe:2",
       "-fflags", "+genpts+discardcorrupt",
       "-err_detect", "ignore_err",
-      "-thread_queue_size", "1024",
+      "-thread_queue_size", "2048",
       "-rtsp_transport", "tcp",
       "-i", inputRtspUrl, // Read input from RTSP
       "-y",
