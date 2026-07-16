@@ -29,6 +29,8 @@ const MAX_FPS = 20;
 const MIN_VIDEO_BITRATE_KBPS = 400;
 const MAX_VIDEO_BITRATE_KBPS = 2200;
 const AUDIO_BITRATE_KBPS = 96;
+const X264_PRESET = process.env.X264_PRESET || "veryfast";
+const X264_TUNE = process.env.X264_TUNE || "film";
 const RESOLUTION_CONFIG = {
     "480p": { height: 480, defaultBitrate: 400, maxBitrate: 400 },
     "720p": { height: 720, defaultBitrate: 900, maxBitrate: 900 },
@@ -228,7 +230,10 @@ wss.on("connection", async (ws: WebSocket, request) => {
     stopActiveIngest(streamKey, "New broadcaster connection replaced the previous ingest.");
 
     console.log(`Broadcaster connected for stream: "${streamInfo.title}" (${streamKey})`);
-    console.log(`Settings: Resolutions=[${resolutionsParam}], FPS=${fpsParam}, Bitrate=${bitrateParam}Kbps, HasAudio=${hasAudio}`);
+    console.log(
+        `Settings: Resolutions=[${resolutionsParam}], FPS=${fpsParam}, Bitrate=${bitrateParam}Kbps, ` +
+        `HasAudio=${hasAudio}, X264Preset=${X264_PRESET}, X264Tune=${X264_TUNE}`
+    );
 
     // 2. Prepare media folder for this stream
     const mediaDir = path.join(process.cwd(), "media", streamKey);
@@ -310,8 +315,8 @@ wss.on("connection", async (ws: WebSocket, request) => {
             `-keyint_min:v:${idx}`, keyInterval.toString(),
             `-force_key_frames:v:${idx}`, `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,
             `-sc_threshold:v:${idx}`, "0",
-            `-preset:v:${idx}`, "ultrafast",
-            `-tune:v:${idx}`, "zerolatency",
+            `-preset:v:${idx}`, X264_PRESET,
+            `-tune:v:${idx}`, X264_TUNE,
             `-profile:v:${idx}`, "main",
             `-pix_fmt:v:${idx}`, "yuv420p"
         );
