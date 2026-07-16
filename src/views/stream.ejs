@@ -107,11 +107,11 @@
       <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Available Resolutions</label>
       <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-480p" onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <input type="checkbox" id="res-480p" checked onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
           <span>480p SD</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-720p" checked onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <input type="checkbox" id="res-720p" onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
           <span>720p HD</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
@@ -140,9 +140,9 @@
     <div class="form-group" style="margin-bottom: 1.5rem;">
       <label class="form-label" style="display: flex; justify-content: space-between; font-weight: 600;">
         <span>Target Bitrate</span>
-        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">900 Kbps</span>
+        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">500 Kbps</span>
       </label>
-      <input type="range" id="bitrate-input" min="400" max="2200" step="100" value="900" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
+      <input type="range" id="bitrate-input" min="400" max="2200" step="100" value="500" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
     </div>
 
     <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
@@ -309,8 +309,8 @@
       
       resultEl.innerHTML = `Speed: <strong style="color: var(--accent); font-size: 1.1rem;">${speedMbps.toFixed(2)} Mbps</strong>`;
       
-      let recResolutions = ['720p'];
-      let recBitrate = 900; // Kbps
+      let recResolutions = ['480p'];
+      let recBitrate = 500; // Kbps
 
       if (speedMbps < 2) {
         recResolutions = ['480p'];
@@ -321,13 +321,13 @@
         recBitrate = 500;
         statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 24 FPS</strong>';
       } else if (speedMbps < 35) {
-        recResolutions = ['720p'];
-        recBitrate = 900;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">720p @ 24 FPS</strong>';
+        recResolutions = ['480p'];
+        recBitrate = 500;
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 24 FPS</strong>';
       } else {
-        recResolutions = ['720p'];
-        recBitrate = 900;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">720p @ 24 FPS</strong>';
+        recResolutions = ['480p'];
+        recBitrate = 500;
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 24 FPS</strong>';
       }
 
       // Apply recommendation

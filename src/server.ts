@@ -40,6 +40,7 @@ type ActiveIngest = {
     ffmpegProcess: ChildProcessWithoutNullStreams;
     rollingInterval: NodeJS.Timeout;
     healthInterval: NodeJS.Timeout;
+    ingestInterval: NodeJS.Timeout;
 };
 
 function clampNumber(value: number, min: number, max: number) {
@@ -60,6 +61,7 @@ function stopActiveIngest(streamKey: string, reason: string) {
     activeRollingCleanups.delete(streamKey);
     clearInterval(active.rollingInterval);
     clearInterval(active.healthInterval);
+    clearInterval(active.ingestInterval);
 
     try {
         if (active.ws.readyState === WebSocket.OPEN || active.ws.readyState === WebSocket.CONNECTING) {
@@ -149,12 +151,12 @@ server.on("upgrade", (request, socket, head) => {
 wss.on("connection", async (ws: WebSocket, request) => {
     const parsedUrl = new URL(request.url || "", `http://${request.headers.host}`);
     const streamKey = parsedUrl.searchParams.get("key");
-    const resolutionsParam = parsedUrl.searchParams.get("resolutions") || "720p";
+    const resolutionsParam = parsedUrl.searchParams.get("resolutions") || "480p";
     const requestedFps = parseInt(parsedUrl.searchParams.get("fps") || DEFAULT_FPS.toString(), 10);
     const fpsParam = clampNumber(Number.isFinite(requestedFps) ? requestedFps : DEFAULT_FPS, DEFAULT_FPS, MAX_FPS);
-    const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "900", 10);
+    const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "500", 10);
     const bitrateParam = clampNumber(
-        Number.isFinite(requestedBitrate) ? requestedBitrate : 900,
+        Number.isFinite(requestedBitrate) ? requestedBitrate : 500,
         MIN_VIDEO_BITRATE_KBPS,
         MAX_VIDEO_BITRATE_KBPS
     );
@@ -203,7 +205,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
         .split(",")
         .filter((r): r is StreamResolution => r in RESOLUTION_CONFIG);
     if (resolutions.length === 0) {
-        resolutions.push("720p");
+        resolutions.push("480p");
     }
 
     // 3. Mark stream active in database
@@ -424,9 +426,30 @@ wss.on("connection", async (ws: WebSocket, request) => {
         });
     }, 5_000);
 
-    activeIngests.set(streamKey, { ws, ffmpegProcess, rollingInterval, healthInterval });
+    let ingestBytes = 0;
+    let ingestMessages = 0;
+    let lastIngestMessageAt = Date.now();
+    const ingestInterval = setInterval(() => {
+        const kbps = Math.round((ingestBytes * 8) / 5 / 1000);
+        const lastMessageAgeSec = ((Date.now() - lastIngestMessageAt) / 1000).toFixed(2);
+
+        console.log(
+            `[ingest health] stream=${streamKey} messages=${ingestMessages} ` +
+            `kbps=${kbps} lastMessageAgeSec=${lastMessageAgeSec} ` +
+            `stdinBackpressure=${ffmpegProcess.stdin.writableNeedDrain}`
+        );
+
+        ingestBytes = 0;
+        ingestMessages = 0;
+    }, 5_000);
+
+    activeIngests.set(streamKey, { ws, ffmpegProcess, rollingInterval, healthInterval, ingestInterval });
 
     ws.on("message", (message: Buffer) => {
+        ingestBytes += message.length;
+        ingestMessages += 1;
+        lastIngestMessageAt = Date.now();
+
         if (ffmpegProcess.stdin.writable) {
             ffmpegProcess.stdin.write(message);
         }
@@ -440,6 +463,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
         if (!isCurrentIngest) {
             clearInterval(rollingInterval);
             clearInterval(healthInterval);
+            clearInterval(ingestInterval);
             try {
                 if (ffmpegProcess.stdin.writable) {
                     ffmpegProcess.stdin.end();
@@ -461,6 +485,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
             activeRollingCleanups.delete(streamKey);
         }
         clearInterval(healthInterval);
+        clearInterval(ingestInterval);
 
         // Set stream inactive
         await StreamService.setStreamActive(streamKey, false);
