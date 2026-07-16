@@ -65,7 +65,7 @@ async function main() {
   let hasAudio = false;
   try {
     const { execSync } = await import("child_process");
-    const probeCmd = `ffprobe -v error -select_streams a -show_entries stream=codec_type -of csv=p=0 "${inputRtspUrl}"`;
+    const probeCmd = `ffprobe -rtsp_transport tcp -v error -select_streams a -show_entries stream=codec_type -of csv=p=0 "${inputRtspUrl}"`;
     const probeResult = execSync(probeCmd).toString().trim();
     hasAudio = probeResult.includes("audio");
     console.log(`[on-publish] ffprobe audio detection result: hasAudio=${hasAudio}`);
@@ -99,6 +99,7 @@ async function main() {
       "-fflags", "+genpts+discardcorrupt",
       "-err_detect", "ignore_err",
       "-thread_queue_size", "1024",
+      "-rtsp_transport", "tcp",
       "-i", inputRtspUrl, // Read input from RTSP
       "-y",
       "-map", "0:v:0"
@@ -138,6 +139,7 @@ async function main() {
       "-fflags", "+genpts+discardcorrupt",
       "-err_detect", "ignore_err",
       "-thread_queue_size", "1024",
+      "-rtsp_transport", "tcp",
       "-i", inputRtspUrl, // Read input from RTSP
       "-y",
       "-filter_complex", filterComplex
