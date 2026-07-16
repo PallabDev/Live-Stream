@@ -101,6 +101,11 @@
           <i class="ti ti-screen-share" style="font-size: 1.2rem; color: var(--secondary);"></i> Share Desktop Screen
         </button>
 
+        <!-- Download Raw Ingest Button (visible when offline) -->
+        <a id="btn-download-raw" class="btn btn-secondary" style="display: none; justify-content: flex-start; border-radius: 12px; padding: 0.8rem 1.2rem; width: 100%;" target="_blank">
+          <i class="ti ti-download" style="font-size: 1.2rem; color: var(--accent);"></i> Download Raw Ingest (MP4)
+        </a>
+
         <!-- Active Source Info -->
         <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: 12px; margin-top: 0.5rem;">
           <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em;">Current Source</span>
@@ -521,6 +526,14 @@
 
       btnStop.disabled = true;
       btnStop.style.opacity = "0.5";
+    }
+
+    const downloadRawBtn = document.getElementById("btn-download-raw");
+    if (isStreaming || isLive) {
+      downloadRawBtn.style.display = "none";
+    } else {
+      downloadRawBtn.style.display = "inline-flex";
+      downloadRawBtn.href = `/media/raw_${streamKey}.mp4`;
     }
 
     if (isLive || isStreaming) {

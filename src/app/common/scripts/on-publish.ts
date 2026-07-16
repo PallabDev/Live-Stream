@@ -204,6 +204,22 @@ async function main() {
     path.join(mediaDir, "%v", "index.m3u8")
   );
 
+  // 2nd Output: Raw MP4 Ingest Dump (direct copy, fragmented for robustness)
+  const rawOutputPath = path.resolve(projectRoot, "media", `raw_${streamKey}.mp4`);
+  ffmpegArgs.push(
+    "-map", "0:v",
+  );
+  if (hasAudio) {
+    ffmpegArgs.push("-map", "0:a?");
+  }
+  ffmpegArgs.push(
+    "-c:v", "copy",
+    "-c:a", "copy",
+    "-f", "mp4",
+    "-movflags", "frag_keyframe+empty_moov",
+    rawOutputPath
+  );
+
   console.log("[on-publish] Spawning FFmpeg with arguments:", ffmpegArgs.join(" "));
   const ffmpegProcess = spawn("ffmpeg", ffmpegArgs);
 
