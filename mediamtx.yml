@@ -31,9 +31,9 @@ authHTTPAddress: http://127.0.0.1:5678/api/stream/auth
 paths:
   # Path pattern matching transcoded AAC streams
   "~^(.+)_aac$":
-    runOnPublish: ""
-    runOnUnpublish: ""
+    runOnReady: ""
+    runOnNotReady: ""
 
   # Default fallback path configuration for raw incoming streams
   all:
-    runOnPublish: /app/node_modules/.bin/tsx /app/src/app/common/scripts/on-publish.ts
+    runOnReady: /app/node_modules/.bin/tsx /app/src/app/common/scripts/on-publish.ts
