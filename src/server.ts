@@ -32,7 +32,7 @@ const AUDIO_BITRATE_KBPS = 96;
 const X264_PRESET = process.env.X264_PRESET || "veryfast";
 const X264_TUNE = process.env.X264_TUNE || "film";
 const RESOLUTION_CONFIG = {
-    "480p": { height: 480, defaultBitrate: 400, maxBitrate: 400 },
+    "480p": { height: 480, defaultBitrate: 1000, maxBitrate: 1000 },
     "720p": { height: 720, defaultBitrate: 900, maxBitrate: 900 },
     "1080p": { height: 1080, defaultBitrate: 2200, maxBitrate: 2200 },
 } as const;
@@ -199,9 +199,9 @@ wss.on("connection", async (ws: WebSocket, request) => {
     const resolutionsParam = parsedUrl.searchParams.get("resolutions") || "480p";
     const requestedFps = parseInt(parsedUrl.searchParams.get("fps") || DEFAULT_FPS.toString(), 10);
     const fpsParam = clampNumber(Number.isFinite(requestedFps) ? requestedFps : DEFAULT_FPS, DEFAULT_FPS, MAX_FPS);
-    const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "400", 10);
+    const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "1000", 10);
     const bitrateParam = clampNumber(
-        Number.isFinite(requestedBitrate) ? requestedBitrate : 400,
+        Number.isFinite(requestedBitrate) ? requestedBitrate : 1000,
         MIN_VIDEO_BITRATE_KBPS,
         MAX_VIDEO_BITRATE_KBPS
     );
