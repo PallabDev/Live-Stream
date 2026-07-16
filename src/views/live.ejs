@@ -494,12 +494,23 @@ html, body {
       hlsInstance = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
-        backBufferLength: 60,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
-        liveSyncDurationCount: 4,
-        liveMaxLatencyDurationCount: 6,
+
+        // Buffer: build 12s ahead, sync 3 segments behind live edge
+        backBufferLength: 30,
+        maxBufferLength: 20,
+        maxMaxBufferLength: 40,
+        liveSyncDurationCount: 3,       // stay 6s behind live edge (3 x 2s segments)
+        liveMaxLatencyDurationCount: 8, // if >16s behind, jump forward
         liveDurationInfinity: true,
+
+        // FIX 1: Cache-bust every playlist request so the browser never
+        // serves a stale index.m3u8 and replays already-deleted segments.
+        xhrSetup: function (xhr, url) {
+          if (url.indexOf('.m3u8') !== -1) {
+            var sep = url.indexOf('?') !== -1 ? '&' : '?';
+            xhr.open('GET', url + sep + '_cb=' + Date.now(), true);
+          }
+        },
       });
 
       hlsInstance.loadSource(playlistUrl);
@@ -520,8 +531,15 @@ html, body {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              console.error('Network error, trying to recover...');
-              hlsInstance.startLoad();
+              // FIX 2: On 404 (deleted segment), don't retry — jump to live edge.
+              if (data.response && data.response.code === 404) {
+                console.warn('Segment 404 – jumping to live edge to resync.');
+                hlsInstance.stopLoad();
+                hlsInstance.startLoad(-1); // -1 = live edge
+              } else {
+                console.error('Network error, trying to recover...');
+                hlsInstance.startLoad();
+              }
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
               console.error('Media error, recovering...');
@@ -533,6 +551,14 @@ html, body {
               hlsInstance = null;
               showOffline();
               break;
+          }
+        } else if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
+                   data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT) {
+          // Non-fatal 404: still resync to live edge
+          if (data.response && data.response.code === 404) {
+            console.warn('Non-fatal segment 404 – resyncing to live edge.');
+            hlsInstance.stopLoad();
+            hlsInstance.startLoad(-1);
           }
         }
       });

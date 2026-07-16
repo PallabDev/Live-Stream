@@ -23,6 +23,8 @@ const port = process.env.PORT || 3000;
 
 // Track active media cleanup timers to prevent race conditions on quick reconnection
 const activeCleanups = new Map<string, NodeJS.Timeout>();
+// Track per-stream rolling cleanup intervals (delete segments older than 10 min)
+const activeRollingCleanups = new Map<string, NodeJS.Timeout>();
 
 // Setup EJS views
 app.set("view engine", "ejs");
@@ -36,12 +38,22 @@ app.use(cookieParser());
 // Serve static directories
 app.use(express.static(path.join(process.cwd(), "public")));
 // Serve live streams media chunks
+// etag:false + lastModified:false prevents browsers from sending If-None-Match / If-Modified-Since
+// which would cause a 304 "Not Modified" response and serve a stale cached playlist to the player.
 app.use("/media", express.static(path.join(process.cwd(), "media"), {
-    setHeaders: (res) => {
+    etag: false,
+    lastModified: false,
+    setHeaders: (res, filePath) => {
         res.setHeader("Access-Control-Allow-Origin", "*");
-        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-        res.setHeader("Pragma", "no-cache");
-        res.setHeader("Expires", "0");
+        // Playlists must never be cached — segments can use short cache
+        if (filePath.endsWith(".m3u8")) {
+            res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+            res.setHeader("Pragma", "no-cache");
+            res.setHeader("Expires", "0");
+        } else {
+            // .ts segments: allow brief caching since content is immutable once written
+            res.setHeader("Cache-Control", "public, max-age=60");
+        }
     }
 }));
 
@@ -180,9 +192,9 @@ wss.on("connection", async (ws: WebSocket, request) => {
 
         ffmpegArgs.push(
             `-c:v:${idx}`, "libx264",
-            "-crf", "26", // Use Constant Rate Factor for dynamic and efficient compression, perfect for screen sharing
-            `-maxrate:v:${idx}`, videoBitrate, // Prevent bandwidth spikes
-            `-bufsize:v:${idx}`, videoBitrate, // Strict buffer size for stable delivery
+            "-crf", "26",
+            `-maxrate:v:${idx}`, videoBitrate,
+            `-bufsize:v:${idx}`, `${parseInt(videoBitrate) * 2}k`, // 2x maxrate for proper CRF+VBV headroom
             `-r:v:${idx}`, fpsParam.toString(),
             `-g:v:${idx}`, keyInterval.toString(),
             `-keyint_min:v:${idx}`, keyInterval.toString(),
@@ -204,13 +216,16 @@ wss.on("connection", async (ws: WebSocket, request) => {
     }
 
     // HLS packing configuration
+    // hls_list_size=300 keeps the last 10 minutes in the playlist (300 x 2s = 600s).
+    // omit_endlist keeps the stream marked as live.
+    // NO delete_segments — we manage deletion ourselves with a rolling 10-minute window.
     const varStreamMap = resolutions.map((_, idx) => hasAudio ? `v:${idx},a:${idx}` : `v:${idx}`).join(" ");
     ffmpegArgs.push(
         "-f", "hls",
-        "-hls_time", "2", // 2 second chunks for lower latency and faster loading
-        "-hls_list_size", "10", // Keep last 10 chunks to give viewers a larger buffer window
-        "-hls_flags", "delete_segments+omit_endlist", // Auto-delete older chunks, don't write EOF tag to keep playlist live
-        "-hls_segment_filename", path.join(mediaDir, "%v", "file%03d.ts"),
+        "-hls_time", "2",
+        "-hls_list_size", "300",  // 10 minutes of segments always available on disk
+        "-hls_flags", "omit_endlist",  // keep stream live — no auto-deletion
+        "-hls_segment_filename", path.join(mediaDir, "%v", "file%06d.ts"),
         "-master_pl_name", "master.m3u8",
         "-var_stream_map", varStreamMap,
         path.join(mediaDir, "%v", "index.m3u8")
@@ -242,6 +257,38 @@ wss.on("connection", async (ws: WebSocket, request) => {
         console.error(`ffmpeg process error for stream ${streamKey}:`, err);
     });
 
+    // Rolling 10-minute segment retention: every 60 seconds delete .ts files
+    // older than 600 seconds so disk doesn't fill up during long streams.
+    const RETENTION_SECONDS = 600; // 10 minutes
+    const rollingInterval = setInterval(() => {
+        const now = Date.now();
+        try {
+            // Iterate each resolution variant subdirectory (0/, 1/, 2/ ...)
+            const variantDirs = fs.readdirSync(mediaDir, { withFileTypes: true })
+                .filter(d => d.isDirectory())
+                .map(d => path.join(mediaDir, d.name));
+
+            for (const varDir of variantDirs) {
+                const files = fs.readdirSync(varDir).filter(f => f.endsWith(".ts"));
+                for (const file of files) {
+                    const filePath = path.join(varDir, file);
+                    try {
+                        const stat = fs.statSync(filePath);
+                        const ageSeconds = (now - stat.mtimeMs) / 1000;
+                        if (ageSeconds > RETENTION_SECONDS) {
+                            fs.unlinkSync(filePath);
+                            console.log(`[cleanup] Deleted old segment: ${file} (age: ${Math.round(ageSeconds)}s)`);
+                        }
+                    } catch (_) { /* file may have been deleted already */ }
+                }
+            }
+        } catch (err) {
+            console.error(`[cleanup] Rolling cleanup error for ${streamKey}:`, err);
+        }
+    }, 60_000); // run every 60 seconds
+
+    activeRollingCleanups.set(streamKey, rollingInterval);
+
     ws.on("message", (message: Buffer) => {
         if (ffmpegProcess.stdin.writable) {
             ffmpegProcess.stdin.write(message);
@@ -250,6 +297,13 @@ wss.on("connection", async (ws: WebSocket, request) => {
 
     ws.on("close", async () => {
         console.log(`Broadcaster disconnected. Stopping stream ${streamKey}`);
+
+        // Stop rolling cleanup interval for this stream
+        const rollingCleanup = activeRollingCleanups.get(streamKey);
+        if (rollingCleanup) {
+            clearInterval(rollingCleanup);
+            activeRollingCleanups.delete(streamKey);
+        }
 
         // Set stream inactive
         await StreamService.setStreamActive(streamKey, false);
@@ -262,19 +316,19 @@ wss.on("connection", async (ws: WebSocket, request) => {
             // already stopped
         }
 
-        // Optional: Keep media for a few seconds so viewer buffers can finish, then clean up
+        // Keep media for 30s so viewer buffers can drain, then wipe everything
         const cleanupTimeout = setTimeout(() => {
             try {
                 if (fs.existsSync(mediaDir)) {
                     fs.rmSync(mediaDir, { recursive: true, force: true });
-                    console.log(`Cleaned up media files for ${streamKey}`);
+                    console.log(`Cleaned up all media files for ${streamKey}`);
                 }
             } catch (err) {
                 console.error("Cleanup error:", err);
             } finally {
                 activeCleanups.delete(streamKey);
             }
-        }, 15000);
+        }, 30000);
 
         activeCleanups.set(streamKey, cleanupTimeout);
     });
