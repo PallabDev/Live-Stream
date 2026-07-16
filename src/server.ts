@@ -48,6 +48,16 @@ app.use("/media", express.static(path.join(process.cwd(), "media"), {
   }
 }));
 
+// Prevent page caching for dynamic pages
+app.use((req, res, next) => {
+  if (!req.path.startsWith("/media") && !req.path.startsWith("/public")) {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+  }
+  next();
+});
+
 // Setup routes
 app.use(authRoutes);
 app.use(streamRoutes);
