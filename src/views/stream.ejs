@@ -229,10 +229,6 @@
   const previewPlayer = document.getElementById("preview-player");
   const previewPlaceholder = document.getElementById("preview-placeholder");
 
-  // Offscreen canvas for frame-perfect 30fps movie capture
-  const offscreenCanvas = document.createElement('canvas');
-  let isCanvasDrawing = false;
-
   // Handle local video file selection
   movieFileInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
@@ -251,13 +247,6 @@
     previewPlayer.src = fileUrl;
     previewPlayer.load();
 
-    // Sizing canvas to movie dimensions once metadata resolves
-    previewPlayer.onloadedmetadata = () => {
-      offscreenCanvas.width = previewPlayer.videoWidth || 1920;
-      offscreenCanvas.height = previewPlayer.videoHeight || 1080;
-      console.log(`[Studio] Offscreen canvas configured to ${offscreenCanvas.width}x${offscreenCanvas.height}`);
-    };
-
     currentSourceType = 'file';
     document.getElementById("active-source-text").textContent = `Movie File: ${file.name}`;
     
@@ -267,31 +256,6 @@
 
     updateUI();
   });
-
-  // Offscreen draw loop
-  function startOffscreenCanvasDraw() {
-    if (isCanvasDrawing) return;
-    isCanvasDrawing = true;
-    const ctx = offscreenCanvas.getContext('2d');
-
-    function draw() {
-      if (!isCanvasDrawing || previewPlayer.paused || previewPlayer.ended) {
-        isCanvasDrawing = false;
-        return;
-      }
-      ctx.drawImage(previewPlayer, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
-      
-      if (previewPlayer.requestVideoFrameCallback) {
-        previewPlayer.requestVideoFrameCallback(draw);
-      } else {
-        requestAnimationFrame(draw);
-      }
-    }
-    draw();
-  }
-
-  // Hook play event to trigger drawing
-  previewPlayer.addEventListener('play', startOffscreenCanvasDraw);
 
   // Handle local screen sharing
   async function startScreenShare() {
@@ -356,37 +320,20 @@
 
     // Obtain the media tracks based on selected source type
     if (currentSourceType === 'file') {
-      // 1. Capture the video track from our offscreen canvas running at 30 fps
-      const canvasStream = offscreenCanvas.captureStream(30);
-      const videoTrack = canvasStream.getVideoTracks()[0];
-      
-      // 2. Capture the audio track from the video element
-      let audioTrack = null;
+      // Capture stream from the playing video element (requesting full steady 30 fps)
       if (previewPlayer.captureStream) {
-        const tempStream = previewPlayer.captureStream();
-        if (tempStream && tempStream.getAudioTracks().length > 0) {
-          audioTrack = tempStream.getAudioTracks()[0];
-        }
+        mediaStream = previewPlayer.captureStream(30);
       } else if (previewPlayer.mozCaptureStream) {
-        const tempStream = previewPlayer.mozCaptureStream();
-        if (tempStream && tempStream.getAudioTracks().length > 0) {
-          audioTrack = tempStream.getAudioTracks()[0];
-        }
+        mediaStream = previewPlayer.mozCaptureStream(30);
+      } else {
+        alert("Your browser does not support video capturing API.");
+        return;
       }
 
-      // 3. Combine them into a single stream
-      const tracks = [];
-      if (videoTrack) tracks.push(videoTrack);
-      if (audioTrack) tracks.push(audioTrack);
-      mediaStream = new MediaStream(tracks);
-
-      // Play the movie if it's paused so streaming starts and frames render
+      // Play the movie if it's paused so streaming starts
       if (previewPlayer.paused) {
         previewPlayer.play().catch(e => console.warn("Player play error:", e));
       }
-      
-      // Ensure drawing loop is active
-      startOffscreenCanvasDraw();
     } else if (currentSourceType === 'screen') {
       mediaStream = captureStream;
     }
@@ -536,7 +483,6 @@
     document.getElementById("duration-badge").style.display = "none";
 
     isStreaming = false;
-    isCanvasDrawing = false;
 
     // Call Stop endpoint on database (revokes auth and kicks media session)
     try {
