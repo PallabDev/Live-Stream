@@ -205,6 +205,7 @@ html, body {
       <video
         class="w-full h-full object-contain bg-black block"
         id="sh-video"
+        preload="auto"
         playsinline
       ></video>
 
@@ -461,7 +462,7 @@ html, body {
   // Stream status checker
   async function checkStreamStatus() {
     try {
-      const res = await fetch(playlistUrl, { method: 'HEAD' });
+      const res = await fetch(playlistUrl + '&_status=' + Date.now(), { method: 'HEAD', cache: 'no-store' });
       if (res.ok) {
         if (offlineScreen.style.display !== 'none') {
           offlineScreen.style.display = 'none';
@@ -494,22 +495,32 @@ html, body {
       hlsInstance = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
+        startLevel: 0,
+        capLevelToPlayerSize: true,
+        testBandwidth: true,
 
         // === PRE-BUFFERING FIX ===
         // Without this, Hls.js plays a segment completely before downloading the next one.
         // With this, it downloads the next segment WHILE the current one is playing.
         startFragPrefetch: true,
 
-        // Buffer settings for 6s segments
+        // Buffer settings for 4s live segments
         backBufferLength: 60,
-        maxBufferLength: 60,            // buffer up to 10 full 6s segments ahead
-        maxMaxBufferLength: 120,
-        maxBufferSize: 60 * 1000 * 1000, // 60 MB max buffer size
-        maxStarvationDelay: 4,           // start recovery after 4s without data
+        maxBufferLength: 45,
+        maxMaxBufferLength: 90,
+        maxBufferSize: 40 * 1000 * 1000,
+        maxStarvationDelay: 2,
+        fragLoadingTimeOut: 12000,
+        manifestLoadingTimeOut: 10000,
+        levelLoadingTimeOut: 10000,
+        abrBandWidthFactor: 0.75,
+        abrBandWidthUpFactor: 0.6,
+        abrEwmaFastLive: 2,
+        abrEwmaSlowLive: 8,
 
-        // Live sync: stay 1 segment (6s) behind live edge so the next segment is always ready
-        liveSyncDurationCount: 1,
-        liveMaxLatencyDurationCount: 4,  // jump to live edge if >24s behind
+        // Stay behind live edge so the next segment is ready before playback needs it.
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 8,
         liveDurationInfinity: true,
 
         // Cache-bust every playlist fetch so the browser never replays stale segments
@@ -526,6 +537,7 @@ html, body {
 
       hlsInstance.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
         levels = data.levels || [];
+        hlsInstance.nextLoadLevel = 0;
         buildQualityMenu(levels);
         hideLoading();
         video.play().catch(e => console.log("Play interrupted", e));
@@ -539,13 +551,14 @@ html, body {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              // FIX 2: On 404 (deleted segment), don't retry — jump to live edge.
+              // On a deleted segment, jump to live edge instead of retrying stale media.
               if (data.response && data.response.code === 404) {
-                console.warn('Segment 404 – jumping to live edge to resync.');
+                console.warn('Segment 404 - jumping to live edge to resync.');
                 hlsInstance.stopLoad();
                 hlsInstance.startLoad(-1); // -1 = live edge
               } else {
                 console.error('Network error, trying to recover...');
+                hlsInstance.nextLoadLevel = 0;
                 hlsInstance.startLoad();
               }
               break;
@@ -561,10 +574,15 @@ html, body {
               break;
           }
         } else if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
-                   data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT) {
+                   data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT ||
+                   data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
+                   data.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL) {
+          hlsInstance.currentLevel = -1;
+          hlsInstance.nextLoadLevel = 0;
+          qualityCurrent.textContent = 'Auto';
           // Non-fatal 404: still resync to live edge
           if (data.response && data.response.code === 404) {
-            console.warn('Non-fatal segment 404 – resyncing to live edge.');
+            console.warn('Non-fatal segment 404 - resyncing to live edge.');
             hlsInstance.stopLoad();
             hlsInstance.startLoad(-1);
           }

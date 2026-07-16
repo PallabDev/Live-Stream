@@ -107,7 +107,7 @@
       <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Available Resolutions</label>
       <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-480p" style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <input type="checkbox" id="res-480p" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
           <span>480p SD</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
@@ -130,7 +130,7 @@
           <span>30 FPS</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="radio" name="fps" id="fps-60" value="60" style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <input type="radio" name="fps" id="fps-60" value="60" disabled style="accent-color: var(--primary); width: 16px; height: 16px;">
           <span>60 FPS</span>
         </label>
       </div>
@@ -140,9 +140,9 @@
     <div class="form-group" style="margin-bottom: 1.5rem;">
       <label class="form-label" style="display: flex; justify-content: space-between; font-weight: 600;">
         <span>Target Bitrate</span>
-        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">2000 Kbps</span>
+        <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">1600 Kbps</span>
       </label>
-      <input type="range" id="bitrate-input" min="500" max="10000" step="100" value="2000" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
+      <input type="range" id="bitrate-input" min="500" max="2500" step="100" value="1600" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
     </div>
 
     <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
@@ -159,6 +159,34 @@
   let webSocket = null;
   let streamStartTime = null;
   let durationInterval = null;
+  const AUDIO_BITS_PER_SECOND = 96000;
+  const MAX_VIDEO_BITRATE_KBPS = 2500;
+  const MAX_FRAME_RATE = 30;
+  const MAX_WS_BUFFERED_BYTES = 3 * 1024 * 1024;
+  const RESOLUTION_LIMITS = {
+    '480p': { width: 854, height: 480 },
+    '720p': { width: 1280, height: 720 },
+    '1080p': { width: 1920, height: 1080 }
+  };
+
+  function clampNumber(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  function getSelectedStreamConfig() {
+    const resolutions = [];
+    if (document.getElementById('res-480p').checked) resolutions.push('480p');
+    if (document.getElementById('res-720p').checked) resolutions.push('720p');
+    if (document.getElementById('res-1080p').checked) resolutions.push('1080p');
+
+    const selectedFps = parseInt(document.querySelector('input[name="fps"]:checked').value, 10);
+    const fps = clampNumber(Number.isFinite(selectedFps) ? selectedFps : 30, 24, MAX_FRAME_RATE);
+    const selectedBitrate = parseInt(document.getElementById('bitrate-input').value, 10);
+    const bitrate = clampNumber(Number.isFinite(selectedBitrate) ? selectedBitrate : 1600, 500, MAX_VIDEO_BITRATE_KBPS);
+    const maxRes = resolutions.includes('1080p') ? '1080p' : (resolutions.includes('720p') ? '720p' : '480p');
+
+    return { resolutions, fps, bitrate, maxRes };
+  }
 
   function updateBitrateVal(value) {
     document.getElementById('bitrate-val').textContent = value + ' Kbps';
@@ -220,45 +248,36 @@
       
       resultEl.innerHTML = `Speed: <strong style="color: var(--accent); font-size: 1.1rem;">${speedMbps.toFixed(2)} Mbps</strong>`;
       
-      let recRes = '720p';
-      let recFps = '30';
-      let recBitrate = 2500; // Kbps
+      let recResolutions = ['480p', '720p'];
+      let recBitrate = 1600; // Kbps
 
       if (speedMbps < 2) {
-        recRes = '480p';
-        recFps = '30';
-        recBitrate = 1000;
+        recResolutions = ['480p'];
+        recBitrate = 700;
         statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p @ 30 FPS</strong>';
-      } else if (speedMbps < 5) {
-        recRes = '720p';
-        recFps = '30';
-        recBitrate = 2200;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">720p @ 30 FPS</strong>';
-      } else if (speedMbps < 9) {
-        recRes = '1080p';
-        recFps = '30';
-        recBitrate = 4000;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">1080p @ 30 FPS</strong>';
+      } else if (speedMbps < 6) {
+        recResolutions = ['480p', '720p'];
+        recBitrate = 1200;
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p + 720p @ 30 FPS</strong>';
+      } else if (speedMbps < 35) {
+        recResolutions = ['480p', '720p'];
+        recBitrate = 1600;
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p + 720p @ 30 FPS</strong>';
       } else {
-        recRes = '1080p';
-        recFps = '60';
-        recBitrate = 6000;
-        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">1080p @ 60 FPS (Ultra HD)</strong>';
+        recResolutions = ['480p', '720p', '1080p'];
+        recBitrate = 2200;
+        statusEl.innerHTML = 'Recommended Config: <strong style="color: var(--text-main);">480p + 720p + 1080p @ 30 FPS</strong>';
       }
 
       // Apply recommendation
       document.getElementById('bitrate-input').value = recBitrate;
       updateBitrateVal(recBitrate);
 
-      document.getElementById('res-480p').checked = (recRes === '480p');
-      document.getElementById('res-720p').checked = (recRes === '720p');
-      document.getElementById('res-1080p').checked = (recRes === '1080p');
+      document.getElementById('res-480p').checked = recResolutions.includes('480p');
+      document.getElementById('res-720p').checked = recResolutions.includes('720p');
+      document.getElementById('res-1080p').checked = recResolutions.includes('1080p');
 
-      if (recFps === '60') {
-        document.getElementById('fps-60').checked = true;
-      } else {
-        document.getElementById('fps-30').checked = true;
-      }
+      document.getElementById('fps-30').checked = true;
 
     } catch (err) {
       statusEl.textContent = 'Test failed: ' + err.message;
@@ -267,12 +286,15 @@
 
   async function setupMedia() {
     try {
+      const config = getSelectedStreamConfig();
+      const captureSize = RESOLUTION_LIMITS[config.maxRes];
+
       // Capture screen video + screen audio (if available)
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: {
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 60 },
+          width: { ideal: captureSize.width },
+          height: { ideal: captureSize.height },
+          frameRate: { ideal: config.fps, max: MAX_FRAME_RATE },
           cursor: 'never'
         },
         audio: true
@@ -306,38 +328,28 @@
   async function startStreaming() {
     if (!localStream) return;
 
-    // Get selected configurations
-    const res480 = document.getElementById('res-480p').checked;
-    const res720 = document.getElementById('res-720p').checked;
-    const res1080 = document.getElementById('res-1080p').checked;
+    const config = getSelectedStreamConfig();
 
-    if (!res480 && !res720 && !res1080) {
+    if (config.resolutions.length === 0) {
       alert('You must enable at least one resolution (480p, 720p, or 1080p).');
       return;
     }
 
-    const resolutions = [];
-    if (res480) resolutions.push('480p');
-    if (res720) resolutions.push('720p');
-    if (res1080) resolutions.push('1080p');
-
-    const fps = document.querySelector('input[name="fps"]:checked').value;
-    const bitrate = document.getElementById('bitrate-input').value; // In Kbps
+    const resolutions = config.resolutions;
+    const fps = config.fps;
+    const bitrate = config.bitrate;
 
     // Dynamically apply video track constraints to avoid capturing at higher resolutions than needed
     const videoTrack = localStream.getVideoTracks()[0];
     if (videoTrack) {
-      const maxRes = res1080 ? '1080p' : (res720 ? '720p' : '480p');
-      const targetWidth = maxRes === '1080p' ? 1920 : (maxRes === '720p' ? 1280 : 854);
-      const targetHeight = maxRes === '1080p' ? 1080 : (maxRes === '720p' ? 720 : 480);
-      const targetFps = parseInt(fps);
+      const captureSize = RESOLUTION_LIMITS[config.maxRes];
 
-      console.log(`Applying track constraints: ${targetWidth}x${targetHeight} @ ${targetFps} FPS`);
+      console.log(`Applying track constraints: ${captureSize.width}x${captureSize.height} @ ${fps} FPS`);
       try {
         await videoTrack.applyConstraints({
-          width: { ideal: targetWidth },
-          height: { ideal: targetHeight },
-          frameRate: { ideal: targetFps }
+          width: { ideal: captureSize.width },
+          height: { ideal: captureSize.height },
+          frameRate: { ideal: fps, max: MAX_FRAME_RATE }
         });
       } catch (constraintErr) {
         console.warn('Failed to apply video track constraints:', constraintErr);
@@ -359,14 +371,14 @@
       
       // Setup MediaRecorder based on track presence to prevent NotSupportedError DOMExceptions
       const candidates = hasAudio ? [
-        'video/webm; codecs=vp9,opus',
-        'video/webm; codecs=vp8,opus',
         'video/webm; codecs=h264,opus',
+        'video/webm; codecs=vp8,opus',
+        'video/webm; codecs=vp9,opus',
         'video/webm'
       ] : [
-        'video/webm; codecs=vp9',
-        'video/webm; codecs=vp8',
         'video/webm; codecs=h264',
+        'video/webm; codecs=vp8',
+        'video/webm; codecs=vp9',
         'video/webm'
       ];
 
@@ -380,7 +392,12 @@
 
       console.log('Selected Recording MimeType:', selectedMimeType);
 
-      let options = { videoBitsPerSecond: bitrate * 1000 };
+      let options = {
+        videoBitsPerSecond: Math.max(300000, (bitrate * 1000) - (hasAudio ? AUDIO_BITS_PER_SECOND : 0))
+      };
+      if (hasAudio) {
+        options.audioBitsPerSecond = AUDIO_BITS_PER_SECOND;
+      }
       if (selectedMimeType) {
         options.mimeType = selectedMimeType;
       }
@@ -400,12 +417,16 @@
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0 && webSocket.readyState === WebSocket.OPEN) {
+          if (webSocket.bufferedAmount > MAX_WS_BUFFERED_BYTES) {
+            console.warn('Dropping an ingest chunk because the connection is backed up.');
+            return;
+          }
           webSocket.send(event.data);
         }
       };
 
-      // Send blobs every 1000ms
-      mediaRecorder.start(1000);
+      // Smaller chunks reduce live ingest delay and recover faster after short network dips.
+      mediaRecorder.start(750);
 
       // UI states
       document.getElementById('status-badge').className = 'badge badge-success';
@@ -475,7 +496,7 @@
     document.getElementById('res-720p').disabled = false;
     document.getElementById('res-1080p').disabled = false;
     document.getElementById('fps-30').disabled = false;
-    document.getElementById('fps-60').disabled = false;
+    document.getElementById('fps-60').disabled = true;
     document.getElementById('bitrate-input').disabled = false;
 
     mediaRecorder = null;

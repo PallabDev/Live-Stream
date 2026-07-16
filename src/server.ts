@@ -21,6 +21,24 @@ const app = express();
 const server = http.createServer(app);
 const port = process.env.PORT || 3000;
 
+const HLS_SEGMENT_SECONDS = 4;
+const STREAM_RETENTION_SECONDS = 600;
+const MAX_FPS = 30;
+const MIN_VIDEO_BITRATE_KBPS = 450;
+const MAX_VIDEO_BITRATE_KBPS = 2500;
+const AUDIO_BITRATE_KBPS = 96;
+const RESOLUTION_CONFIG = {
+    "480p": { height: 480, defaultBitrate: 650, maxBitrate: 900 },
+    "720p": { height: 720, defaultBitrate: 1500, maxBitrate: 1800 },
+    "1080p": { height: 1080, defaultBitrate: 2200, maxBitrate: 2500 },
+} as const;
+
+type StreamResolution = keyof typeof RESOLUTION_CONFIG;
+
+function clampNumber(value: number, min: number, max: number) {
+    return Math.min(Math.max(value, min), max);
+}
+
 // Track active media cleanup timers to prevent race conditions on quick reconnection
 const activeCleanups = new Map<string, NodeJS.Timeout>();
 // Track per-stream rolling cleanup intervals (delete segments older than 10 min)
@@ -45,7 +63,7 @@ app.use("/media", express.static(path.join(process.cwd(), "media"), {
     lastModified: false,
     setHeaders: (res, filePath) => {
         res.setHeader("Access-Control-Allow-Origin", "*");
-        // Playlists must never be cached — segments can use short cache
+        // Playlists must never be cached; segments can use short cache.
         if (filePath.endsWith(".m3u8")) {
             res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
             res.setHeader("Pragma", "no-cache");
@@ -90,9 +108,15 @@ server.on("upgrade", (request, socket, head) => {
 wss.on("connection", async (ws: WebSocket, request) => {
     const parsedUrl = new URL(request.url || "", `http://${request.headers.host}`);
     const streamKey = parsedUrl.searchParams.get("key");
-    const resolutionsParam = parsedUrl.searchParams.get("resolutions") || "720p";
-    const fpsParam = parseInt(parsedUrl.searchParams.get("fps") || "30");
-    const bitrateParam = parseInt(parsedUrl.searchParams.get("bitrate") || "2500");
+    const resolutionsParam = parsedUrl.searchParams.get("resolutions") || "480p,720p";
+    const requestedFps = parseInt(parsedUrl.searchParams.get("fps") || "30", 10);
+    const fpsParam = clampNumber(Number.isFinite(requestedFps) ? requestedFps : 30, 24, MAX_FPS);
+    const requestedBitrate = parseInt(parsedUrl.searchParams.get("bitrate") || "1600", 10);
+    const bitrateParam = clampNumber(
+        Number.isFinite(requestedBitrate) ? requestedBitrate : 1600,
+        MIN_VIDEO_BITRATE_KBPS,
+        MAX_VIDEO_BITRATE_KBPS
+    );
     const hasAudio = parsedUrl.searchParams.get("hasAudio") === "true";
 
     if (!streamKey) {
@@ -132,9 +156,11 @@ wss.on("connection", async (ws: WebSocket, request) => {
     }
 
     // Parse resolutions array
-    const resolutions = resolutionsParam.split(",").filter(r => ["480p", "720p", "1080p"].includes(r));
+    const resolutions = resolutionsParam
+        .split(",")
+        .filter((r): r is StreamResolution => r in RESOLUTION_CONFIG);
     if (resolutions.length === 0) {
-        resolutions.push("720p"); // Default fallback
+        resolutions.push("480p", "720p");
     }
 
     // 3. Mark stream active in database
@@ -147,12 +173,10 @@ wss.on("connection", async (ws: WebSocket, request) => {
         const splits = resolutions.map((_, idx) => `[v${idx + 1}]`).join("");
         filterComplex += `[0:v]split=${resolutions.length}${splits};`;
         resolutions.forEach((res, idx) => {
-            const height = res === "480p" ? 480 : res === "720p" ? 720 : 1080;
-            filterComplex += `[v${idx + 1}]scale=w=-2:h=${height}[v${idx + 1}out];`;
+            filterComplex += `[v${idx + 1}]scale=w=-2:h=${RESOLUTION_CONFIG[res].height}:flags=fast_bilinear[v${idx + 1}out];`;
         });
     } else {
-        const height = resolutions[0] === "480p" ? 480 : resolutions[0] === "720p" ? 720 : 1080;
-        filterComplex += `[0:v]scale=w=-2:h=${height}[v1out]`;
+        filterComplex += `[0:v]scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0]].height}:flags=fast_bilinear[v1out]`;
     }
 
     // Strip trailing semicolon to prevent FFmpeg "No such filter: ''" syntax error
@@ -161,10 +185,12 @@ wss.on("connection", async (ws: WebSocket, request) => {
     }
 
     const ffmpegArgs = [
-        "-fflags", "nobuffer", // Reduce input latency by disabling buffer
-        "-flags", "low_delay", // Lower processing latency
-        "-probesize", "100k", // Reduce probesize to analyze container format faster
-        "-analyzeduration", "100k", // Reduce analyzeduration to avoid startup delays
+        "-hide_banner",
+        "-loglevel", "warning",
+        "-fflags", "+genpts",
+        "-thread_queue_size", "1024",
+        "-probesize", "500k",
+        "-analyzeduration", "500k",
         "-f", "matroska", // Explicitly define input format as Matroska (WebM) to prevent probing errors
         "-i", "pipe:0", // Read input from standard input (WebSocket packets)
         "-y", // Overwrite output files
@@ -173,17 +199,14 @@ wss.on("connection", async (ws: WebSocket, request) => {
 
     // Map video profiles and configurations for each resolution
     resolutions.forEach((res, idx) => {
-        // Distribute bitrates as per quality levels
-        let videoBitrate = "1800k";
-        if (res === "480p") videoBitrate = "800k";
-        if (res === "1080p") videoBitrate = "3500k";
+        const config = RESOLUTION_CONFIG[res];
+        const isTopRendition = idx === resolutions.length - 1;
+        const bitrateKbps = isTopRendition
+            ? clampNumber(bitrateParam, MIN_VIDEO_BITRATE_KBPS, config.maxBitrate)
+            : clampNumber(config.defaultBitrate, MIN_VIDEO_BITRATE_KBPS, Math.min(config.maxBitrate, bitrateParam));
+        const videoBitrate = `${bitrateKbps}k`;
 
-        // If only one resolution, let user customize the target bitrate
-        if (resolutions.length === 1) {
-            videoBitrate = `${bitrateParam}k`;
-        }
-
-        const keyInterval = fpsParam * 6; // Keyframe every 6s — must match hls_time so segments always start on a keyframe
+        const keyInterval = fpsParam * HLS_SEGMENT_SECONDS;
 
         ffmpegArgs.push("-map", `[v${idx + 1}out]`);
         if (hasAudio) {
@@ -192,14 +215,17 @@ wss.on("connection", async (ws: WebSocket, request) => {
 
         ffmpegArgs.push(
             `-c:v:${idx}`, "libx264",
-            "-crf", "26",
+            `-b:v:${idx}`, videoBitrate,
             `-maxrate:v:${idx}`, videoBitrate,
-            `-bufsize:v:${idx}`, `${parseInt(videoBitrate) * 2}k`, // 2x maxrate for proper CRF+VBV headroom
+            `-bufsize:v:${idx}`, `${bitrateKbps * 2}k`,
             `-r:v:${idx}`, fpsParam.toString(),
             `-g:v:${idx}`, keyInterval.toString(),
             `-keyint_min:v:${idx}`, keyInterval.toString(),
             `-sc_threshold:v:${idx}`, "0",
-            `-preset:v:${idx}`, "veryfast" // Balance CPU usage and compression efficiency, enabling CABAC and B-frames
+            `-preset:v:${idx}`, "superfast",
+            `-tune:v:${idx}`, "zerolatency",
+            `-profile:v:${idx}`, "main",
+            `-pix_fmt:v:${idx}`, "yuv420p"
         );
 
         // Create subdirectories for variant playlists
@@ -210,21 +236,23 @@ wss.on("connection", async (ws: WebSocket, request) => {
     if (hasAudio) {
         ffmpegArgs.push(
             "-c:a", "aac",
-            "-b:a", "128k",
-            "-ac", "2"
+            "-b:a", `${AUDIO_BITRATE_KBPS}k`,
+            "-ac", "2",
+            "-ar", "44100",
+            "-af", "aresample=async=1:first_pts=0"
         );
     }
 
     // HLS packing configuration
-    // hls_list_size=100 keeps the last 10 minutes in the playlist (100 x 6s = 600s).
+    // hls_list_size keeps the last 10 minutes in the playlist.
     // omit_endlist keeps the stream marked as live.
-    // NO delete_segments — we manage deletion ourselves with a rolling 10-minute window.
+    // NO delete_segments; we manage deletion ourselves with a rolling 10-minute window.
     const varStreamMap = resolutions.map((_, idx) => hasAudio ? `v:${idx},a:${idx}` : `v:${idx}`).join(" ");
     ffmpegArgs.push(
         "-f", "hls",
-        "-hls_time", "6",          // 6-second segments
-        "-hls_list_size", "100",   // 100 × 6s = 600s = 10 minutes always on disk
-        "-hls_flags", "omit_endlist",  // keep stream live — no auto-deletion
+        "-hls_time", HLS_SEGMENT_SECONDS.toString(),
+        "-hls_list_size", Math.ceil(STREAM_RETENTION_SECONDS / HLS_SEGMENT_SECONDS).toString(),
+        "-hls_flags", "omit_endlist+independent_segments+temp_file",
         "-hls_segment_filename", path.join(mediaDir, "%v", "file%06d.ts"),
         "-master_pl_name", "master.m3u8",
         "-var_stream_map", varStreamMap,
@@ -259,7 +287,6 @@ wss.on("connection", async (ws: WebSocket, request) => {
 
     // Rolling 10-minute segment retention: every 60 seconds delete .ts files
     // older than 600 seconds so disk doesn't fill up during long streams.
-    const RETENTION_SECONDS = 600; // 10 minutes
     const rollingInterval = setInterval(() => {
         const now = Date.now();
         try {
@@ -275,7 +302,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
                     try {
                         const stat = fs.statSync(filePath);
                         const ageSeconds = (now - stat.mtimeMs) / 1000;
-                        if (ageSeconds > RETENTION_SECONDS) {
+                        if (ageSeconds > STREAM_RETENTION_SECONDS) {
                             fs.unlinkSync(filePath);
                             console.log(`[cleanup] Deleted old segment: ${file} (age: ${Math.round(ageSeconds)}s)`);
                         }
