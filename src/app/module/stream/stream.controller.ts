@@ -187,10 +187,7 @@ export class StreamController {
 
       // Handle FFmpeg diagnostics
       ffmpegProcess.stderr.on("data", (data) => {
-        const logMsg = data.toString();
-        if (logMsg.includes("Error") || logMsg.includes("Failed")) {
-          console.warn(`[FFmpeg-Error - ${key}]:`, logMsg.trim());
-        }
+        console.log(`[FFmpeg - ${key}]:`, data.toString().trim());
       });
 
       ffmpegProcess.on("close", (code) => {
