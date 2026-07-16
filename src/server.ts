@@ -3,7 +3,7 @@ import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import path from "path";
 import fs from "fs";
-import { spawn } from "child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { URL } from "url";
@@ -25,24 +25,57 @@ const HLS_SEGMENT_SECONDS = 4;
 const STREAM_RETENTION_SECONDS = 600;
 const MAX_FPS = 30;
 const MIN_VIDEO_BITRATE_KBPS = 800;
-const MAX_VIDEO_BITRATE_KBPS = 2500;
+const MAX_VIDEO_BITRATE_KBPS = 4000;
 const AUDIO_BITRATE_KBPS = 96;
 const RESOLUTION_CONFIG = {
     "480p": { height: 480, defaultBitrate: 1600, maxBitrate: 1600 },
     "720p": { height: 720, defaultBitrate: 2500, maxBitrate: 2500 },
-    "1080p": { height: 1080, defaultBitrate: 2500, maxBitrate: 2500 },
+    "1080p": { height: 1080, defaultBitrate: 4000, maxBitrate: 4000 },
 } as const;
 
 type StreamResolution = keyof typeof RESOLUTION_CONFIG;
+type ActiveIngest = {
+    ws: WebSocket;
+    ffmpegProcess: ChildProcessWithoutNullStreams;
+    rollingInterval: NodeJS.Timeout;
+};
 
 function clampNumber(value: number, min: number, max: number) {
     return Math.min(Math.max(value, min), max);
+}
+
+function stopActiveIngest(streamKey: string, reason: string) {
+    const active = activeIngests.get(streamKey);
+    if (!active) return;
+
+    console.log(`Stopping existing ingest for ${streamKey}: ${reason}`);
+    activeIngests.delete(streamKey);
+    activeRollingCleanups.delete(streamKey);
+    clearInterval(active.rollingInterval);
+
+    try {
+        if (active.ws.readyState === WebSocket.OPEN || active.ws.readyState === WebSocket.CONNECTING) {
+            active.ws.close(1012, reason);
+        }
+    } catch (_) {
+        // Already closed.
+    }
+
+    try {
+        if (active.ffmpegProcess.stdin.writable) {
+            active.ffmpegProcess.stdin.end();
+        }
+        active.ffmpegProcess.kill("SIGTERM");
+    } catch (_) {
+        // Already stopped.
+    }
 }
 
 // Track active media cleanup timers to prevent race conditions on quick reconnection
 const activeCleanups = new Map<string, NodeJS.Timeout>();
 // Track per-stream rolling cleanup intervals (delete segments older than 10 min)
 const activeRollingCleanups = new Map<string, NodeJS.Timeout>();
+const activeIngests = new Map<string, ActiveIngest>();
 
 // Setup EJS views
 app.set("view engine", "ejs");
@@ -139,6 +172,8 @@ wss.on("connection", async (ws: WebSocket, request) => {
         console.log(`Cancelled pending media cleanup timer for stream ${streamKey} due to reconnection.`);
     }
 
+    stopActiveIngest(streamKey, "New broadcaster connection replaced the previous ingest.");
+
     console.log(`Broadcaster connected for stream: "${streamInfo.title}" (${streamKey})`);
     console.log(`Settings: Resolutions=[${resolutionsParam}], FPS=${fpsParam}, Bitrate=${bitrateParam}Kbps, HasAudio=${hasAudio}`);
 
@@ -200,10 +235,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
     // Map video profiles and configurations for each resolution
     resolutions.forEach((res, idx) => {
         const config = RESOLUTION_CONFIG[res];
-        const isTopRendition = idx === resolutions.length - 1;
-        const bitrateKbps = isTopRendition
-            ? clampNumber(bitrateParam, MIN_VIDEO_BITRATE_KBPS, config.maxBitrate)
-            : clampNumber(config.defaultBitrate, MIN_VIDEO_BITRATE_KBPS, Math.min(config.maxBitrate, bitrateParam));
+        const bitrateKbps = config.defaultBitrate;
         const videoBitrate = `${bitrateKbps}k`;
 
         const keyInterval = fpsParam * HLS_SEGMENT_SECONDS;
@@ -315,6 +347,7 @@ wss.on("connection", async (ws: WebSocket, request) => {
     }, 60_000); // run every 60 seconds
 
     activeRollingCleanups.set(streamKey, rollingInterval);
+    activeIngests.set(streamKey, { ws, ffmpegProcess, rollingInterval });
 
     ws.on("message", (message: Buffer) => {
         if (ffmpegProcess.stdin.writable) {
@@ -324,6 +357,24 @@ wss.on("connection", async (ws: WebSocket, request) => {
 
     ws.on("close", async () => {
         console.log(`Broadcaster disconnected. Stopping stream ${streamKey}`);
+        const currentIngest = activeIngests.get(streamKey);
+        const isCurrentIngest = currentIngest?.ws === ws;
+
+        if (!isCurrentIngest) {
+            clearInterval(rollingInterval);
+            try {
+                if (ffmpegProcess.stdin.writable) {
+                    ffmpegProcess.stdin.end();
+                }
+                ffmpegProcess.kill("SIGTERM");
+            } catch (_) {
+                // Already stopped.
+            }
+            console.log(`Ignored stale disconnect for replaced stream ${streamKey}`);
+            return;
+        }
+
+        activeIngests.delete(streamKey);
 
         // Stop rolling cleanup interval for this stream
         const rollingCleanup = activeRollingCleanups.get(streamKey);

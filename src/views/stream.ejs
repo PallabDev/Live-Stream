@@ -107,15 +107,15 @@
       <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Available Resolutions</label>
       <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-480p" style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <input type="checkbox" id="res-480p" onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
           <span>480p SD</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-720p" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <input type="checkbox" id="res-720p" checked onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
           <span>720p HD</span>
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-          <input type="checkbox" id="res-1080p" style="accent-color: var(--primary); width: 16px; height: 16px;">
+          <input type="checkbox" id="res-1080p" onchange="syncBitrateToSelectedResolution()" style="accent-color: var(--primary); width: 16px; height: 16px;">
           <span>1080p Full HD</span>
         </label>
       </div>
@@ -142,7 +142,7 @@
         <span>Target Bitrate</span>
         <span id="bitrate-val" style="color: var(--primary); font-weight: 700;">2500 Kbps</span>
       </label>
-      <input type="range" id="bitrate-input" min="800" max="2500" step="100" value="2500" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
+      <input type="range" id="bitrate-input" min="800" max="4000" step="100" value="2500" style="width: 100%; accent-color: var(--primary); margin-top: 0.5rem;" oninput="updateBitrateVal(this.value)">
     </div>
 
     <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
@@ -160,13 +160,12 @@
   let streamStartTime = null;
   let durationInterval = null;
   const AUDIO_BITS_PER_SECOND = 96000;
-  const MAX_VIDEO_BITRATE_KBPS = 2500;
+  const MAX_VIDEO_BITRATE_KBPS = 4000;
   const MAX_FRAME_RATE = 30;
-  const MAX_WS_BUFFERED_BYTES = 3 * 1024 * 1024;
   const RESOLUTION_LIMITS = {
-    '480p': { width: 854, height: 480 },
-    '720p': { width: 1280, height: 720 },
-    '1080p': { width: 1920, height: 1080 }
+    '480p': { width: 854, height: 480, bitrate: 1600 },
+    '720p': { width: 1280, height: 720, bitrate: 2500 },
+    '1080p': { width: 1920, height: 1080, bitrate: 4000 }
   };
 
   function clampNumber(value, min, max) {
@@ -182,14 +181,27 @@
     const selectedFps = parseInt(document.querySelector('input[name="fps"]:checked').value, 10);
     const fps = clampNumber(Number.isFinite(selectedFps) ? selectedFps : 30, 24, MAX_FRAME_RATE);
     const selectedBitrate = parseInt(document.getElementById('bitrate-input').value, 10);
-    const bitrate = clampNumber(Number.isFinite(selectedBitrate) ? selectedBitrate : 2500, 800, MAX_VIDEO_BITRATE_KBPS);
     const maxRes = resolutions.includes('1080p') ? '1080p' : (resolutions.includes('720p') ? '720p' : '480p');
+    const resolutionBitrate = RESOLUTION_LIMITS[maxRes].bitrate;
+    const bitrate = clampNumber(
+      Number.isFinite(selectedBitrate) ? Math.max(selectedBitrate, resolutionBitrate) : resolutionBitrate,
+      800,
+      MAX_VIDEO_BITRATE_KBPS
+    );
 
     return { resolutions, fps, bitrate, maxRes };
   }
 
   function updateBitrateVal(value) {
     document.getElementById('bitrate-val').textContent = value + ' Kbps';
+  }
+
+  function syncBitrateToSelectedResolution() {
+    const config = getSelectedStreamConfig();
+    const bitrateInput = document.getElementById('bitrate-input');
+    const bitrate = RESOLUTION_LIMITS[config.maxRes].bitrate;
+    bitrateInput.value = bitrate;
+    updateBitrateVal(bitrate);
   }
 
   function openSettingsModal() {
@@ -417,10 +429,6 @@
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0 && webSocket.readyState === WebSocket.OPEN) {
-          if (webSocket.bufferedAmount > MAX_WS_BUFFERED_BYTES) {
-            console.warn('Dropping an ingest chunk because the connection is backed up.');
-            return;
-          }
           webSocket.send(event.data);
         }
       };
