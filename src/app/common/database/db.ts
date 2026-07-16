@@ -6,7 +6,14 @@ import path from "path";
 
 dotenv.config();
 
-const dbPath = process.env.DATABASE_URL || "sqlite.db";
+import { fileURLToPath } from "url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const projectRoot = path.resolve(__dirname, "../../../../");
+const rawDbPath = process.env.DATABASE_URL || "sqlite.db";
+const dbPath = path.isAbsolute(rawDbPath) ? rawDbPath : path.resolve(projectRoot, rawDbPath);
+
 const sqlite = new Database(dbPath);
 
 export const db = drizzle(sqlite, { schema });
