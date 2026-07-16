@@ -133,30 +133,25 @@ export class StreamController {
         await StreamController.stopStreamSession(key);
       }
 
-      // Set up dedicated stream output directory
+      // Set up dedicated stream output directory and variant subdirectory '0'
       const mediaDir = path.join(process.cwd(), "media");
       const streamDir = path.join(mediaDir, key);
+      const variantDir = path.join(streamDir, "0");
       
       if (fs.existsSync(streamDir)) {
-        // Clear old stream chunks
-        fs.readdirSync(streamDir).forEach((file) => {
-          if (file.endsWith(".ts") || file.endsWith(".m3u8")) {
-            try {
-              fs.unlinkSync(path.join(streamDir, file));
-            } catch (err) {}
-          }
-        });
-      } else {
-        fs.mkdirSync(streamDir, { recursive: true });
+        try {
+          fs.rmSync(streamDir, { recursive: true, force: true });
+        } catch (err) {}
       }
+      fs.mkdirSync(variantDir, { recursive: true });
 
-      // Write a master playlist format that live.ejs expects
+      // Write a master playlist format that live.ejs expects (pointing to variant 0)
       fs.writeFileSync(
         path.join(streamDir, "master.m3u8"),
-        `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=8000000\nindex.m3u8\n`
+        `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=8000000\n0/index.m3u8\n`
       );
 
-      console.log(`Spawning FFmpeg for stream key: ${key} inside ${streamDir}`);
+      console.log(`Spawning FFmpeg for stream key: ${key} inside ${variantDir}`);
 
       // Spawn FFmpeg with low latency settings + high quality output (CRF 20, 256k AAC audio)
       const ffmpegProcess = spawn("ffmpeg", [
@@ -181,13 +176,13 @@ export class StreamController {
         "-ar", "48000",
         "-ac", "2",
 
-        // HLS output configuration
+        // HLS output configuration inside variant directory
         "-f", "hls",
         "-hls_time", "2", // Short segment size for responsive streaming
         "-hls_list_size", "6", // Keep playlist small for low latency
         "-hls_flags", "delete_segments+append_list+omit_endlist+independent_segments",
-        "-hls_segment_filename", path.join(streamDir, "segment_%05d.ts"),
-        path.join(streamDir, "index.m3u8"),
+        "-hls_segment_filename", path.join(variantDir, "segment_%05d.ts"),
+        path.join(variantDir, "index.m3u8"),
       ]);
 
       // Handle FFmpeg diagnostics
