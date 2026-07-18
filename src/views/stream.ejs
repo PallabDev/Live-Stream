@@ -456,9 +456,16 @@
                                 parameters.encodings = [{}];
                             }
                             parameters.encodings[0].maxBitrate = 8000000; // 8 Mbps max
+                            parameters.encodings[0].minBitrate = 800000;  // 800 Kbps min floor
                             sender.setParameters(parameters).catch(err => {
                                 console.warn("[Studio WebRTC] Failed to set video encoding parameters:", err);
                             });
+
+                            // Enforce balanced degradation (prevents excessive blur during congestion by slightly trading frame rate)
+                            const transceiver = pcInstance.getTransceivers().find(t => t.sender === sender);
+                            if (transceiver) {
+                                transceiver.degradationPreference = 'balanced';
+                            }
                         } catch (err) {
                             console.warn("[Studio WebRTC] Failed to modify transceiver parameters:", err);
                         }
