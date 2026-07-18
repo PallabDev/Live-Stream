@@ -162,9 +162,8 @@
         let currentSourceType = null; // 'file' or 'screen'
         let mediaStream = null; // Globally stored media track stream reference
 
-        let audioCtx = null;
-        let audioSource = null;
-        let audioDestination = null;
+        let reconnectTimeout = null;
+        let isManuallyStopped = false;
 
         const peerConnections = new Map(); // viewerId -> RTCPeerConnection
 
@@ -290,27 +289,89 @@
             return modifiedLines.join('\r\n');
         }
 
-        function getDownmixedAudioStream() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function showReconnectingStatus() {
+            isLive = false;
+            isStreaming = false;
+            // Close old connections
+            for (const [viewerId, pcInstance] of peerConnections) {
+                pcInstance.close();
             }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-            if (!audioSource) {
-                audioSource = audioCtx.createMediaElementSource(previewPlayer);
-                audioDestination = audioCtx.createMediaStreamDestination();
-                
-                audioDestination.channelCount = 2;
-                audioDestination.channelCountMode = "explicit";
-                audioDestination.channelInterpretation = "speakers";
+            peerConnections.clear();
 
-                // Connect to local speakers (monitoring)
-                audioSource.connect(audioCtx.destination);
-                // Connect to streaming destination
-                audioSource.connect(audioDestination);
+            const statusBadge = document.getElementById("status-badge");
+            statusBadge.className = "badge badge-warning";
+            statusBadge.style.background = "#eab308";
+            statusBadge.style.borderColor = "#eab308";
+            statusBadge.innerHTML = '<i class="ti ti-loader animate-spin"></i> Reconnecting...';
+        }
+
+        function scheduleBroadcasterReconnect() {
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            reconnectTimeout = setTimeout(() => {
+                console.warn("[Studio] Attempting to reconnect signaling channel...");
+                reconnectBroadcaster();
+            }, 3000);
+        }
+
+        async function reconnectBroadcaster() {
+            if (isManuallyStopped) return;
+            try {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/api/stream/${streamKey}/ws`;
+
+                console.log("[Studio] Reconnecting signaling WebSocket to:", wsUrl);
+                mediaSocket = new WebSocket(wsUrl);
+
+                mediaSocket.onopen = () => {
+                    console.log("[Studio] Reconnected to signaling channel successfully.");
+                    isLive = true;
+                    isStreaming = true;
+                    updateUI();
+                };
+
+                mediaSocket.onmessage = async (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        const { event: signalEvent, viewerId, sdp, candidate } = msg;
+
+                        if (signalEvent === "viewer-connected") {
+                            await createPeerConnection(viewerId);
+                        } else if (signalEvent === "viewer-disconnected") {
+                            closePeerConnection(viewerId);
+                        } else if (signalEvent === "answer") {
+                            const pcInstance = peerConnections.get(viewerId);
+                            if (pcInstance) {
+                                await pcInstance.setRemoteDescription(new RTCSessionDescription(sdp));
+                            }
+                        } else if (signalEvent === "candidate") {
+                            const pcInstance = peerConnections.get(viewerId);
+                            if (pcInstance && candidate) {
+                                await pcInstance.addIceCandidate(new RTCIceCandidate(candidate));
+                            }
+                        }
+                    } catch (err) {
+                        console.error("[Studio WS Message Exception]:", err);
+                    }
+                };
+
+                mediaSocket.onclose = (event) => {
+                    if (!isManuallyStopped) {
+                        showReconnectingStatus();
+                        scheduleBroadcasterReconnect();
+                    }
+                };
+
+                mediaSocket.onerror = (err) => {
+                    if (!isManuallyStopped) {
+                        showReconnectingStatus();
+                        scheduleBroadcasterReconnect();
+                    }
+                };
+
+            } catch (err) {
+                console.warn("[Studio] Reconnect attempt error:", err);
+                scheduleBroadcasterReconnect();
             }
-            return audioDestination.stream;
         }
 
         async function createPeerConnection(viewerId) {
@@ -415,30 +476,13 @@
 
             // Obtain the media tracks based on selected source type
             if (currentSourceType === 'file') {
-                let capturedStream;
                 if (previewPlayer.captureStream) {
-                    capturedStream = previewPlayer.captureStream(30);
+                    mediaStream = previewPlayer.captureStream(30);
                 } else if (previewPlayer.mozCaptureStream) {
-                    capturedStream = previewPlayer.mozCaptureStream(30);
+                    mediaStream = previewPlayer.mozCaptureStream(30);
                 } else {
                     alert("Your browser does not support video capturing API.");
                     return;
-                }
-
-                const videoTrack = capturedStream.getVideoTracks()[0];
-                if (!videoTrack) {
-                    alert("No video track found in captured stream.");
-                    return;
-                }
-
-                // Get downmixed stereo audio track via AudioContext
-                const downmixedAudioStream = getDownmixedAudioStream();
-                const audioTrack = downmixedAudioStream.getAudioTracks()[0];
-
-                mediaStream = new MediaStream();
-                mediaStream.addTrack(videoTrack);
-                if (audioTrack) {
-                    mediaStream.addTrack(audioTrack);
                 }
 
                 if (previewPlayer.paused) {
@@ -519,12 +563,22 @@
 
                 mediaSocket.onclose = (event) => {
                     console.warn("[Studio] Signaling socket closed:", event.code, event.reason);
-                    triggerStopLive();
+                    if (!isManuallyStopped) {
+                        showReconnectingStatus();
+                        scheduleBroadcasterReconnect();
+                    } else {
+                        triggerStopLive();
+                    }
                 };
 
                 mediaSocket.onerror = (err) => {
                     console.error("[Studio] Signaling socket error:", err);
-                    triggerStopLive();
+                    if (!isManuallyStopped) {
+                        showReconnectingStatus();
+                        scheduleBroadcasterReconnect();
+                    } else {
+                        triggerStopLive();
+                    }
                 };
 
             } catch (err) {
@@ -534,19 +588,26 @@
         }
 
         function triggerStopLive() {
+            isManuallyStopped = true;
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+
+            if (mediaSocket) {
+                mediaSocket.onclose = null;
+                mediaSocket.onerror = null;
+                mediaSocket.close();
+                mediaSocket = null;
+            }
+
             console.log("[Studio] Stopping stream...");
-            
+
             // Close all active WebRTC peers
             for (const [viewerId, pcInstance] of peerConnections) {
                 pcInstance.close();
             }
             peerConnections.clear();
-
-            if (mediaSocket) {
-                mediaSocket.onclose = null;
-                mediaSocket.close();
-                mediaSocket = null;
-            }
 
             if (mediaStream) {
                 if (currentSourceType === 'file') {
