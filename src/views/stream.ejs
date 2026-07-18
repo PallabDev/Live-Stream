@@ -260,6 +260,59 @@
             }
         }
 
+        function reorderVideoCodecs(sdp) {
+            let lines = sdp.split('\r\n');
+            let mVideoIndex = -1;
+            let h264HighPts = [];
+            let vp9Pts = [];
+            let otherPts = [];
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i];
+                if (line.startsWith('m=video ')) {
+                    mVideoIndex = i;
+                }
+                if (line.startsWith('a=rtpmap:') && line.includes('video/')) {
+                    let match = line.match(/a=rtpmap:(\d+)\s+([^\/]+)/);
+                    if (match) {
+                        let pt = match[1];
+                        let codec = match[2].toUpperCase();
+                        
+                        let isHighProfile = false;
+                        for (let j = 0; j < lines.length; j++) {
+                            if (lines[j].startsWith(`a=fmtp:${pt} `) && lines[j].includes('profile-level-id=6400')) {
+                                isHighProfile = true;
+                                break;
+                            }
+                        }
+
+                        if (codec === 'VP9') {
+                            vp9Pts.push(pt);
+                        } else if (codec === 'H264' && isHighProfile) {
+                            h264HighPts.push(pt);
+                        } else {
+                            otherPts.push(pt);
+                        }
+                    }
+                }
+            }
+
+            if (mVideoIndex !== -1) {
+                let mLine = lines[mVideoIndex];
+                let parts = mLine.split(' ');
+                let header = parts.slice(0, 3);
+                let payloads = parts.slice(3);
+
+                let preferred = [...vp9Pts, ...h264HighPts];
+                let remaining = payloads.filter(pt => !preferred.includes(pt));
+                let newPayloads = [...preferred, ...remaining];
+
+                lines[mVideoIndex] = header.join(' ') + ' ' + newPayloads.join(' ');
+            }
+
+            return lines.join('\r\n');
+        }
+
         function preferHighFidelityAudioAndVideo(sdp) {
             let lines = sdp.split('\r\n');
             let modifiedLines = [];
@@ -286,7 +339,9 @@
 
                 modifiedLines.push(line);
             }
-            return modifiedLines.join('\r\n');
+            
+            // Prioritize higher efficiency codecs for good/bad internet performance
+            return reorderVideoCodecs(modifiedLines.join('\r\n'));
         }
 
         function showReconnectingStatus() {
