@@ -33,7 +33,7 @@ export class StreamController {
         await StreamController.stopStreamSession(key);
       }
       
-      // Set up dedicated stream output directory and subdirectories for ABR variants '0' (480p) and '1' (1080p)
+      // Set up dedicated stream output directory
       const mediaDir = path.join(process.cwd(), "media");
       const streamDir = path.join(mediaDir, key);
       
@@ -42,35 +42,25 @@ export class StreamController {
           fs.rmSync(streamDir, { recursive: true, force: true });
         } catch (err) {}
       }
-      fs.mkdirSync(path.join(streamDir, "0"), { recursive: true });
-      fs.mkdirSync(path.join(streamDir, "1"), { recursive: true });
-      fs.mkdirSync(path.join(streamDir, "2"), { recursive: true });
+      fs.mkdirSync(streamDir, { recursive: true });
 
-      console.log(`Spawning 3-tier ABR FFmpeg for stream key: ${key}`);
+      console.log(`Spawning fast single-quality FFmpeg for stream key: ${key}`);
 
-      // Spawn FFmpeg to transcode incoming WebM stream into three H.264 variants in parallel (480p, 720p & 1080p)
+      // Spawn FFmpeg to package incoming WebM stream into a single HLS output using fast, raw settings
       const ffmpegProcess = spawn("ffmpeg", [
         "-f", "webm",
         "-i", "pipe:0",
 
-        // Map first video and optional first audio streams for Variant 0 (480p)
+        // Map first video and optional first audio streams
         "-map", "0:v:0",
         "-map", "0:a:0?",
 
-        // Map first video and optional first audio streams for Variant 1 (720p)
-        "-map", "0:v:0",
-        "-map", "0:a:0?",
-
-        // Map first video and optional first audio streams for Variant 2 (1080p)
-        "-map", "0:v:0",
-        "-map", "0:a:0?",
-
-        // Force keyframe interval of 60 frames (2 seconds at 30 fps) to align segment boundaries across quality variants
+        // Force keyframe interval of 60 frames (2 seconds at 30 fps)
         "-keyint_min", "60",
         "-g", "60",
         "-sc_threshold", "0",
 
-        // Global video encoding properties
+        // Global video encoding properties - ultrafast, zero latency, no compression/scaling
         "-c:v", "libx264",
         "-preset", "ultrafast",
         "-tune", "zerolatency",
@@ -81,42 +71,15 @@ export class StreamController {
         "-ar", "44100",
         "-ac", "2",
 
-        // Video configuration for Variant 0 (480p - Low Bandwidth optimization for 1 Mbps connections)
-        "-filter:v:0", "scale=-2:480",
-        "-crf:v:0", "28",
-        "-maxrate:v:0", "600k",
-        "-bufsize:v:0", "1.2M",
-
-        // Video configuration for Variant 1 (720p - Medium Quality balance for standard mobile/broadband connections)
-        "-filter:v:1", "scale=-2:720",
-        "-crf:v:1", "26",
-        "-maxrate:v:1", "1.2M",
-        "-bufsize:v:1", "2.4M",
-
-        // Video configuration for Variant 2 (1080p - High Quality profile for fast connections)
-        "-filter:v:2", "scale=-2:1080",
-        "-crf:v:2", "24",
-        "-maxrate:v:2", "2.5M",
-        "-bufsize:v:2", "5M",
-
-        // Audio bitrate configuration per variant
-        "-b:a:0", "64k",
-        "-b:a:1", "96k",
-        "-b:a:2", "128k",
-
         // HLS Multiplexer settings
         "-f", "hls",
         "-hls_time", "2", // Short segment size for responsive streaming
         "-hls_list_size", "6", // Keep playlist small for low latency
         "-hls_flags", "delete_segments+append_list+omit_endlist+independent_segments",
-        
-        // Define variant stream map linking video/audio indexes (0=480p, 1=720p, 2=1080p)
-        "-var_stream_map", "v:0,a:0 v:1,a:1 v:2,a:2",
 
-        // Output configuration with automatic master playlist generation
-        "-hls_segment_filename", path.join(streamDir, "%v", "segment_%05d.ts"),
-        "-master_pl_name", "master.m3u8",
-        path.join(streamDir, "%v", "index.m3u8"),
+        // Output configuration
+        "-hls_segment_filename", path.join(streamDir, "segment_%05d.ts"),
+        path.join(streamDir, "index.m3u8"),
       ]);
 
       ffmpegProcess.stderr.on("data", (data) => {
@@ -314,27 +277,20 @@ export class StreamController {
         await StreamController.stopStreamSession(key);
       }
 
-      // Set up dedicated stream output directory and variant subdirectory '0'
+      // Set up dedicated stream output directory
       const mediaDir = path.join(process.cwd(), "media");
       const streamDir = path.join(mediaDir, key);
-      const variantDir = path.join(streamDir, "0");
       
       if (fs.existsSync(streamDir)) {
         try {
           fs.rmSync(streamDir, { recursive: true, force: true });
         } catch (err) {}
       }
-      fs.mkdirSync(variantDir, { recursive: true });
+      fs.mkdirSync(streamDir, { recursive: true });
 
-      // Write a master playlist format that live.ejs expects (pointing to variant 0)
-      fs.writeFileSync(
-        path.join(streamDir, "master.m3u8"),
-        `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=8000000\n0/index.m3u8\n`
-      );
+      console.log(`Spawning fast single-quality FFmpeg for stream key: ${key}`);
 
-      console.log(`Spawning FFmpeg for stream key: ${key} inside ${variantDir}`);
-
-      // Spawn FFmpeg with low latency settings + high quality output (CRF 20, 256k AAC audio)
+      // Spawn FFmpeg with low latency and ultra-fast settings
       const ffmpegProcess = spawn("ffmpeg", [
         "-fflags", "+genpts",
         "-f", "webm",
@@ -344,26 +300,24 @@ export class StreamController {
         "-map", "0:v:0",
         "-map", "0:a:0?",
 
-        // Video encoding settings: High quality libx264, zero-latency tune
+        // Video encoding settings: ultra-fast, zero-latency
         "-c:v", "libx264",
-        "-preset", "veryfast",
+        "-preset", "ultrafast",
         "-tune", "zerolatency",
-        "-crf", "20",
         "-pix_fmt", "yuv420p",
 
-        // Audio encoding settings: High quality 256kbps stereo AAC
+        // Audio encoding settings
         "-c:a", "aac",
-        "-b:a", "256k",
         "-ar", "48000",
         "-ac", "2",
 
-        // HLS output configuration inside variant directory
+        // HLS output configuration
         "-f", "hls",
         "-hls_time", "2", // Short segment size for responsive streaming
         "-hls_list_size", "6", // Keep playlist small for low latency
         "-hls_flags", "delete_segments+append_list+omit_endlist+independent_segments",
-        "-hls_segment_filename", path.join(variantDir, "segment_%05d.ts"),
-        path.join(variantDir, "index.m3u8"),
+        "-hls_segment_filename", path.join(streamDir, "segment_%05d.ts"),
+        path.join(streamDir, "index.m3u8"),
       ]);
 
       // Handle FFmpeg diagnostics

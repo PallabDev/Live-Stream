@@ -80,11 +80,7 @@
                         style="border-radius: 30px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 600; opacity: 0.5;">
                         <i class="ti ti-player-play"></i> Go Live
                     </button>
-                    <button id="btn-settings" class="btn btn-secondary" onclick="openSettingsModal()"
-                        title="Stream Settings"
-                        style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center;">
-                        <i class="ti ti-settings" style="font-size: 1.2rem;"></i>
-                    </button>
+
                     <button id="btn-share" class="btn btn-secondary" onclick="copyViewerLink()" title="Copy Viewer Link"
                         style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center;">
                         <i class="ti ti-share" style="font-size: 1.2rem;"></i>
@@ -153,127 +149,11 @@
                 </div>
             </div>
 
-            <!-- Active Configurations Summary -->
-            <div class="glass-panel" style="padding: 1.5rem;">
-                <div class="card-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem;">
-                    <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
-                        <i class="ti ti-adjustments" style="color: var(--secondary); font-size: 1.3rem;"></i> Active
-                        Config
-                    </h4>
-                </div>
-                <ul
-                    style="list-style: none; padding: 0; margin: 0; font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.75rem;">
-                    <li style="display: flex; justify-content: space-between;">
-                        <span style="color: var(--text-muted);">Streaming Mode:</span>
-                        <strong id="config-summary-mode">
-                            <%= stream.isRaw ? 'Raw (Direct Copy)' : 'Transcoded' %>
-                        </strong>
-                    </li>
-                    <li id="config-summary-resolutions-row"
-                        class="<%= stream.isRaw ? 'hidden-row' : 'flex-row-layout' %>">
-                        <span style="color: var(--text-muted);">Target Formats:</span>
-                        <strong id="config-summary-resolutions">
-                            <%= stream.resolutions %>
-                        </strong>
-                    </li>
-                    <li style="display: flex; justify-content: space-between;">
-                        <span style="color: var(--text-muted);">Key Status:</span>
-                        <span id="config-key-status"
-                            class="badge <%= stream.isLive ? 'badge-success' : 'badge-danger' %>"
-                            style="padding: 0.1rem 0.5rem; font-size: 0.75rem;">
-                            <%= stream.isLive ? 'Authorized' : 'Locked' %>
-                        </span>
-                    </li>
-                </ul>
-            </div>
+
         </div>
     </div>
 
-    <!-- Settings Modal Popup -->
-    <div id="settings-modal" class="modal-backdrop"
-        style="display: none; position: fixed; inset: 0; z-index: 100; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(8px); transition: var(--transition);">
-        <div class="modal-content-wrapper"
-            style="background: #1e293b; border: 1px solid var(--panel-border); border-radius: var(--radius); width: 100%; max-width: 480px; padding: 2rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); transform: scale(0.9); opacity: 0; transition: var(--transition);">
-            <div class="card-header"
-                style="margin-bottom: 1.5rem; padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
-                <h4 style="font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: #fff;">
-                    <i class="ti ti-settings" style="color: var(--warning);"></i> Stream Settings
-                </h4>
-                <button onclick="closeSettingsModal()"
-                    style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.25rem; display: flex; align-items: center; justify-content: center; transition: var(--transition);">
-                    <i class="ti ti-x"></i>
-                </button>
-            </div>
 
-            <!-- Mode Selector: Raw vs Transcoded -->
-            <div class="form-group" style="margin-bottom: 1.5rem;">
-                <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Streaming
-                    Mode</label>
-                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
-                    <label
-                        style="display: flex; align-items: flex-start; gap: 0.75rem; font-size: 0.95rem; cursor: pointer;">
-                        <input type="radio" name="stream-mode" id="mode-raw" value="raw" <%=stream.isRaw ? 'checked'
-                            : '' %> onchange="onModeChange()" style="accent-color: var(--primary); width: 18px; height:
-                        18px; margin-top: 0.15rem;">
-                        <div style="display: flex; flex-direction: column;">
-                            <span style="font-weight: 600; color: #fff;">Raw Mode (Zero-Transcode)</span>
-                            <span style="font-size: 0.8rem; color: var(--text-muted);">Pushes source output directly
-                                without re-encoding. Best for high-performance servers, lower CPU usage.</span>
-                        </div>
-                    </label>
-                    <label
-                        style="display: flex; align-items: flex-start; gap: 0.75rem; font-size: 0.95rem; cursor: pointer;">
-                        <input type="radio" name="stream-mode" id="mode-transcode" value="transcode" <%=!stream.isRaw
-                            ? 'checked' : '' %> onchange="onModeChange()" style="accent-color: var(--primary); width:
-                        18px; height: 18px; margin-top: 0.15rem;">
-                        <div style="display: flex; flex-direction: column;">
-                            <span style="font-weight: 600; color: #fff;">Transcoded Mode (Multi-Compression)</span>
-                            <span style="font-size: 0.8rem; color: var(--text-muted);">Generates multiple compression
-                                variants for adaptiveness (recommended for viewers on slower bandwidths).</span>
-                        </div>
-                    </label>
-                </div>
-            </div>
-
-            <!-- Transcoded Resolutions -->
-            <div id="resolutions-config-section" class="form-group <%= stream.isRaw ? 'hidden-row' : '' %>"
-                style="margin-bottom: 1.5rem;">
-                <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Target
-                    Resolutions</label>
-                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
-                    <label
-                        style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-                        <input type="checkbox" id="res-480p" <%=stream.resolutions.includes('480p') ? 'checked' : '' %>
-                        style="accent-color: var(--primary); width: 16px; height: 16px;">
-                        <span>480p SD (Mobile Friendly)</span>
-                    </label>
-                    <label
-                        style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-                        <input type="checkbox" id="res-720p" <%=stream.resolutions.includes('720p') ? 'checked' : '' %>
-                        style="accent-color: var(--primary); width: 16px; height: 16px;">
-                        <span>720p HD (Balanced)</span>
-                    </label>
-                    <label
-                        style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; cursor: pointer;">
-                        <input type="checkbox" id="res-1080p" <%=stream.resolutions.includes('1080p') ? 'checked' : ''
-                            %> style="accent-color: var(--primary); width: 16px; height: 16px;">
-                        <span>1080p Full HD (High Quality)</span>
-                    </label>
-                </div>
-            </div>
-
-            <div style="display: flex; justify-content: flex-end; margin-top: 2rem; gap: 0.75rem;">
-                <button class="btn btn-secondary" onclick="closeSettingsModal()"
-                    style="padding: 0.5rem 1.25rem; font-size: 0.9rem; border-radius: 8px;">
-                    Cancel
-                </button>
-                <button class="btn btn-primary" onclick="saveSettings()"
-                    style="padding: 0.5rem 1.5rem; font-size: 0.9rem; border-radius: 8px;">
-                    Save & Apply
-                </button>
-            </div>
-        </div>
-    </div>
 
     <script>
         // Read config properties initialized by server side (prevents IDE template syntax confusion)
@@ -516,7 +396,6 @@
             const btnStop = document.getElementById("btn-stop");
             const playerEl = document.getElementById("preview-player");
             const placeholderEl = document.getElementById("preview-placeholder");
-            const configKeyStatus = document.getElementById("config-key-status");
 
             const iconElement = document.getElementById("icon-element");
             const placeholderTitle = document.getElementById("placeholder-title");
@@ -567,13 +446,7 @@
                 downloadRawBtn.href = `/media/raw_${streamKey}.mkv`;
             }
 
-            if (isLive || isStreaming) {
-                configKeyStatus.className = "badge badge-success";
-                configKeyStatus.textContent = "Authorized";
-            } else {
-                configKeyStatus.className = "badge badge-danger";
-                configKeyStatus.textContent = "Locked";
-            }
+
 
             // Update placeholder text if media selection changes
             if (!hasMediaSelected) {
@@ -605,83 +478,7 @@
             });
         }
 
-        // Modal open / close handlers
-        function openSettingsModal() {
-            const modal = document.getElementById("settings-modal");
-            modal.style.display = "flex";
-            setTimeout(() => {
-                modal.firstElementChild.style.transform = "scale(1)";
-                modal.firstElementChild.style.opacity = "1";
-            }, 50);
-        }
 
-        function closeSettingsModal() {
-            const modal = document.getElementById("settings-modal");
-            modal.firstElementChild.style.transform = "scale(0.9)";
-            modal.firstElementChild.style.opacity = "0";
-            setTimeout(() => {
-                modal.style.display = "none";
-            }, 200);
-        }
-
-        window.onclick = function (event) {
-            const modal = document.getElementById("settings-modal");
-            if (event.target == modal) {
-                closeSettingsModal();
-            }
-        }
-
-        function onModeChange() {
-            const isRaw = document.getElementById("mode-raw").checked;
-            const resSection = document.getElementById("resolutions-config-section");
-            if (isRaw) {
-                resSection.classList.add("hidden-row");
-            } else {
-                resSection.classList.remove("hidden-row");
-            }
-        }
-
-        async function saveSettings() {
-            const isRaw = document.getElementById("mode-raw").checked;
-            const resolutions = [];
-            if (document.getElementById("res-480p").checked) resolutions.push("480p");
-            if (document.getElementById("res-720p").checked) resolutions.push("720p");
-            if (document.getElementById("res-1080p").checked) resolutions.push("1080p");
-
-            if (!isRaw && resolutions.length === 0) {
-                alert("Please check at least one compression format or select Raw Mode.");
-                return;
-            }
-
-            try {
-                const res = await fetch(`/api/stream/${streamKey}/settings`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        isRaw,
-                        resolutions: resolutions.join(",")
-                    })
-                });
-
-                if (!res.ok) throw new Error("Failed to save settings.");
-
-                // Update UI config summary panel
-                document.getElementById("config-summary-mode").textContent = isRaw ? "Raw (Direct Copy)" : "Transcoded";
-                const resRow = document.getElementById("config-summary-resolutions-row");
-                if (isRaw) {
-                    resRow.className = "hidden-row";
-                } else {
-                    resRow.className = "flex-row-layout";
-                    document.getElementById("config-summary-resolutions").textContent = resolutions.join(",");
-                }
-
-                closeSettingsModal();
-            } catch (err) {
-                alert("Error: " + err.message);
-            }
-        }
     </script>
 
     <%- include('footer') %>

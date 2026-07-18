@@ -78,19 +78,6 @@ async function main() {
     hasAudio = true;
   }
 
-  // Parse resolutions array
-  let resolutions: string[] = [];
-  if (isRaw) {
-    resolutions = ["raw"];
-  } else {
-    resolutions = resolutionsStr
-      .split(",")
-      .filter((r): r is StreamResolution => r in RESOLUTION_CONFIG);
-    if (resolutions.length === 0) {
-      resolutions.push("480p");
-    }
-  }
-
   let ffmpegArgs: string[] = [];
 
   if (isRaw) {
@@ -117,25 +104,10 @@ async function main() {
     if (hasAudio) {
       ffmpegArgs.push("-c:a:0", "copy");
     }
-    fs.mkdirSync(path.join(mediaDir, "0"), { recursive: true });
   } else {
-    console.log(`[on-publish] Transcoding stream (resolutions: ${resolutions.join(",")}) using software transcoder.`);
+    console.log(`[on-publish] Transcoding stream to single variant using ultra-fast software transcoder.`);
     const fpsParam = DEFAULT_FPS;
-    let filterComplex = "";
-    if (resolutions.length > 1) {
-      const splits = resolutions.map((_, idx) => `[v${idx + 1}]`).join("");
-      filterComplex += `[0:v]split=${resolutions.length}${splits};`;
-      resolutions.forEach((res, idx) => {
-        filterComplex += `[v${idx + 1}]scale=w=-2:h=${RESOLUTION_CONFIG[res as StreamResolution].height}:flags=lanczos[v${idx + 1}out];`;
-      });
-    } else {
-      filterComplex += `[0:v]scale=w=-2:h=${RESOLUTION_CONFIG[resolutions[0] as StreamResolution].height}:flags=lanczos[v1out]`;
-    }
-
-    // Strip trailing semicolon to prevent FFmpeg "No such filter: ''" crash
-    if (filterComplex.endsWith(";")) {
-      filterComplex = filterComplex.slice(0, -1);
-    }
+    const keyInterval = fpsParam * HLS_SEGMENT_SECONDS;
 
     ffmpegArgs = [
       "-hide_banner",
@@ -150,50 +122,35 @@ async function main() {
       "-probesize", "10000000",
       "-i", inputRtspUrl, // Read input from RTSP
       "-y",
-      "-filter_complex", filterComplex
+      "-map", "0:v:0"
     ];
+    if (hasAudio) {
+      ffmpegArgs.push("-map", "0:a?");
+    }
 
-    // Map video profiles and configurations for each resolution
-    resolutions.forEach((res, idx) => {
-      const config = RESOLUTION_CONFIG[res as StreamResolution];
-      const keyInterval = fpsParam * HLS_SEGMENT_SECONDS;
- 
-      ffmpegArgs.push("-map", `[v${idx + 1}out]`);
-      if (hasAudio) {
-        ffmpegArgs.push("-map", "0:a?");
-      }
- 
-      ffmpegArgs.push(
-        `-c:v:${idx}`, "libx264",
-        `-r:v:${idx}`, fpsParam.toString(),
-        `-crf:v:${idx}`, "18",
-        `-maxrate:v:${idx}`, `${config.maxBitrate}k`,
-        `-bufsize:v:${idx}`, `${config.bufSize}k`,
-        `-g:v:${idx}`, keyInterval.toString(),
-        `-keyint_min:v:${idx}`, keyInterval.toString(),
-        `-force_key_frames:v:${idx}`, `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,
-        `-sc_threshold:v:${idx}`, "0",
-        `-preset:v:${idx}`, X264_PRESET,
-        `-tune:v:${idx}`, X264_TUNE,
-        `-profile:v:${idx}`, "high",
-        `-pix_fmt:v:${idx}`, "yuv420p"
-      );
- 
-      fs.mkdirSync(path.join(mediaDir, idx.toString()), { recursive: true });
-    });
+    ffmpegArgs.push(
+      "-c:v:0", "libx264",
+      "-r:v:0", fpsParam.toString(),
+      "-g:v:0", keyInterval.toString(),
+      "-keyint_min:v:0", keyInterval.toString(),
+      "-force_key_frames:v:0", `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,
+      "-sc_threshold:v:0", "0",
+      "-preset:v:0", "ultrafast",
+      "-tune:v:0", "zerolatency",
+      "-pix_fmt:v:0", "yuv420p"
+    );
   }
 
   if (hasAudio) {
     ffmpegArgs.push(
       "-c:a", "aac",
-      "-b:a", "320k",
+      "-b:a", "128k",
       "-ac", "2",
       "-ar", "48000",
       "-af", "aresample=async=1:first_pts=0"
     );
   }
 
-  const varStreamMap = resolutions.map((_, idx) => hasAudio ? `v:${idx},a:${idx}` : `v:${idx}`).join(" ");
   ffmpegArgs.push(
     "-vsync", "cfr",
     "-async", "1",
@@ -202,10 +159,8 @@ async function main() {
     "-hls_time", HLS_SEGMENT_SECONDS.toString(),
     "-hls_list_size", Math.ceil(STREAM_RETENTION_SECONDS / HLS_SEGMENT_SECONDS).toString(),
     "-hls_flags", "omit_endlist+independent_segments+temp_file",
-    "-hls_segment_filename", path.join(mediaDir, "%v", "file%06d.ts"),
-    "-master_pl_name", "master.m3u8",
-    "-var_stream_map", varStreamMap,
-    path.join(mediaDir, "%v", "index.m3u8")
+    "-hls_segment_filename", path.join(mediaDir, "file%06d.ts"),
+    path.join(mediaDir, "index.m3u8")
   );
 
   // 2nd Output: Raw MKV Ingest Dump (direct copy, Matroska format handles any codec and is robust against abrupt exits)
@@ -290,23 +245,17 @@ async function main() {
   const rollingInterval = setInterval(() => {
     const now = Date.now();
     try {
-      const variantDirs = fs.readdirSync(mediaDir, { withFileTypes: true })
-        .filter(d => d.isDirectory())
-        .map(d => path.join(mediaDir, d.name));
-
-      for (const varDir of variantDirs) {
-        const files = fs.readdirSync(varDir).filter(f => f.endsWith(".ts"));
-        for (const file of files) {
-          const filePath = path.join(varDir, file);
-          try {
-            const stat = fs.statSync(filePath);
-            const ageSeconds = (now - stat.mtimeMs) / 1000;
-            if (ageSeconds > STREAM_RETENTION_SECONDS) {
-              fs.unlinkSync(filePath);
-              console.log(`[on-publish] [cleanup] Deleted old segment: ${file} (age: ${Math.round(ageSeconds)}s)`);
-            }
-          } catch (_) {}
-        }
+      const files = fs.readdirSync(mediaDir).filter(f => f.endsWith(".ts"));
+      for (const file of files) {
+        const filePath = path.join(mediaDir, file);
+        try {
+          const stat = fs.statSync(filePath);
+          const ageSeconds = (now - stat.mtimeMs) / 1000;
+          if (ageSeconds > STREAM_RETENTION_SECONDS) {
+            fs.unlinkSync(filePath);
+            console.log(`[on-publish] [cleanup] Deleted old segment: ${file} (age: ${Math.round(ageSeconds)}s)`);
+          }
+        } catch (_) {}
       }
     } catch (err) {
       console.error(`[on-publish] [cleanup] Rolling cleanup error:`, err);

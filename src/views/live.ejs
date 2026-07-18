@@ -233,7 +233,7 @@ html, body {
       <!-- Loading Spinner -->
       <div class="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none">
         <div
-          class="w-[60px] h-[60px] border-4 border-solid border-white/10 border-t-accent rounded-full hidden animate-spin pointer-events-auto"
+          class="w-10 h-10 sm:w-[60px] sm:h-[60px] border-4 border-solid border-white/10 border-t-accent rounded-full hidden animate-spin pointer-events-auto"
           id="sh-loading"
         ></div>
       </div>
@@ -317,94 +317,7 @@ html, body {
               </div>
             </div>
 
-            <!-- Settings -->
-            <div class="sh-settings relative" id="sh-settings">
-              <button
-                class="sh-btn w-8 h-8 sm:w-10 sm:h-10 bg-transparent text-[#aaaaaa] flex items-center justify-center text-lg p-2 rounded-lg transition-all duration-150 hover:text-white hover:bg-white/10 min-w-[32px]"
-                id="sh-settings-btn"
-                title="Settings"
-              >
-                <i class="fas fa-cog"></i>
-              </button>
 
-              <div
-                class="sh-settings-menu absolute right-0 bottom-11 w-48 sm:w-56 bg-control-bg backdrop-blur-glass rounded-xl border border-glass-border shadow-[0_4px_20px_rgba(0,0,0,0.8)] p-2 text-sm hidden z-[100]"
-              >
-                <!-- ROOT PANEL: Quality + Speed ONLY -->
-                <div
-                  class="sh-settings-panel active"
-                  data-panel="root"
-                  id="sh-settings-root"
-                >
-                  <ul class="sh-settings-list m-0 p-0 max-h-64 overflow-y-auto">
-                    <li
-                      class="sh-settings-item px-4 py-2.5 mx-2 my-0.5 rounded-lg cursor-pointer flex justify-between items-center transition-all duration-150 hover:bg-white/10"
-                      data-open-panel="quality"
-                    >
-                      <span class="flex items-center gap-2">
-                        <i class="fas fa-tachometer-alt"></i> Quality
-                      </span>
-                      <span id="sh-quality-current">Auto</span>
-                    </li>
-                    <li
-                      class="sh-settings-item px-4 py-2.5 mx-2 my-0.5 rounded-lg cursor-pointer flex justify-between items-center transition-all duration-150 hover:bg-white/10"
-                      data-open-panel="speed"
-                    >
-                      <span class="flex items-center gap-2">
-                        <i class="fas fa-running"></i> Speed
-                      </span>
-                      <span id="sh-speed-current">Normal</span>
-                    </li>
-                  </ul>
-                </div>
-
-                <!-- QUALITY PANEL -->
-                <div
-                  class="sh-settings-panel hidden"
-                  data-panel="quality"
-                  id="sh-settings-quality"
-                >
-                  <div
-                    class="sh-settings-header px-4 py-3 sm:px-5 sm:py-3.5 flex items-center gap-2.5 border-b border-white/10 text-sm font-semibold"
-                  >
-                    <button
-                      class="sh-back-btn bg-transparent text-[#aaaaaa] cursor-pointer text-base p-1 rounded-lg transition-all duration-150 hover:text-white hover:bg-white/10"
-                      data-back
-                    >
-                      <i class="fas fa-arrow-left"></i>
-                    </button>
-                    <span>Select Quality</span>
-                  </div>
-                  <ul
-                    class="sh-settings-list m-0 p-0 max-h-64 overflow-y-auto"
-                    id="sh-quality-list"
-                  ></ul>
-                </div>
-
-                <!-- SPEED PANEL -->
-                <div
-                  class="sh-settings-panel hidden"
-                  data-panel="speed"
-                  id="sh-settings-speed"
-                >
-                  <div
-                    class="sh-settings-header px-4 py-3 sm:px-5 sm:py-3.5 flex items-center gap-2.5 border-b border-white/10 text-sm font-semibold"
-                  >
-                    <button
-                      class="sh-back-btn bg-transparent text-[#aaaaaa] cursor-pointer text-base p-1 rounded-lg transition-all duration-150 hover:text-white hover:bg-white/10"
-                      data-back
-                    >
-                      <i class="fas fa-arrow-left"></i>
-                    </button>
-                    <span>Playback Speed</span>
-                  </div>
-                  <ul
-                    class="sh-settings-list m-0 p-0 max-h-64 overflow-y-auto"
-                    id="sh-speed-list"
-                  ></ul>
-                </div>
-              </div>
-            </div>
 
             <!-- Fullscreen -->
             <button
@@ -437,23 +350,15 @@ html, body {
   const volumeBtn = document.getElementById('sh-volume-btn');
   const volumeIcon = document.getElementById('sh-volume-icon');
   const volumeRange = document.getElementById('sh-volume-range');
-  const settingsRoot = document.getElementById('sh-settings');
-  const settingsBtn = document.getElementById('sh-settings-btn');
-  const qualityList = document.getElementById('sh-quality-list');
-  const speedList = document.getElementById('sh-speed-list');
-  const rootPanel = document.getElementById('sh-settings-root');
-  const qualityPanel = document.getElementById('sh-settings-quality');
-  const speedPanel = document.getElementById('sh-settings-speed');
-  const qualityCurrent = document.getElementById('sh-quality-current');
-  const speedCurrent = document.getElementById('sh-speed-current');
+
   const fullBtn = document.getElementById('sh-full-btn');
   const fullscreenIcon = document.getElementById('sh-fullscreen-icon');
   const loadingSpinner = document.getElementById('sh-loading');
   const controls = document.getElementById('sh-controls');
   const offlineScreen = document.getElementById('offline-screen');
 
-  const playlistUrl = "/media/<%= stream.streamKey %>/master.m3u8?_t=" + Date.now();
-  const primaryVariantPlaylistUrl = "/media/<%= stream.streamKey %>/0/index.m3u8";
+  const playlistUrl = "/media/<%= stream.streamKey %>/index.m3u8?_t=" + Date.now();
+  const primaryVariantPlaylistUrl = "/media/<%= stream.streamKey %>/index.m3u8";
   const STABLE_LIVE_SEGMENT_LAG = 4;
   const MIN_STARTUP_SEGMENTS = 3;
   const MIN_PLAY_BUFFER_SECONDS = 6;
@@ -726,8 +631,6 @@ html, body {
 
       hlsInstance.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
         levels = data.levels || [];
-        hlsInstance.nextLoadLevel = 0;
-        buildQualityMenu(levels);
         startSegmentDebug();
         waitingForPlayBuffer = true;
         showLoading();
@@ -795,7 +698,6 @@ html, body {
                    data.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL) {
           hlsInstance.currentLevel = -1;
           hlsInstance.nextLoadLevel = 0;
-          qualityCurrent.textContent = 'Auto';
           // Non-fatal 404: still resync to live edge
           if (data.response && data.response.code === 404) {
             console.warn('Non-fatal segment 404 - resyncing to live edge.');
@@ -957,9 +859,7 @@ html, body {
       popup.style.opacity = '0';
       popup.style.pointerEvents = 'none';
     }
-    settingsRoot.classList.remove('open');
-    const menu = settingsRoot.querySelector('.sh-settings-menu');
-    if (menu) menu.style.display = 'none';
+
   });
 
   volumeRange.addEventListener('input', function () {
@@ -996,140 +896,7 @@ html, body {
     resetControlsTimer();
   });
 
-  // Settings
-  settingsBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    settingsRoot.classList.toggle('open');
-    const menu = settingsRoot.querySelector('.sh-settings-menu');
-    if (menu) {
-      menu.style.display = settingsRoot.classList.contains('open')
-        ? 'block'
-        : 'none';
-    }
-    showSettingsPanel('root');
-    resetControlsTimer();
-  });
 
-  settingsRoot.addEventListener('click', (e) => e.stopPropagation());
-
-  function showSettingsPanel(which) {
-    [rootPanel, qualityPanel, speedPanel].forEach((p) => {
-      p.classList.remove('active');
-      p.style.display = 'none';
-    });
-
-    if (which === 'root') {
-      rootPanel.classList.add('active');
-      rootPanel.style.display = 'block';
-    }
-    if (which === 'quality') {
-      qualityPanel.classList.add('active');
-      qualityPanel.style.display = 'block';
-    }
-    if (which === 'speed') {
-      speedPanel.classList.add('active');
-      speedPanel.style.display = 'block';
-    }
-    resetControlsTimer();
-  }
-
-  rootPanel.querySelectorAll('[data-open-panel]').forEach((li) => {
-    li.addEventListener('click', () => {
-      const target = li.getAttribute('data-open-panel');
-      showSettingsPanel(target);
-    });
-  });
-
-  document.querySelectorAll('[data-back]').forEach((btn) => {
-    btn.addEventListener('click', () => showSettingsPanel('root'));
-  });
-
-  // Quality menu
-  function buildQualityMenu(levels) {
-    qualityList.innerHTML = '';
-
-    // Auto
-    const autoLi = document.createElement('li');
-    autoLi.className =
-      'sh-settings-item px-4 py-2.5 mx-2 my-0.5 rounded-lg cursor-pointer flex justify-between items-center transition-all duration-150 bg-accent/20 text-accent font-medium';
-    autoLi.dataset.level = -1;
-    autoLi.innerHTML = '<span>Auto</span>';
-    autoLi.addEventListener('click', function () {
-      setActiveQuality(this);
-      qualityCurrent.textContent = 'Auto';
-      if (hlsInstance) hlsInstance.currentLevel = -1;
-      resetControlsTimer();
-    });
-    qualityList.appendChild(autoLi);
-
-    // Each level
-    levels.forEach((level, index) => {
-      const li = document.createElement('li');
-      li.className =
-        'sh-settings-item px-4 py-2.5 mx-2 my-0.5 rounded-lg cursor-pointer flex justify-between items-center transition-all duration-150 hover:bg-white/10';
-      const label = (level.height || '') + 'p';
-      li.dataset.level = index;
-      li.innerHTML =
-        '<span>' +
-        label +
-        '</span><span>' +
-        Math.round((level.bitrate || 0) / 1000) +
-        ' kbps</span>';
-      li.addEventListener('click', function () {
-        setActiveQuality(this);
-        qualityCurrent.textContent = label;
-        if (hlsInstance) hlsInstance.currentLevel = parseInt(
-          this.dataset.level,
-          10
-        );
-        resetControlsTimer();
-      });
-      qualityList.appendChild(li);
-    });
-  }
-
-  function setActiveQuality(el) {
-    Array.from(qualityList.children).forEach((li) => {
-      li.classList.remove('bg-accent/20', 'text-accent', 'font-medium');
-      li.classList.add('hover:bg-white/10');
-    });
-    el.classList.add('bg-accent/20', 'text-accent', 'font-medium');
-    el.classList.remove('hover:bg-white/10');
-  }
-
-  // Speed menu
-  const speeds = [
-    { value: 0.25, label: '0.25x' },
-    { value: 0.5, label: '0.5x' },
-    { value: 0.75, label: '0.75x' },
-    { value: 1, label: 'Normal' },
-    { value: 1.25, label: '1.25x' },
-    { value: 1.5, label: '1.5x' },
-    { value: 1.75, label: '1.75x' },
-    { value: 2, label: '2x' },
-  ];
-
-  speedList.innerHTML = '';
-  speeds.forEach((sp) => {
-    const li = document.createElement('li');
-    li.className =
-      'sh-settings-item px-4 py-2.5 mx-2 my-0.5 rounded-lg cursor-pointer flex justify-between items-center transition-all duration-150 hover:bg-white/10' +
-      (sp.value === 1 ? ' bg-accent/20 text-accent font-medium' : '');
-    li.dataset.speed = sp.value;
-    li.textContent = sp.label;
-    li.addEventListener('click', function () {
-      Array.from(speedList.children).forEach((x) => {
-        x.classList.remove('bg-accent/20', 'text-accent', 'font-medium');
-        x.classList.add('hover:bg-white/10');
-      });
-      this.classList.add('bg-accent/20', 'text-accent', 'font-medium');
-      this.classList.remove('hover:bg-white/10');
-      video.playbackRate = parseFloat(this.dataset.speed);
-      speedCurrent.textContent = sp.label;
-      resetControlsTimer();
-    });
-    speedList.appendChild(li);
-  });
 
   // Fullscreen (works inside iframe; fullscreen is for player element)
   function toggleFullscreen() {
@@ -1262,7 +1029,6 @@ html, body {
     progress,
     volumeBtn,
     volumeWrap,
-    settingsBtn,
     fullBtn,
   ];
 
@@ -1309,12 +1075,7 @@ html, body {
       if (isFullscreen) {
         e.preventDefault();
         exitFullscreen();
-      } else if (settingsRoot.classList.contains('open')) {
-        e.preventDefault();
-        settingsRoot.classList.remove('open');
-        const menu = settingsRoot.querySelector('.sh-settings-menu');
-        if (menu) menu.style.display = 'none';
-        resetControlsTimer();
+
       }
     }
 
