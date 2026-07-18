@@ -118,20 +118,71 @@ app.use(liveRoutes);
 
 // Setup WebSocket Server for stream broadcaster
 const broadcasterWss = new WebSocketServer({ noServer: true });
-// Setup WebSocket Server for stream viewers
 const viewerWss = new WebSocketServer({ noServer: true });
-// Setup WebSocket Server for performance monitoring
 const monitorWss = new WebSocketServer({ noServer: true });
 
+// Setup Ping-Pong Heartbeat to keep connections alive indefinitely (for long 4-6h sessions)
+function heartbeat(this: any) {
+  this.isAlive = true;
+}
+
+const pingInterval = setInterval(() => {
+  broadcasterWss.clients.forEach((ws: any) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+
+  viewerWss.clients.forEach((ws: any) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+
+  monitorWss.clients.forEach((ws: any) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+pingInterval.unref();
+
+// Capture uncaught crashes and write them to the telemetry logs/DB
+process.on("uncaughtException", (error) => {
+  const msg = `[CRITICAL ERROR] Uncaught Exception: ${error.message}\nStack: ${error.stack}`;
+  console.error(msg);
+  MonitorService.addLog(msg);
+});
+
+process.on("unhandledRejection", (reason: any) => {
+  const msg = `[CRITICAL ERROR] Unhandled Rejection: ${reason?.message || reason}\nStack: ${reason?.stack || ""}`;
+  console.error(msg);
+  MonitorService.addLog(msg);
+});
+
+// Preload database logs at start
+MonitorService.preloadLogs().then(() => {
+  console.log("[Studio Server] DB logs preloaded successfully.");
+}).catch(err => {
+  console.error("[Studio Server] Failed to preload DB logs:", err);
+});
+
 broadcasterWss.on("connection", (ws: any, request: any, key: any) => {
+  ws.isAlive = true;
+  ws.on("pong", heartbeat);
   StreamController.handleWebSocket(ws, key as string);
 });
 
 viewerWss.on("connection", (ws: any, request: any, key: any) => {
+  ws.isAlive = true;
+  ws.on("pong", heartbeat);
   StreamController.handleViewerWebSocket(ws, key as string);
 });
 
 monitorWss.on("connection", (ws: any) => {
+  ws.isAlive = true;
+  ws.on("pong", heartbeat);
   console.log("[WS Monitor] Telemetry client connected");
 
   const sendUpdate = async () => {

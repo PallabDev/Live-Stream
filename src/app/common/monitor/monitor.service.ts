@@ -1,17 +1,49 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { db } from "../database/db.js";
+import { streamLog } from "../database/schema.js";
+import { desc } from "drizzle-orm";
 
 export class MonitorService {
+  static async addStreamLog(streamKey: string, message: string, level: string = "info") {
+    try {
+      await db.insert(streamLog).values({
+        streamKey,
+        message,
+        level,
+        timestamp: new Date(),
+      });
+    } catch (err) {
+      console.error("[MonitorService] Failed to save stream log to DB:", err);
+    }
+  }
   private static ffmpegLogs: string[] = [];
   private static transcodeSpeeds = new Map<string, string>();
   private static MAX_LOGS = 150;
+
+  static async preloadLogs() {
+    try {
+      const records = await db
+        .select()
+        .from(streamLog)
+        .orderBy(desc(streamLog.id))
+        .limit(this.MAX_LOGS);
+      const loaded = records.reverse().map(r => r.message);
+      this.ffmpegLogs = loaded;
+      console.log(`[MonitorService] Preloaded ${loaded.length} historical logs from database.`);
+    } catch (err) {
+      console.error("[MonitorService] Failed to preload database logs:", err);
+    }
+  }
 
   static addLog(line: string) {
     this.ffmpegLogs.push(line);
     if (this.ffmpegLogs.length > this.MAX_LOGS) {
       this.ffmpegLogs.shift();
     }
+    // Write system/telemetry logs to DB
+    this.addStreamLog("system", line, "info").catch(() => {});
   }
 
   static getLogs(): string[] {

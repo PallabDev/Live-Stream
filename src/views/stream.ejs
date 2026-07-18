@@ -441,10 +441,7 @@
                 };
 
                 mediaSocket.onerror = (err) => {
-                    if (!isManuallyStopped) {
-                        showReconnectingStatus();
-                        scheduleBroadcasterReconnect();
-                    }
+                    console.error("[Studio] Reconnect socket error:", err);
                 };
 
             } catch (err) {
@@ -679,12 +676,6 @@
 
                 mediaSocket.onerror = (err) => {
                     console.error("[Studio] Signaling socket error:", err);
-                    if (!isManuallyStopped) {
-                        showReconnectingStatus();
-                        scheduleBroadcasterReconnect();
-                    } else {
-                        triggerStopLive();
-                    }
                 };
 
             } catch (err) {

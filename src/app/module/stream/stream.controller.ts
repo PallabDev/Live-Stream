@@ -29,18 +29,24 @@ export class StreamController {
         return;
       }
 
-      // Cleanup any stale broadcaster session for the same key
-      if (StreamController.activeSessions.has(key)) {
-        await StreamController.stopStreamSession(key);
-      }
+      // Check for existing session (reconnection path)
+      let session = StreamController.activeSessions.get(key);
+      let isReconnecting = false;
 
-      // Initialize session
-      const session: StreamSession = {
-        streamKey: key,
-        ws,
-        viewers: new Map(),
-      };
-      StreamController.activeSessions.set(key, session);
+      if (session) {
+        console.log(`[WS Signaling] Broadcaster reconnected for key: ${key}. Resuming existing session.`);
+        MonitorService.addLog(`[Signaling] Broadcaster reconnected for key: ${key}. Resuming session.`);
+        isReconnecting = true;
+        session.ws = ws;
+      } else {
+        // Initialize new session
+        session = {
+          streamKey: key,
+          ws,
+          viewers: new Map(),
+        };
+        StreamController.activeSessions.set(key, session);
+      }
 
       // Listen for broadcaster signaling messages
       ws.on("message", (message: string) => {
@@ -49,7 +55,7 @@ export class StreamController {
           const { event, viewerId } = msg;
           
           if (viewerId) {
-            const viewerWs = session.viewers.get(viewerId);
+            const viewerWs = session!.viewers.get(viewerId);
             if (viewerWs && viewerWs.readyState === 1) { // OPEN
               viewerWs.send(JSON.stringify(msg));
             }
@@ -60,36 +66,54 @@ export class StreamController {
       });
 
       ws.on("close", () => {
-        console.log(`[WS Signaling] Broadcaster disconnected: ${key}`);
-        StreamController.stopStreamSession(key);
+        console.log(`[WS Signaling] Broadcaster disconnected temporarily: ${key}. Starting 10s grace period.`);
+        MonitorService.addLog(`[Signaling] Broadcaster disconnected: ${key}. Waiting 10s for reconnect.`);
+        
+        setTimeout(async () => {
+          const currentSession = StreamController.activeSessions.get(key);
+          if (currentSession && currentSession.ws === ws) {
+            console.log(`[WS Signaling] Broadcaster grace period expired for: ${key}. Stopping session.`);
+            await StreamController.stopStreamSession(key);
+          }
+        }, 10000);
       });
 
-      ws.on("error", () => {
-        StreamController.stopStreamSession(key);
+      ws.on("error", (err: any) => {
+        console.error(`[WS Signaling] Broadcaster error on key ${key}:`, err);
       });
 
       // Update DB state
       await StreamService.setStreamLive(key, true);
 
-      // Notify and connect any waiting viewers
-      const waiting = StreamController.waitingViewers.get(key);
-      if (waiting) {
-        console.log(`[WS Signaling] Upgrading ${waiting.size} waiting viewers for key: ${key}`);
-        for (const viewerWs of waiting) {
-          if (viewerWs.readyState === 1) { // OPEN
-            const viewerId = Math.random().toString(36).substring(2, 15);
-            session.viewers.set(viewerId, viewerWs);
-
-            // Bind events for this viewer
-            StreamController.setupViewerSocket(viewerWs, viewerId, key);
-
-            // Send live signal
+      // Reconnect/re-notify viewers
+      if (isReconnecting) {
+        for (const [viewerId, viewerWs] of session.viewers) {
+          if (viewerWs.readyState === 1) {
             viewerWs.send(JSON.stringify({ event: "status", status: "live", viewerId }));
-            // Send connection trigger to broadcaster
             ws.send(JSON.stringify({ event: "viewer-connected", viewerId }));
           }
         }
-        StreamController.waitingViewers.delete(key);
+      } else {
+        // Notify and connect any waiting viewers
+        const waiting = StreamController.waitingViewers.get(key);
+        if (waiting) {
+          console.log(`[WS Signaling] Upgrading ${waiting.size} waiting viewers for key: ${key}`);
+          for (const viewerWs of waiting) {
+            if (viewerWs.readyState === 1) { // OPEN
+              const viewerId = Math.random().toString(36).substring(2, 15);
+              session.viewers.set(viewerId, viewerWs);
+
+              // Bind events for this viewer
+              StreamController.setupViewerSocket(viewerWs, viewerId, key);
+
+              // Send live signal
+              viewerWs.send(JSON.stringify({ event: "status", status: "live", viewerId }));
+              // Send connection trigger to broadcaster
+              ws.send(JSON.stringify({ event: "viewer-connected", viewerId }));
+            }
+          }
+          StreamController.waitingViewers.delete(key);
+        }
       }
 
     } catch (err) {

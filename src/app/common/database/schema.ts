@@ -66,3 +66,11 @@ export const stream = sqliteTable("stream", {
   createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
 });
 
+export const streamLog = sqliteTable("stream_log", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  streamKey: text("streamKey").notNull(),
+  message: text("message").notNull(),
+  level: text("level").default("info").notNull(),
+  timestamp: integer("timestamp", { mode: "timestamp" }).notNull(),
+});
+
