@@ -220,7 +220,12 @@
                         height: { ideal: 1080 },
                         frameRate: { ideal: 30 }
                     },
-                    audio: true
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false,
+                        channelCount: 2
+                    }
                 });
 
                 captureStream = stream;
@@ -254,6 +259,18 @@
                 captureStream.getTracks().forEach(track => track.stop());
                 captureStream = null;
             }
+        }
+
+        function preferHighFidelityAudio(sdp) {
+            let lines = sdp.split('\r\n');
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].startsWith('a=fmtp:') && lines[i].includes('opus')) {
+                    if (!lines[i].includes('stereo=1')) {
+                        lines[i] = lines[i] + ';stereo=1;sprop-stereo=1;maxaveragebitrate=256000;useinbandfec=1';
+                    }
+                }
+            }
+            return lines.join('\r\n');
         }
 
         async function createPeerConnection(viewerId) {
@@ -299,13 +316,21 @@
 
             // Create Offer SDP
             try {
-                const offer = await pcInstance.createOffer();
+                let offer = await pcInstance.createOffer();
+                
+                // Optimize SDP for high-fidelity stereo audio
+                const modifiedSdp = preferHighFidelityAudio(offer.sdp);
+                offer = new RTCSessionDescription({
+                    type: offer.type,
+                    sdp: modifiedSdp
+                });
+
                 await pcInstance.setLocalDescription(offer);
 
                 mediaSocket.send(JSON.stringify({
                     event: "offer",
                     viewerId: viewerId,
-                    sdp: pcInstance.localDescription
+                    sdp: offer
                 }));
             } catch (err) {
                 console.error(`[Studio WebRTC] Failed to create offer for viewer ${viewerId}:`, err);
@@ -344,8 +369,18 @@
                 mediaStream = captureStream;
             }
 
-            // contentHint optimizes stream codec configurations
+            // Optimize audio and video track configurations
             if (mediaStream) {
+                mediaStream.getAudioTracks().forEach(track => {
+                    if (typeof track.applyConstraints === 'function') {
+                        track.applyConstraints({
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }).catch(err => console.warn("Failed to apply audio constraints:", err));
+                    }
+                });
+
                 mediaStream.getVideoTracks().forEach(track => {
                     if ('contentHint' in track) {
                         track.contentHint = 'motion';
