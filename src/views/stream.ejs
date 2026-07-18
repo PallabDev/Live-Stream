@@ -267,19 +267,31 @@
 
         function preferHighFidelityAudioAndVideo(sdp) {
             let lines = sdp.split('\r\n');
+            let modifiedLines = [];
+            let inVideoSection = false;
+
             for (let i = 0; i < lines.length; i++) {
-                if (lines[i].startsWith('a=fmtp:') && lines[i].includes('opus')) {
-                    if (!lines[i].includes('stereo=1')) {
-                        lines[i] = lines[i] + ';stereo=1;sprop-stereo=1;maxaveragebitrate=256000;useinbandfec=1';
+                let line = lines[i];
+
+                if (line.startsWith('a=fmtp:') && line.includes('opus')) {
+                    if (!line.includes('stereo=1')) {
+                        line = line + ';stereo=1;sprop-stereo=1;maxaveragebitrate=256000;useinbandfec=1';
                     }
                 }
-                if (lines[i].startsWith('a=fmtp:') && (lines[i].includes('H264') || lines[i].includes('VP8') || lines[i].includes('VP9') || lines[i].includes('packetization-mode'))) {
-                    if (!lines[i].includes('x-google-max-bitrate')) {
-                        lines[i] = lines[i] + ';x-google-max-bitrate=8000;x-google-min-bitrate=2000;x-google-start-bitrate=4000';
-                    }
+
+                if (line.startsWith('m=video')) {
+                    inVideoSection = true;
+                    modifiedLines.push(line);
+                    modifiedLines.push('b=AS:8000');
+                    modifiedLines.push('b=TIAS:8000000');
+                    continue;
+                } else if (line.startsWith('m=audio')) {
+                    inVideoSection = false;
                 }
+
+                modifiedLines.push(line);
             }
-            return lines.join('\r\n');
+            return modifiedLines.join('\r\n');
         }
 
         function getDownmixedAudioStream() {

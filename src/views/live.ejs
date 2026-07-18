@@ -209,6 +209,22 @@ html, body {
         playsinline
       ></video>
 
+      <!-- Play Overlay (for autoplay bypass) -->
+      <div
+        id="play-overlay"
+        class="absolute inset-0 bg-black/80 z-40 flex flex-col justify-center items-center text-center p-6 cursor-pointer"
+        style="display: none;"
+        onclick="triggerUserPlay()"
+      >
+        <div class="text-indigo-500 text-[#6366f1] text-6xl mb-4 hover:scale-115 transition-transform">
+          <i class="fa-solid fa-circle-play text-7xl"></i>
+        </div>
+        <h3 class="text-xl font-bold text-white mb-2">Tap to Play Stream</h3>
+        <p class="text-slate-400 text-sm max-w-xs">
+          Click anywhere to start watching the live stream.
+        </p>
+      </div>
+
       <!-- Offline Screen Overlay -->
       <div
         id="offline-screen"
@@ -364,6 +380,8 @@ html, body {
 
   function showOffline() {
     offlineScreen.style.display = 'flex';
+    const playOverlay = document.getElementById('play-overlay');
+    if (playOverlay) playOverlay.style.display = 'none';
     hideLoading();
     playbackStarted = false;
     if (pcInstance) {
@@ -435,7 +453,24 @@ html, body {
     };
   }
 
+  function triggerUserPlay() {
+    const playOverlay = document.getElementById('play-overlay');
+    video.play().then(() => {
+      if (playOverlay) playOverlay.style.display = 'none';
+      hideLoading();
+      playbackStarted = true;
+    }).catch(err => {
+      console.warn("User play failed:", err);
+    });
+  }
+
   async function initWebRTC() {
+    if (typeof RTCPeerConnection === 'undefined') {
+      alert("WebRTC streaming requires a secure context (HTTPS). Please open this site over HTTPS.");
+      hideLoading();
+      return;
+    }
+
     if (pcInstance) {
       pcInstance.close();
     }
@@ -461,6 +496,10 @@ html, body {
           playbackStarted = true;
         }).catch(err => {
           console.warn('[Viewer WebRTC] Play auto-prevented:', err);
+          const playOverlay = document.getElementById('play-overlay');
+          if (playOverlay) {
+            playOverlay.style.display = 'flex';
+          }
           hideLoading();
         });
       }
@@ -772,6 +811,18 @@ html, body {
     if (controls.contains(e.target)) {
       return;
     }
+
+    // Autoplay bypass: if tracks are attached but paused, a user tap on the screen should trigger play!
+    if (video.paused && video.srcObject) {
+      video.play().then(() => {
+        const playOverlay = document.getElementById('play-overlay');
+        if (playOverlay) playOverlay.style.display = 'none';
+        hideLoading();
+      }).catch(err => console.log("[Autoplay Bypass] Play failed:", err));
+      resetControlsTimer();
+      return;
+    }
+
     if (controlsHidden) {
       resetControlsTimer();
     } else {
