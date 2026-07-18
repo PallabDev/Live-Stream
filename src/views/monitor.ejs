@@ -270,7 +270,6 @@
 
 <script>
   (function() {
-    const sse = new EventSource('/api/monitor/sse');
     const cpuEl = document.getElementById('val-cpu');
     const memEl = document.getElementById('val-mem');
     const netEl = document.getElementById('val-net');
@@ -281,96 +280,113 @@
     const fileCountEl = document.getElementById('file-count');
 
     let previousLogsText = "";
+    let socket = null;
 
-    sse.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/monitor/ws`;
 
-        // Update CPU and Memory
-        cpuEl.textContent = `${data.cpu}%`;
-        memEl.textContent = `${data.memory.heapUsed} / ${data.memory.heapTotal}`;
-        
-        // Update Egress network bandwidth
-        const egressMbps = (data.egressKbps / 1024).toFixed(2);
-        netEl.textContent = `${egressMbps} Mbps`;
+    function connectMonitorSocket() {
+      console.log("[Monitor] Connecting telemetry WebSocket to:", wsUrl);
+      socket = new WebSocket(wsUrl);
 
-        // Update Active Streams table
-        if (data.activeStreams && data.activeStreams.length > 0) {
-          streamsTable.innerHTML = data.activeStreams.map(stream => `
-            <tr>
-              <td><code style="color: #6366f1;">${stream.key}</code></td>
-              <td>
-                <span class="badge badge-success" style="font-family: monospace;">
-                  ${stream.viewersCount} active
-                </span>
-              </td>
-            </tr>
-          `).join('');
-        } else {
-          streamsTable.innerHTML = `
-            <tr>
-              <td colspan="2" style="text-align: center; color: #64748b;">No active streams</td>
-            </tr>
-          `;
-        }
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
 
-        // Update Logs Console
-        if (data.ffmpegLogs && data.ffmpegLogs.length > 0) {
-          const currentLogsText = data.ffmpegLogs.join('\n');
-          if (currentLogsText !== previousLogsText) {
-            previousLogsText = currentLogsText;
-            
-            // Format log lines beautifully
-            consoleBody.innerHTML = data.ffmpegLogs.map(line => {
-              let color = '#e2e8f0';
-              if (line.includes('warning') || line.includes('WARN')) {
-                color = '#f59e0b'; // Amber
-              } else if (line.includes('error') || line.includes('ERR')) {
-                color = '#ef4444'; // Red
-              } else if (line.includes('[Signaling]')) {
-                color = '#10b981'; // Green for WebRTC signaling events
-              }
-              return `<div class="console-line" style="color: ${color};">${escapeHtml(line)}</div>`;
-            }).join('');
+          // Update CPU and Memory
+          cpuEl.textContent = `${data.cpu}%`;
+          memEl.textContent = `${data.memory.heapUsed} / ${data.memory.heapTotal}`;
+          
+          // Update Egress network bandwidth
+          const egressMbps = (data.egressKbps / 1024).toFixed(2);
+          netEl.textContent = `${egressMbps} Mbps`;
 
-            logCountEl.textContent = `${data.ffmpegLogs.length} Lines`;
-            
-            // Auto scroll console to bottom
-            consoleBody.scrollTop = consoleBody.scrollHeight;
+          // Update Active Streams table
+          if (data.activeStreams && data.activeStreams.length > 0) {
+            streamsTable.innerHTML = data.activeStreams.map(stream => `
+              <tr>
+                <td><code style="color: #6366f1;">${stream.key}</code></td>
+                <td>
+                  <span class="badge badge-success" style="font-family: monospace;">
+                    ${stream.viewersCount} active
+                  </span>
+                </td>
+              </tr>
+            `).join('');
+          } else {
+            streamsTable.innerHTML = `
+              <tr>
+                <td colspan="2" style="text-align: center; color: #64748b;">No active streams</td>
+              </tr>
+            `;
           }
-        } else {
-          consoleBody.innerHTML = `<div style="color: #64748b;">Waiting for active streaming logs...</div>`;
-          logCountEl.textContent = `0 Lines`;
+
+          // Update Logs Console
+          if (data.ffmpegLogs && data.ffmpegLogs.length > 0) {
+            const currentLogsText = data.ffmpegLogs.join('\n');
+            if (currentLogsText !== previousLogsText) {
+              previousLogsText = currentLogsText;
+              
+              // Format log lines beautifully
+              consoleBody.innerHTML = data.ffmpegLogs.map(line => {
+                let color = '#e2e8f0';
+                if (line.includes('warning') || line.includes('WARN')) {
+                  color = '#f59e0b'; // Amber
+                } else if (line.includes('error') || line.includes('ERR')) {
+                  color = '#ef4444'; // Red
+                } else if (line.includes('[Signaling]')) {
+                  color = '#10b981'; // Green for WebRTC signaling events
+                }
+                return `<div class="console-line" style="color: ${color};">${escapeHtml(line)}</div>`;
+              }).join('');
+
+              logCountEl.textContent = `${data.ffmpegLogs.length} Lines`;
+              
+              // Auto scroll console to bottom
+              consoleBody.scrollTop = consoleBody.scrollHeight;
+            }
+          } else {
+            consoleBody.innerHTML = `<div style="color: #64748b;">Waiting for active streaming logs...</div>`;
+            logCountEl.textContent = `0 Lines`;
+          }
+
+          // Update /media Folder files
+          if (data.mediaFiles && data.mediaFiles.length > 0) {
+            fileCountEl.textContent = `${data.mediaFiles.length} Files`;
+            filesTable.innerHTML = data.mediaFiles.map(file => `
+              <tr>
+                <td><code>${file.stream}</code></td>
+                <td><span style="font-family: monospace; color: #38bdf8;">${file.file}</span></td>
+                <td><span style="font-family: monospace;">${formatBytes(file.size)}</span></td>
+                <td><span class="badge badge-secondary" style="font-size: 0.8rem;">${file.modifiedAgo} ago</span></td>
+              </tr>
+            `).join('');
+          } else {
+            fileCountEl.textContent = `0 Files`;
+            filesTable.innerHTML = `
+              <tr>
+                <td colspan="4" style="text-align: center; color: #64748b;">No media segments created yet</td>
+              </tr>
+            `;
+          }
+
+        } catch (err) {
+          console.error('Error parsing WebSocket monitor message:', err);
         }
+      };
 
-        // Update /media Directory files
-        if (data.mediaFiles && data.mediaFiles.length > 0) {
-          fileCountEl.textContent = `${data.mediaFiles.length} Files`;
-          filesTable.innerHTML = data.mediaFiles.map(file => `
-            <tr>
-              <td><code>${file.stream}</code></td>
-              <td><span style="font-family: monospace; color: #38bdf8;">${file.file}</span></td>
-              <td><span style="font-family: monospace;">${formatBytes(file.size)}</span></td>
-              <td><span class="badge badge-secondary" style="font-size: 0.8rem;">${file.modifiedAgo} ago</span></td>
-            </tr>
-          `).join('');
-        } else {
-          fileCountEl.textContent = `0 Files`;
-          filesTable.innerHTML = `
-            <tr>
-              <td colspan="4" style="text-align: center; color: #64748b;">No media segments created yet</td>
-            </tr>
-          `;
-        }
+      socket.onclose = () => {
+        console.warn('[Monitor] Telemetry socket closed. Reconnecting in 3s...');
+        socket = null;
+        setTimeout(connectMonitorSocket, 3000);
+      };
 
-      } catch (err) {
-        console.error('Error parsing SSE monitor message:', err);
-      }
-    };
+      socket.onerror = (err) => {
+        console.error('[Monitor] Telemetry socket error:', err);
+      };
+    }
 
-    sse.onerror = (err) => {
-      console.error('SSE monitoring connection error:', err);
-    };
+    connectMonitorSocket();
 
     function escapeHtml(unsafe) {
       return unsafe

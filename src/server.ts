@@ -3,8 +3,10 @@ import http from "http";
 import path from "path";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
+import url from "url";
 import { WebSocketServer } from "ws";
 import { StreamController } from "./app/module/stream/stream.controller.js";
+import { MonitorService } from "./app/common/monitor/monitor.service.js";
 
 // Import routes
 import authRoutes from "./app/module/auth/auth.routes.js";
@@ -118,6 +120,8 @@ app.use(liveRoutes);
 const broadcasterWss = new WebSocketServer({ noServer: true });
 // Setup WebSocket Server for stream viewers
 const viewerWss = new WebSocketServer({ noServer: true });
+// Setup WebSocket Server for performance monitoring
+const monitorWss = new WebSocketServer({ noServer: true });
 
 broadcasterWss.on("connection", (ws: any, request: any, key: any) => {
   StreamController.handleWebSocket(ws, key as string);
@@ -127,10 +131,55 @@ viewerWss.on("connection", (ws: any, request: any, key: any) => {
   StreamController.handleViewerWebSocket(ws, key as string);
 });
 
+monitorWss.on("connection", (ws: any) => {
+  console.log("[WS Monitor] Telemetry client connected");
+
+  const sendUpdate = async () => {
+    if (ws.readyState !== 1) return; // OPEN
+    try {
+      const cpu = await MonitorService.getCpuUsage();
+      const mem = process.memoryUsage();
+      const data = {
+        cpu,
+        memory: {
+          rss: Math.round(mem.rss / 1024 / 1024) + " MB",
+          heapTotal: Math.round(mem.heapTotal / 1024 / 1024) + " MB",
+          heapUsed: Math.round(mem.heapUsed / 1024 / 1024) + " MB",
+        },
+        egressKbps: Math.round(currentEgressKbps),
+        mediaFiles: MonitorService.getMediaFiles(),
+        ffmpegLogs: MonitorService.getLogs(),
+        activeStreams: Array.from(StreamController.activeSessions.values()).map(session => ({
+          key: session.streamKey,
+          viewersCount: session.viewers ? session.viewers.size : 0,
+        })),
+      };
+      ws.send(JSON.stringify(data));
+    } catch (_) {}
+  };
+
+  sendUpdate();
+  const interval = setInterval(sendUpdate, 2000);
+
+  ws.on("close", () => {
+    clearInterval(interval);
+    console.log("[WS Monitor] Telemetry client disconnected");
+  });
+
+  ws.on("error", () => {
+    clearInterval(interval);
+  });
+});
+
 server.on("upgrade", (request, socket, head) => {
-  const pathname = new URL(request.url || "", `http://${request.headers.host}`).pathname;
-  const match = pathname.match(/^\/api\/stream\/([^\/]+)\/ws$/);
-  const viewerMatch = pathname.match(/^\/api\/stream\/([^\/]+)\/viewer$/);
+  // Use simple URL parsing to guarantee robust path extraction in all network topologies
+  const parsedUrl = url.parse(request.url || "");
+  const pathname = parsedUrl.pathname || "";
+
+  const match = pathname.match(/^\/api\/stream\/([^\/]+)\/ws\/?$/);
+  const viewerMatch = pathname.match(/^\/api\/stream\/([^\/]+)\/viewer\/?$/);
+  const monitorMatch = pathname.match(/^\/api\/monitor\/ws\/?$/);
+
   if (match) {
     const key = match[1];
     broadcasterWss.handleUpgrade(request, socket, head, (ws) => {
@@ -140,6 +189,10 @@ server.on("upgrade", (request, socket, head) => {
     const key = viewerMatch[1];
     viewerWss.handleUpgrade(request, socket, head, (ws) => {
       viewerWss.emit("connection", ws, request, key);
+    });
+  } else if (monitorMatch) {
+    monitorWss.handleUpgrade(request, socket, head, (ws) => {
+      monitorWss.emit("connection", ws, request);
     });
   } else {
     socket.destroy();
