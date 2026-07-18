@@ -166,6 +166,10 @@
         let currentSourceType = null; // 'file' or 'screen'
         let mediaStream = null; // Globally stored media track stream reference
 
+        let audioCtx = null;
+        let audioSource = null;
+        let audioDestination = null;
+
         const peerConnections = new Map(); // viewerId -> RTCPeerConnection
 
         const movieFileInput = document.getElementById("movie-file-input");
@@ -261,7 +265,7 @@
             }
         }
 
-        function preferHighFidelityAudio(sdp) {
+        function preferHighFidelityAudioAndVideo(sdp) {
             let lines = sdp.split('\r\n');
             for (let i = 0; i < lines.length; i++) {
                 if (lines[i].startsWith('a=fmtp:') && lines[i].includes('opus')) {
@@ -269,8 +273,36 @@
                         lines[i] = lines[i] + ';stereo=1;sprop-stereo=1;maxaveragebitrate=256000;useinbandfec=1';
                     }
                 }
+                if (lines[i].startsWith('a=fmtp:') && (lines[i].includes('H264') || lines[i].includes('VP8') || lines[i].includes('VP9') || lines[i].includes('packetization-mode'))) {
+                    if (!lines[i].includes('x-google-max-bitrate')) {
+                        lines[i] = lines[i] + ';x-google-max-bitrate=8000;x-google-min-bitrate=2000;x-google-start-bitrate=4000';
+                    }
+                }
             }
             return lines.join('\r\n');
+        }
+
+        function getDownmixedAudioStream() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            if (!audioSource) {
+                audioSource = audioCtx.createMediaElementSource(previewPlayer);
+                audioDestination = audioCtx.createMediaStreamDestination();
+                
+                audioDestination.channelCount = 2;
+                audioDestination.channelCountMode = "explicit";
+                audioDestination.channelInterpretation = "speakers";
+
+                // Connect to local speakers (monitoring)
+                audioSource.connect(audioCtx.destination);
+                // Connect to streaming destination
+                audioSource.connect(audioDestination);
+            }
+            return audioDestination.stream;
         }
 
         async function createPeerConnection(viewerId) {
@@ -289,10 +321,24 @@
             const pcInstance = new RTCPeerConnection(config);
             peerConnections.set(viewerId, pcInstance);
 
-            // Add local stream tracks to WebRTC
+            // Add local stream tracks to WebRTC and optimize video settings
             if (mediaStream) {
                 mediaStream.getTracks().forEach(track => {
-                    pcInstance.addTrack(track, mediaStream);
+                    const sender = pcInstance.addTrack(track, mediaStream);
+                    if (track.kind === 'video') {
+                        try {
+                            const parameters = sender.getParameters();
+                            if (!parameters.encodings) {
+                                parameters.encodings = [{}];
+                            }
+                            parameters.encodings[0].maxBitrate = 8000000; // 8 Mbps max
+                            sender.setParameters(parameters).catch(err => {
+                                console.warn("[Studio WebRTC] Failed to set video encoding parameters:", err);
+                            });
+                        } catch (err) {
+                            console.warn("[Studio WebRTC] Failed to modify transceiver parameters:", err);
+                        }
+                    }
                 });
             }
 
@@ -318,8 +364,8 @@
             try {
                 let offer = await pcInstance.createOffer();
                 
-                // Optimize SDP for high-fidelity stereo audio
-                const modifiedSdp = preferHighFidelityAudio(offer.sdp);
+                // Optimize SDP for high-fidelity stereo audio and video quality
+                const modifiedSdp = preferHighFidelityAudioAndVideo(offer.sdp);
                 offer = new RTCSessionDescription({
                     type: offer.type,
                     sdp: modifiedSdp
@@ -353,13 +399,30 @@
 
             // Obtain the media tracks based on selected source type
             if (currentSourceType === 'file') {
+                let capturedStream;
                 if (previewPlayer.captureStream) {
-                    mediaStream = previewPlayer.captureStream(30);
+                    capturedStream = previewPlayer.captureStream(30);
                 } else if (previewPlayer.mozCaptureStream) {
-                    mediaStream = previewPlayer.mozCaptureStream(30);
+                    capturedStream = previewPlayer.mozCaptureStream(30);
                 } else {
                     alert("Your browser does not support video capturing API.");
                     return;
+                }
+
+                const videoTrack = capturedStream.getVideoTracks()[0];
+                if (!videoTrack) {
+                    alert("No video track found in captured stream.");
+                    return;
+                }
+
+                // Get downmixed stereo audio track via AudioContext
+                const downmixedAudioStream = getDownmixedAudioStream();
+                const audioTrack = downmixedAudioStream.getAudioTracks()[0];
+
+                mediaStream = new MediaStream();
+                mediaStream.addTrack(videoTrack);
+                if (audioTrack) {
+                    mediaStream.addTrack(audioTrack);
                 }
 
                 if (previewPlayer.paused) {
