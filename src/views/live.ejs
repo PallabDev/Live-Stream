@@ -293,31 +293,14 @@ html, body {
 
           <!-- Right Action Controls -->
           <div class="sh-controls-right flex items-center gap-1.5 sm:gap-2">
-            <!-- Volume -->
-            <div class="sh-volume-wrap relative flex items-center" id="sh-volume-wrap">
-              <button
-                class="sh-btn w-8 h-8 sm:w-10 sm:h-10 bg-transparent text-[#aaaaaa] flex items-center justify-center text-lg p-2 rounded-lg transition-all duration-150 hover:text-white hover:bg-white/10 min-w-[32px]"
-                id="sh-volume-btn"
-                title="Volume"
-              >
-                <i class="fas fa-volume-up" id="sh-volume-icon"></i>
-              </button>
-              <div
-                class="sh-volume-popup absolute left-1/2 bottom-11 -translate-x-1/2 w-16 sm:w-20 p-3 bg-control-bg backdrop-blur-glass rounded-xl border border-glass-border shadow-[0_4px_20px_rgba(0,0,0,0.8)] opacity-0 pointer-events-none transition-opacity duration-150 flex justify-center z-[100]"
-              >
-                <div class="sh-volume-slider w-[10px] h-24 sm:h-28 flex justify-center">
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value="1"
-                    id="sh-volume-range"
-                    class="sh-volume-range"
-                  />
-                </div>
-              </div>
-            </div>
+            <!-- Volume Button -->
+            <button
+              class="sh-btn w-8 h-8 sm:w-10 sm:h-10 bg-transparent text-[#aaaaaa] flex items-center justify-center text-lg p-2 rounded-lg transition-all duration-150 hover:text-white hover:bg-white/10 min-w-[32px]"
+              id="sh-volume-btn"
+              title="Mute/Unmute"
+            >
+              <i class="fas fa-volume-up" id="sh-volume-icon"></i>
+            </button>
 
 
 
@@ -348,10 +331,8 @@ html, body {
   const progressBar = document.getElementById('sh-progress-bar');
   const progressBuffer = document.getElementById('sh-progress-buffer');
   const progressHandle = document.getElementById('sh-progress-handle');
-  const volumeWrap = document.getElementById('sh-volume-wrap');
   const volumeBtn = document.getElementById('sh-volume-btn');
   const volumeIcon = document.getElementById('sh-volume-icon');
-  const volumeRange = document.getElementById('sh-volume-range');
 
   const fullBtn = document.getElementById('sh-full-btn');
   const fullscreenIcon = document.getElementById('sh-fullscreen-icon');
@@ -604,62 +585,13 @@ html, body {
     resetControlsTimer();
   });
 
-  // Volume
-  volumeBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    volumeWrap.classList.toggle('open');
-    const popup = volumeWrap.querySelector('.sh-volume-popup');
-    if (popup) {
-      popup.style.opacity = volumeWrap.classList.contains('open') ? '1' : '0';
-      popup.style.pointerEvents = volumeWrap.classList.contains('open')
-        ? 'auto'
-        : 'none';
-    }
-    resetControlsTimer();
-  });
-
-  volumeWrap.addEventListener('click', (e) => e.stopPropagation());
-
-  document.addEventListener('click', () => {
-    volumeWrap.classList.remove('open');
-    const popup = volumeWrap.querySelector('.sh-volume-popup');
-    if (popup) {
-      popup.style.opacity = '0';
-      popup.style.pointerEvents = 'none';
-    }
-
-  });
-
-  volumeRange.addEventListener('input', function () {
-    let v = parseFloat(this.value);
-    video.volume = v;
-    video.muted = v === 0;
-
-    if (v === 0) {
-      volumeIcon.className = 'fas fa-volume-mute';
-    } else if (v < 0.5) {
-      volumeIcon.className = 'fas fa-volume-down';
-    } else {
-      volumeIcon.className = 'fas fa-volume-up';
-    }
-    resetControlsTimer();
-  });
-
-  // Double click volume icon = mute
-  volumeBtn.addEventListener('dblclick', () => {
+  // Volume Mute/Unmute
+  volumeBtn.addEventListener('click', () => {
     video.muted = !video.muted;
     if (video.muted) {
-      volumeRange.value = 0;
       volumeIcon.className = 'fas fa-volume-mute';
     } else {
-      volumeRange.value = video.volume;
-      if (video.volume === 0) {
-        volumeIcon.className = 'fas fa-volume-mute';
-      } else if (video.volume < 0.5) {
-        volumeIcon.className = 'fas fa-volume-down';
-      } else {
-        volumeIcon.className = 'fas fa-volume-up';
-      }
+      volumeIcon.className = 'fas fa-volume-up';
     }
     resetControlsTimer();
   });
@@ -796,7 +728,6 @@ html, body {
     playBtn,
     progress,
     volumeBtn,
-    volumeWrap,
     fullBtn,
   ];
 
