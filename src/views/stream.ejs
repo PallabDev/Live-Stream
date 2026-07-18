@@ -344,6 +344,30 @@
             return reorderVideoCodecs(modifiedLines.join('\r\n'));
         }
 
+        let audioCtx = null;
+
+        function getDownmixedAudioStream(rawAudioStream) {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            
+            // Create a node to read from the raw captured audio stream
+            const sourceNode = audioCtx.createMediaStreamSource(rawAudioStream);
+            const destNode = audioCtx.createMediaStreamDestination();
+            
+            destNode.channelCount = 2;
+            destNode.channelCountMode = "explicit";
+            destNode.channelInterpretation = "speakers";
+
+            // Connect source to destination. Browser auto-downmixes multi-channel layout to stereo!
+            sourceNode.connect(destNode);
+            
+            return destNode.stream;
+        }
+
         function showReconnectingStatus() {
             isLive = false;
             isStreaming = false;
@@ -538,13 +562,33 @@
 
             // Obtain the media tracks based on selected source type
             if (currentSourceType === 'file') {
+                let capturedStream;
                 if (previewPlayer.captureStream) {
-                    mediaStream = previewPlayer.captureStream(30);
+                    capturedStream = previewPlayer.captureStream(30);
                 } else if (previewPlayer.mozCaptureStream) {
-                    mediaStream = previewPlayer.mozCaptureStream(30);
+                    capturedStream = previewPlayer.mozCaptureStream(30);
                 } else {
                     alert("Your browser does not support video capturing API.");
                     return;
+                }
+
+                const videoTrack = capturedStream.getVideoTracks()[0];
+                const rawAudioTrack = capturedStream.getAudioTracks()[0];
+
+                if (rawAudioTrack) {
+                    // Create a single-track stream for the AudioContext downmixer
+                    const rawAudioStream = new MediaStream([rawAudioTrack]);
+                    const downmixedStream = getDownmixedAudioStream(rawAudioStream);
+                    const stereoAudioTrack = downmixedStream.getAudioTracks()[0];
+
+                    mediaStream = new MediaStream();
+                    mediaStream.addTrack(videoTrack);
+                    if (stereoAudioTrack) {
+                        mediaStream.addTrack(stereoAudioTrack);
+                    }
+                } else {
+                    mediaStream = new MediaStream();
+                    mediaStream.addTrack(videoTrack);
                 }
 
                 if (previewPlayer.paused) {
