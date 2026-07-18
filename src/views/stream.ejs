@@ -76,18 +76,14 @@
             <div style="display: flex; justify-content: center; margin-top: 0.5rem;">
                 <div class="control-dock"
                     style="display: flex; gap: 1rem; background: rgba(30, 41, 59, 0.6); border: 1px solid var(--panel-border); padding: 0.75rem 1.5rem; border-radius: 50px; backdrop-filter: blur(10px); align-items: center;">
-                    <button id="btn-golive" class="btn btn-primary" onclick="triggerGoLive()" disabled
-                        style="border-radius: 30px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 600; opacity: 0.5;">
-                        <i class="ti ti-player-play"></i> Go Live
+                    <button id="btn-toggle-live" class="btn btn-primary" onclick="toggleLiveState()" disabled
+                        style="border-radius: 30px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 600; opacity: 0.5; transition: all 0.2s ease;">
+                        <i class="ti ti-player-play" id="toggle-live-icon"></i> <span id="toggle-live-text">Go Live</span>
                     </button>
 
                     <button id="btn-share" class="btn btn-secondary" onclick="copyViewerLink()" title="Copy Viewer Link"
                         style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center;">
                         <i class="ti ti-share" style="font-size: 1.2rem;"></i>
-                    </button>
-                    <button id="btn-stop" class="btn btn-danger" onclick="triggerStopLive()" disabled
-                        style="border-radius: 30px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 600; opacity: 0.5;">
-                        <i class="ti ti-player-stop"></i> Stop Live
                     </button>
                 </div>
             </div>
@@ -153,7 +149,7 @@
         // Read config properties initialized by server side (prevents IDE template syntax confusion)
         const studioConfig = document.getElementById("studio-config");
         const streamKey = studioConfig.dataset.streamKey;
-        let isLive = studioConfig.dataset.isLive === "true";
+        let isLive = false;
 
         let isStreaming = false; // WebRTC Peer Connection is actively sending data
         let streamStartTime = null;
@@ -395,6 +391,14 @@
             }
         }
 
+        function toggleLiveState() {
+            if (isStreaming || isLive) {
+                triggerStopLive();
+            } else {
+                triggerGoLive();
+            }
+        }
+
         function closePeerConnection(viewerId) {
             const pcInstance = peerConnections.get(viewerId);
             if (pcInstance) {
@@ -565,8 +569,7 @@
 
         function updateUI() {
             const statusBadge = document.getElementById("status-badge");
-            const btnGoLive = document.getElementById("btn-golive");
-            const btnStop = document.getElementById("btn-stop");
+            const btnToggleLive = document.getElementById("btn-toggle-live");
             const playerEl = document.getElementById("preview-player");
             const placeholderEl = document.getElementById("preview-placeholder");
 
@@ -574,38 +577,50 @@
             const placeholderTitle = document.getElementById("placeholder-title");
             const placeholderText = document.getElementById("placeholder-text");
 
+            const toggleLiveIcon = document.getElementById("toggle-live-icon");
+            const toggleLiveText = document.getElementById("toggle-live-text");
+
             const hasMediaSelected = (currentSourceType !== null);
 
             if (isStreaming) {
                 statusBadge.className = "badge badge-success";
                 statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
 
-                btnGoLive.disabled = true;
-                btnGoLive.style.opacity = "0.5";
-                btnStop.disabled = false;
-                btnStop.style.opacity = "1";
+                btnToggleLive.disabled = false;
+                btnToggleLive.style.opacity = "1";
+                btnToggleLive.className = "btn btn-danger";
+                btnToggleLive.style.background = "var(--danger)";
+                btnToggleLive.style.borderColor = "var(--danger)";
+                toggleLiveIcon.className = "ti ti-player-stop";
+                toggleLiveText.textContent = "Stop Live";
             } else if (isLive) {
                 statusBadge.className = "badge badge-primary";
                 statusBadge.innerHTML = '<i class="ti ti-loader animate-spin"></i> Connecting';
 
-                btnGoLive.disabled = true;
-                btnGoLive.style.opacity = "0.5";
-                btnStop.disabled = false;
-                btnStop.style.opacity = "1";
+                btnToggleLive.disabled = false;
+                btnToggleLive.style.opacity = "1";
+                btnToggleLive.className = "btn btn-danger";
+                btnToggleLive.style.background = "var(--danger)";
+                btnToggleLive.style.borderColor = "var(--danger)";
+                toggleLiveIcon.className = "ti ti-player-stop";
+                toggleLiveText.textContent = "Stop Live";
             } else {
                 statusBadge.className = "badge badge-danger";
                 statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> Offline';
 
-                if (hasMediaSelected) {
-                    btnGoLive.disabled = false;
-                    btnGoLive.style.opacity = "1";
-                } else {
-                    btnGoLive.disabled = true;
-                    btnGoLive.style.opacity = "0.5";
-                }
+                btnToggleLive.className = "btn btn-primary";
+                btnToggleLive.style.background = "var(--primary)";
+                btnToggleLive.style.borderColor = "var(--primary)";
+                toggleLiveIcon.className = "ti ti-player-play";
+                toggleLiveText.textContent = "Go Live";
 
-                btnStop.disabled = true;
-                btnStop.style.opacity = "0.5";
+                if (hasMediaSelected) {
+                    btnToggleLive.disabled = false;
+                    btnToggleLive.style.opacity = "1";
+                } else {
+                    btnToggleLive.disabled = true;
+                    btnToggleLive.style.opacity = "0.5";
+                }
             }
 
             // Update placeholder text if media selection changes
