@@ -22,6 +22,54 @@ const port = process.env.PORT || 3000;
 app.set("view engine", "ejs");
 app.set("views", path.join(process.cwd(), "src", "views"));
 
+let activeEgressBytes = 0;
+let lastEgressCheck = Date.now();
+export let currentEgressKbps = 0;
+
+// Middleware to track egress bandwidth
+app.use((req, res, next) => {
+  const oldWrite = res.write;
+  const oldEnd = res.end;
+  let bytesSent = 0;
+
+  (res as any).write = function (chunk: any, ...args: any[]) {
+    if (chunk) {
+      if (typeof chunk === "string") {
+        bytesSent += Buffer.byteLength(chunk);
+      } else if (chunk.length) {
+        bytesSent += chunk.length;
+      }
+    }
+    return oldWrite.apply(res, arguments as any);
+  };
+
+  (res as any).end = function (chunk: any, ...args: any[]) {
+    if (chunk) {
+      if (typeof chunk === "string") {
+        bytesSent += Buffer.byteLength(chunk);
+      } else if (chunk.length) {
+        bytesSent += chunk.length;
+      }
+    }
+    activeEgressBytes += bytesSent;
+    return oldEnd.apply(res, arguments as any);
+  };
+
+  next();
+});
+
+// Periodic bandwidth calculator
+setInterval(() => {
+  const now = Date.now();
+  const elapsedSec = (now - lastEgressCheck) / 1000;
+  if (elapsedSec > 0) {
+    const bitsSent = activeEgressBytes * 8;
+    currentEgressKbps = (bitsSent / 1024) / elapsedSec; // Kbps
+    activeEgressBytes = 0;
+    lastEgressCheck = now;
+  }
+}, 1000);
+
 // Middlewares
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
@@ -68,18 +116,30 @@ app.use(liveRoutes);
 
 // Setup WebSocket Server for stream chunks
 const wss = new WebSocketServer({ noServer: true });
+// Setup WebSocket Server for stream status
+const statusWss = new WebSocketServer({ noServer: true });
 
 wss.on("connection", (ws: any, request: any, key: any) => {
   StreamController.handleWebSocket(ws, key as string);
 });
 
+statusWss.on("connection", (ws: any, request: any, key: any) => {
+  StreamController.handleStatusWebSocket(ws, key as string);
+});
+
 server.on("upgrade", (request, socket, head) => {
   const pathname = new URL(request.url || "", `http://${request.headers.host}`).pathname;
   const match = pathname.match(/^\/api\/stream\/([^\/]+)\/ws$/);
+  const statusMatch = pathname.match(/^\/api\/stream\/([^\/]+)\/status$/);
   if (match) {
     const key = match[1];
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit("connection", ws, request, key);
+    });
+  } else if (statusMatch) {
+    const key = statusMatch[1];
+    statusWss.handleUpgrade(request, socket, head, (ws) => {
+      statusWss.emit("connection", ws, request, key);
     });
   } else {
     socket.destroy();

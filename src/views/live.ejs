@@ -375,26 +375,69 @@ html, body {
   let playbackStarted = false;
   let waitingForPlayBuffer = false;
 
-  // Stream status checker
-  async function checkStreamStatus() {
-    try {
-      const res = await fetch(playlistUrl + '&_status=' + Date.now(), { method: 'HEAD', cache: 'no-store' });
-      if (res.ok) {
-        if (offlineScreen.style.display !== 'none') {
-          offlineScreen.style.display = 'none';
-        }
+  let statusSocket = null;
+  let bufferCheckInterval = null;
 
-        if (!hlsInstance) {
-          await initHLSWhenBufferReady();
-        } else if (playbackStarted && !waitingForPlayBuffer) {
-          video.play().catch(e => console.log("Auto play prevented", e));
-        }
-      } else {
-        showOffline();
+  function startBufferCheck() {
+    if (bufferCheckInterval) return;
+    console.log('[Live] Starting buffer checker...');
+    bufferCheckInterval = setInterval(async () => {
+      if (hlsInstance) {
+        stopBufferCheck();
+        return;
       }
-    } catch (e) {
-      showOffline();
+      await initHLSWhenBufferReady();
+    }, 2000);
+  }
+
+  function stopBufferCheck() {
+    if (bufferCheckInterval) {
+      console.log('[Live] Stopping buffer checker.');
+      clearInterval(bufferCheckInterval);
+      bufferCheckInterval = null;
     }
+  }
+
+  function connectStatusSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const statusWsUrl = `${protocol}//${window.location.host}/api/stream/<%= stream.streamKey %>/status`;
+    
+    console.log('[Live] Connecting status WebSocket to:', statusWsUrl);
+    statusSocket = new WebSocket(statusWsUrl);
+
+    statusSocket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.event === 'status') {
+          console.log('[Live] Stream status event:', msg.status);
+          if (msg.status === 'live') {
+            if (offlineScreen.style.display !== 'none') {
+              offlineScreen.style.display = 'none';
+            }
+            if (!hlsInstance) {
+              startBufferCheck();
+            } else if (playbackStarted && !waitingForPlayBuffer) {
+              video.play().catch(e => console.log("Auto play prevented", e));
+            }
+          } else {
+            stopBufferCheck();
+            showOffline();
+          }
+        }
+      } catch (err) {
+        console.error('[Live] Error parsing status message:', err);
+      }
+    };
+
+    statusSocket.onclose = () => {
+      console.log('[Live] Status WebSocket closed. Reconnecting in 3s...');
+      statusSocket = null;
+      setTimeout(connectStatusSocket, 3000);
+    };
+
+    statusSocket.onerror = (err) => {
+      console.error('[Live] Status WebSocket error:', err);
+    };
   }
 
   async function getAvailableSegmentCount() {
@@ -586,36 +629,29 @@ html, body {
     if (Hls.isSupported()) {
       hlsInstance = new Hls({
         enableWorker: true,
-        lowLatencyMode: false,
+        lowLatencyMode: true,
         startLevel: 0,
-        initialLiveManifestSize: MIN_STARTUP_SEGMENTS,
+        initialLiveManifestSize: 2,
         capLevelToPlayerSize: true,
         testBandwidth: true,
         autoStartLoad: true,
-
-        // === PRE-BUFFERING FIX ===
-        // Without this, Hls.js plays a segment completely before downloading the next one.
-        // With this, it downloads the next segment WHILE the current one is playing.
         startFragPrefetch: true,
 
-        // Buffer settings for 2s live segments
-        backBufferLength: 60,
-        maxBufferLength: 90,
-        maxMaxBufferLength: 180,
-        maxBufferSize: 80 * 1000 * 1000,
-        maxStarvationDelay: 2,
-        fragLoadingTimeOut: 12000,
-        manifestLoadingTimeOut: 10000,
-        levelLoadingTimeOut: 10000,
-        abrBandWidthFactor: 0.75,
-        abrBandWidthUpFactor: 0.6,
-        abrEwmaFastLive: 2,
-        abrEwmaSlowLive: 8,
+        // Low latency buffer settings
+        backBufferLength: 10,
+        maxBufferLength: 6,
+        maxMaxBufferLength: 10,
+        maxBufferSize: 15 * 1000 * 1000, // 15MB max buffer
+        maxStarvationDelay: 1,
 
-        // Stay behind live edge so the next segment is ready before playback needs it.
-        liveSyncDurationCount: STABLE_LIVE_SEGMENT_LAG,
-        liveMaxLatencyDurationCount: STABLE_LIVE_SEGMENT_LAG * 2,
+        fragLoadingTimeOut: 4000,
+        manifestLoadingTimeOut: 4000,
+        levelLoadingTimeOut: 4000,
+
+        liveSyncDurationCount: 2, // Stay 4 seconds behind live edge
+        liveMaxLatencyDurationCount: 4, // Allow max 8 seconds latency before seeking
         liveDurationInfinity: true,
+        highBufferWatchdogPeriod: 2,
 
         // Cache-bust every playlist fetch so the browser never replays stale segments
         xhrSetup: function (xhr, url) {
@@ -631,6 +667,7 @@ html, body {
 
       hlsInstance.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
         levels = data.levels || [];
+        stopBufferCheck();
         startSegmentDebug();
         waitingForPlayBuffer = true;
         showLoading();
@@ -1093,12 +1130,15 @@ html, body {
   }
 
   // Init
-  checkStreamStatus();
-  checkInterval = setInterval(checkStreamStatus, 3000);
+  connectStatusSocket();
   resetControlsTimer();
 
   window.onbeforeunload = () => {
-    if (checkInterval) clearInterval(checkInterval);
+    stopBufferCheck();
+    if (statusSocket) {
+      statusSocket.onclose = null;
+      statusSocket.close();
+    }
     if (hlsInstance) hlsInstance.destroy();
   };
 })();

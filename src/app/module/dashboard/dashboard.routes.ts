@@ -1,6 +1,9 @@
 import { Router } from "express";
 import { requireAuth, redirectIfAuth, requireAccess, AuthenticatedRequest } from "../auth/auth.middleware.js";
 import { StreamService } from "../stream/stream.service.js";
+import { MonitorService } from "../../common/monitor/monitor.service.js";
+import { currentEgressKbps } from "../../../server.js";
+import { StreamController } from "../stream/stream.controller.js";
 
 const router = Router();
 
@@ -104,6 +107,53 @@ router.get("/logout", (req, res) => {
   res.clearCookie("__secure-better-auth.session_token");
   res.clearCookie("__secure-better-auth.session-token");
   res.redirect("/login");
+});
+
+// Monitor Page
+router.get("/monitor", requireAuth, async (req: AuthenticatedRequest, res) => {
+  res.render("monitor", {
+    title: "System Control Center - CoWatch",
+    user: req.user,
+  });
+});
+
+// SSE Monitor API Endpoint
+router.get("/api/monitor/sse", requireAuth, (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  const sendUpdate = async () => {
+    try {
+      const cpu = await MonitorService.getCpuUsage();
+      const mem = process.memoryUsage();
+      const data = {
+        cpu,
+        memory: {
+          rss: Math.round(mem.rss / 1024 / 1024) + " MB",
+          heapTotal: Math.round(mem.heapTotal / 1024 / 1024) + " MB",
+          heapUsed: Math.round(mem.heapUsed / 1024 / 1024) + " MB",
+        },
+        egressKbps: Math.round(currentEgressKbps),
+        mediaFiles: MonitorService.getMediaFiles(),
+        ffmpegLogs: MonitorService.getLogs(),
+        activeStreams: Array.from(StreamController.activeSessions.keys()).map(key => ({
+          key,
+          speed: MonitorService.getSpeed(key),
+        })),
+      };
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    } catch (_) {}
+  };
+
+  sendUpdate();
+  const interval = setInterval(sendUpdate, 2000);
+
+  req.on("close", () => {
+    clearInterval(interval);
+    res.end();
+  });
 });
 
 export default router;

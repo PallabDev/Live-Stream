@@ -170,6 +170,12 @@
         let mediaSocket = null;
         let captureStream = null;
         let currentSourceType = null; // 'file' or 'screen'
+        let mediaStream = null; // Globally stored media track stream reference
+
+        let qualityCheckInterval = null;
+        let currentVideoBitrate = 2500000; // default 2.5 Mbps
+        let consecutiveZeroBuffers = 0;
+        let isTransitioningQuality = false;
 
         const movieFileInput = document.getElementById("movie-file-input");
         const previewPlayer = document.getElementById("preview-player");
@@ -259,10 +265,129 @@
             }
         }
 
+        function startQualityMonitor() {
+            stopQualityMonitor();
+            consecutiveZeroBuffers = 0;
+            
+            qualityCheckInterval = setInterval(async () => {
+                if (!isStreaming || !mediaSocket || mediaSocket.readyState !== WebSocket.OPEN) {
+                    stopQualityMonitor();
+                    return;
+                }
+
+                const buf = mediaSocket.bufferedAmount || 0;
+                console.log(`[Studio Monitor] WebSocket bufferedAmount: ${buf} bytes`);
+
+                // Downgrade triggers: buffer is backed up (> 1.2 MB or ~4 seconds of High quality video data)
+                if (buf > 1200000) {
+                    if (currentVideoBitrate === 2500000) {
+                        await changeStreamBitrate(1200000, "Medium Quality (Bandwidth Saturated)");
+                    } else if (currentVideoBitrate === 1200000) {
+                        await changeStreamBitrate(600000, "Low Quality (Critical Bandwidth Link)");
+                    }
+                    consecutiveZeroBuffers = 0;
+                } else if (buf === 0) {
+                    consecutiveZeroBuffers++;
+                    // If network is consistently fast (buffer remains empty for 10 seconds / 5 checks)
+                    if (consecutiveZeroBuffers >= 5) {
+                        if (currentVideoBitrate === 600000) {
+                            await changeStreamBitrate(1200000, "Medium Quality (Network Recovered)");
+                        } else if (currentVideoBitrate === 1200000) {
+                            await changeStreamBitrate(2500000, "High Quality (Optimal Network Link)");
+                        }
+                        consecutiveZeroBuffers = 0;
+                    }
+                } else {
+                    consecutiveZeroBuffers = 0;
+                }
+            }, 2000);
+        }
+
+        function stopQualityMonitor() {
+            if (qualityCheckInterval) {
+                clearInterval(qualityCheckInterval);
+                qualityCheckInterval = null;
+            }
+        }
+
+        async function changeStreamBitrate(targetBitrate, reason) {
+            console.warn(`[Studio Quality] Changing bitrate to ${targetBitrate} bps. Reason: ${reason}`);
+            currentVideoBitrate = targetBitrate;
+            
+            // Apply track constraints dynamically to capture stream video track
+            if (mediaStream) {
+                const videoTrack = mediaStream.getVideoTracks()[0];
+                if (videoTrack && typeof videoTrack.applyConstraints === 'function') {
+                    let constraints = {};
+                    if (targetBitrate === 2500000) {
+                        constraints = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
+                    } else if (targetBitrate === 1200000) {
+                        constraints = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24 } };
+                    } else {
+                        constraints = { width: { ideal: 854 }, height: { ideal: 480 }, frameRate: { ideal: 15 } };
+                    }
+                    console.log(`[Studio Quality] Applying track constraints:`, constraints);
+                    try {
+                        await videoTrack.applyConstraints(constraints);
+                    } catch (err) {
+                        console.warn("[Studio Quality] Failed to apply track constraints:", err);
+                    }
+                }
+            }
+
+            // Stop the current recorder to trigger recreating a new one with the new bitrate
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                isTransitioningQuality = true;
+                mediaRecorder.stop();
+            }
+        }
+
+        function startMediaRecorder(bitrate) {
+            console.log(`[Studio] Starting MediaRecorder with video bitrate: ${bitrate} bps`);
+            
+            mediaRecorder = new MediaRecorder(mediaStream, {
+                mimeType: 'video/webm;codecs=vp8,opus',
+                videoBitsPerSecond: bitrate,
+                audioBitsPerSecond: 128000
+            });
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0 && isLive && mediaSocket && mediaSocket.readyState === WebSocket.OPEN) {
+                    mediaSocket.send(e.data);
+                }
+            };
+
+            mediaRecorder.onstart = () => {
+                isStreaming = true;
+                updateUI();
+                
+                if (!qualityCheckInterval) {
+                    streamStartTime = Date.now();
+                    document.getElementById("duration-badge").style.display = "inline-flex";
+                    if (durationInterval) clearInterval(durationInterval);
+                    durationInterval = setInterval(updateDuration, 1000);
+                    startQualityMonitor();
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                if (isTransitioningQuality) {
+                    isTransitioningQuality = false;
+                    startMediaRecorder(currentVideoBitrate);
+                } else {
+                    isStreaming = false;
+                    stopQualityMonitor();
+                    updateUI();
+                }
+            };
+
+            mediaRecorder.start(1000);
+        }
+
         async function triggerGoLive() {
             if (isStreaming) return;
 
-            let mediaStream = null;
+            mediaStream = null;
 
             // Obtain the media tracks based on selected source type
             if (currentSourceType === 'file') {
@@ -312,39 +437,8 @@
                     isLive = true;
                     updateUI();
 
-                    // Start MediaRecorder to capture chunks
-                    console.log("[Studio] Initialising MediaRecorder...");
-                    
-                    mediaRecorder = new MediaRecorder(mediaStream, {
-                        mimeType: 'video/webm;codecs=vp8,opus',
-                        videoBitsPerSecond: 2500000,
-                        audioBitsPerSecond: 128000
-                    });
-
-                    mediaRecorder.ondataavailable = (e) => {
-                        if (e.data && e.data.size > 0 && isLive && mediaSocket && mediaSocket.readyState === WebSocket.OPEN) {
-                            mediaSocket.send(e.data);
-                        }
-                    };
-
-                    mediaRecorder.onstart = () => {
-                        isStreaming = true;
-                        updateUI();
-                        
-                        // Start stream duration counter
-                        streamStartTime = Date.now();
-                        document.getElementById("duration-badge").style.display = "inline-flex";
-                        if (durationInterval) clearInterval(durationInterval);
-                        durationInterval = setInterval(updateDuration, 1000);
-                    };
-
-                    mediaRecorder.onstop = () => {
-                        isStreaming = false;
-                        updateUI();
-                    };
-
-                    // Send chunks every 1 second
-                    mediaRecorder.start(1000);
+                    currentVideoBitrate = 2500000; // Reset default bitrate
+                    startMediaRecorder(currentVideoBitrate);
                 };
 
                 mediaSocket.onclose = (event) => {
@@ -358,24 +452,33 @@
                 };
 
             } catch (err) {
-                alert("Broadcasting failed: " + err.message);
+                alert("Failed to establish live broadcast socket connection: " + err.message);
                 triggerStopLive();
             }
         }
 
-        async function triggerStopLive() {
+        function triggerStopLive() {
             console.log("[Studio] Stopping stream...");
-
+            stopQualityMonitor();
+            isTransitioningQuality = false;
+            
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-                mediaRecorder = null;
+                try {
+                    mediaRecorder.stop();
+                } catch (err) {}
             }
 
             if (mediaSocket) {
-                if (mediaSocket.readyState === WebSocket.OPEN || mediaSocket.readyState === WebSocket.CONNECTING) {
-                    mediaSocket.close(1000, "Broadcaster stopped streaming.");
-                }
+                mediaSocket.onclose = null;
+                mediaSocket.close();
                 mediaSocket = null;
+            }
+
+            if (mediaStream) {
+                if (currentSourceType === 'file') {
+                    mediaStream.getTracks().forEach(track => track.stop());
+                }
+                mediaStream = null;
             }
 
             // Stop duration timers

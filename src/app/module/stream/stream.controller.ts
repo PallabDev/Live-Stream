@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import { spawn, ChildProcess } from "child_process";
 import { WebSocket } from "ws";
+import { MonitorService } from "../../common/monitor/monitor.service.js";
 
 interface StreamSession {
   ffmpegProcess: ChildProcess;
@@ -15,7 +16,8 @@ interface StreamSession {
 }
 
 export class StreamController {
-  private static activeSessions = new Map<string, StreamSession>();
+  public static activeSessions = new Map<string, StreamSession>();
+  private static statusConnections = new Map<string, Set<WebSocket>>();
 
   static async handleWebSocket(ws: WebSocket, key: string) {
     try {
@@ -83,7 +85,13 @@ export class StreamController {
       ]);
 
       ffmpegProcess.stderr.on("data", (data) => {
-        console.log(`[FFmpeg - ${key}]:`, data.toString().trim());
+        const logLine = data.toString().trim();
+        console.log(`[FFmpeg - ${key}]:`, logLine);
+        MonitorService.addLog(`[FFmpeg - ${key}]: ${logLine}`);
+        const speedMatch = logLine.match(/speed=\s*([\d\.]+)x/);
+        if (speedMatch) {
+          MonitorService.updateSpeed(key, speedMatch[1] + "x");
+        }
       });
 
       ffmpegProcess.on("close", (code) => {
@@ -111,6 +119,7 @@ export class StreamController {
       });
 
       await StreamService.setStreamLive(key, true);
+      StreamController.notifyStatusChange(key, "live");
 
       // Listen for incoming chunks
       ws.on("message", (message: Buffer, isBinary) => {
@@ -178,6 +187,7 @@ export class StreamController {
 
     // Remove from active map
     StreamController.activeSessions.delete(streamKey);
+    MonitorService.removeSpeed(streamKey);
 
     // Update DB status to offline
     try {
@@ -186,7 +196,62 @@ export class StreamController {
     } catch (err) {
       console.error(`Error updating DB for stream ${streamKey}:`, err);
     }
+
+    // Notify status change
+    StreamController.notifyStatusChange(streamKey, "offline");
   }
+  static handleStatusWebSocket(ws: WebSocket, key: string) {
+    try {
+      console.log(`[WS Status] Client subscribed to stream status for key: ${key}`);
+      
+      if (!this.statusConnections.has(key)) {
+        this.statusConnections.set(key, new Set());
+      }
+      this.statusConnections.get(key)!.add(ws);
+
+      // Send initial status
+      const isLive = this.activeSessions.has(key);
+      ws.send(JSON.stringify({ event: "status", status: isLive ? "live" : "offline" }));
+
+      ws.on("close", () => {
+        console.log(`[WS Status] Client unsubscribed for key: ${key}`);
+        const clients = this.statusConnections.get(key);
+        if (clients) {
+          clients.delete(ws);
+          if (clients.size === 0) {
+            this.statusConnections.delete(key);
+          }
+        }
+      });
+
+      ws.on("error", () => {
+        const clients = this.statusConnections.get(key);
+        if (clients) {
+          clients.delete(ws);
+          if (clients.size === 0) {
+            this.statusConnections.delete(key);
+          }
+        }
+      });
+    } catch (err) {
+      console.error("[WS Status] Error:", err);
+    }
+  }
+
+  private static notifyStatusChange(key: string, status: "live" | "offline") {
+    const clients = this.statusConnections.get(key);
+    if (clients) {
+      const message = JSON.stringify({ event: "status", status });
+      for (const client of clients) {
+        if (client.readyState === 1) { // WebSocket.OPEN
+          try {
+            client.send(message);
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
   static async createStream(req: AuthenticatedRequest, res: Response) {
     try {
       const { error, value } = createStreamDto.validate(req.body);
@@ -322,7 +387,13 @@ export class StreamController {
 
       // Handle FFmpeg diagnostics
       ffmpegProcess.stderr.on("data", (data) => {
-        console.log(`[FFmpeg - ${key}]:`, data.toString().trim());
+        const logLine = data.toString().trim();
+        console.log(`[FFmpeg - ${key}]:`, logLine);
+        MonitorService.addLog(`[FFmpeg - ${key}]: ${logLine}`);
+        const speedMatch = logLine.match(/speed=\s*([\d\.]+)x/);
+        if (speedMatch) {
+          MonitorService.updateSpeed(key, speedMatch[1] + "x");
+        }
       });
 
       ffmpegProcess.on("close", (code) => {
@@ -346,6 +417,7 @@ export class StreamController {
       });
 
       await StreamService.setStreamLive(key, true);
+      StreamController.notifyStatusChange(key, "live");
       return res.json({ success: true, message: "Stream started dynamically via FFmpeg." });
     } catch (error: any) {
       return res.status(500).json({ success: false, error: error.message });

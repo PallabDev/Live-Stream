@@ -1,0 +1,395 @@
+<%- include('header') %>
+
+<style>
+  .monitor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .stat-card {
+    background: rgba(30, 41, 59, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.5rem;
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+
+  .stat-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.75rem;
+    color: #fff;
+  }
+
+  .icon-cpu { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+  .icon-mem { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+  .icon-net { background: rgba(99, 102, 241, 0.15); color: #6366f1; border: 1px solid rgba(99, 102, 241, 0.3); }
+
+  .stat-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .stat-label {
+    font-size: 0.85rem;
+    color: var(--text-muted, #94a3b8);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .stat-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #fff;
+    margin-top: 0.25rem;
+    font-family: monospace;
+  }
+
+  .monitor-layout {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 1.5rem;
+  }
+
+  @media (max-width: 1024px) {
+    .monitor-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .console-panel {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    height: 480px;
+  }
+
+  .console-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .console-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .console-body {
+    flex: 1;
+    background: #090d16;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 1rem;
+    font-family: 'Fira Code', monospace, Courier;
+    font-size: 0.85rem;
+    overflow-y: auto;
+    color: #38bdf8;
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.5;
+  }
+
+  .console-line {
+    margin-bottom: 0.25rem;
+  }
+
+  .table-panel {
+    background: rgba(30, 41, 59, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.25rem;
+    backdrop-filter: blur(12px);
+  }
+
+  .monitor-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    text-align: left;
+  }
+
+  .monitor-table th {
+    padding: 0.75rem 1rem;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-muted, #94a3b8);
+    font-weight: 600;
+  }
+
+  .monitor-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: #e2e8f0;
+  }
+
+  .monitor-table tr:hover {
+    background: rgba(255, 255, 255, 0.02);
+  }
+</style>
+
+<div class="container" style="max-width: 1280px; margin: 0 auto; padding: 2rem 1rem;">
+  
+  <div style="margin-bottom: 2rem;">
+    <h2 style="font-size: 2rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 0.75rem;">
+      <i class="ti ti-activity-heartbeat" style="color: var(--primary, #6366f1); font-size: 2.5rem;"></i> System Control Center
+    </h2>
+    <p style="color: var(--text-muted, #94a3b8); margin-top: 0.5rem; font-size: 1rem;">
+      Realtime server performance metrics, egress network bandwidth, media files and transcode pipelines logs.
+    </p>
+  </div>
+
+  <!-- Row 1: Metrics -->
+  <div class="monitor-grid">
+    <div class="stat-card">
+      <div class="stat-icon icon-cpu">
+        <i class="ti ti-cpu"></i>
+      </div>
+      <div class="stat-info">
+        <span class="stat-label">CPU Usage</span>
+        <span class="stat-value" id="val-cpu">0%</span>
+      </div>
+    </div>
+    
+    <div class="stat-card">
+      <div class="stat-icon icon-mem">
+        <i class="ti ti-database"></i>
+      </div>
+      <div class="stat-info">
+        <span class="stat-label">Node Memory</span>
+        <span class="stat-value" id="val-mem">0 MB / 0 MB</span>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-icon icon-net">
+        <i class="ti ti-network"></i>
+      </div>
+      <div class="stat-info">
+        <span class="stat-label">Egress Bandwidth</span>
+        <span class="stat-value" id="val-net">0.00 Mbps</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 2: Logs & Directory & Active Streams -->
+  <div class="monitor-layout" style="margin-bottom: 2rem;">
+    
+    <!-- Left Column: FFmpeg logs -->
+    <div class="console-panel">
+      <div class="console-header">
+        <div class="console-title">
+          <i class="ti ti-terminal-2" style="color: #38bdf8;"></i> FFmpeg Process Diagnostics
+        </div>
+        <span class="badge badge-primary" id="log-count">0 Lines</span>
+      </div>
+      <div class="console-body" id="console-body">
+        <div style="color: #64748b;">Waiting for active streaming logs...</div>
+      </div>
+    </div>
+
+    <!-- Right Column: Active stream transcode speeds -->
+    <div class="table-panel">
+      <div class="card-header" style="margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.5rem;">
+        <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: #fff;">
+          <i class="ti ti-player-play" style="color: #10b981;"></i> Active Streams
+        </h4>
+      </div>
+      <div style="overflow-x: auto;">
+        <table class="monitor-table" id="streams-table">
+          <thead>
+            <tr>
+              <th>Stream Key</th>
+              <th>Transcode Speed</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colspan="2" style="text-align: center; color: #64748b;">No active streams</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Row 3: /media Folder logs -->
+  <div class="table-panel">
+    <div class="card-header" style="margin-bottom: 1.25rem; padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
+      <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: #fff;">
+        <i class="ti ti-folder" style="color: #eab308; font-size: 1.25rem;"></i> Media Directory Inspector (/media)
+      </h4>
+      <span class="badge badge-secondary" id="file-count">0 Files</span>
+    </div>
+    <div style="overflow-x: auto; max-height: 400px;">
+      <table class="monitor-table" id="files-table">
+        <thead>
+          <tr>
+            <th>Stream</th>
+            <th>Segment File</th>
+            <th>File Size</th>
+            <th>Modified</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td colspan="4" style="text-align: center; color: #64748b;">No media segments created yet</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  (function() {
+    const sse = new EventSource('/api/monitor/sse');
+    const cpuEl = document.getElementById('val-cpu');
+    const memEl = document.getElementById('val-mem');
+    const netEl = document.getElementById('val-net');
+    const logCountEl = document.getElementById('log-count');
+    const consoleBody = document.getElementById('console-body');
+    const streamsTable = document.getElementById('streams-table').querySelector('tbody');
+    const filesTable = document.getElementById('files-table').querySelector('tbody');
+    const fileCountEl = document.getElementById('file-count');
+
+    let previousLogsText = "";
+
+    sse.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        // Update CPU and Memory
+        cpuEl.textContent = `${data.cpu}%`;
+        memEl.textContent = `${data.memory.heapUsed} / ${data.memory.heapTotal}`;
+        
+        // Update Egress network bandwidth
+        const egressMbps = (data.egressKbps / 1024).toFixed(2);
+        netEl.textContent = `${egressMbps} Mbps`;
+
+        // Update Active Streams table
+        if (data.activeStreams && data.activeStreams.length > 0) {
+          streamsTable.innerHTML = data.activeStreams.map(stream => `
+            <tr>
+              <td><code style="color: #6366f1;">${stream.key}</code></td>
+              <td>
+                <span class="badge ${parseFloat(stream.speed) < 1.0 ? 'badge-danger' : 'badge-success'}" style="font-family: monospace;">
+                  ${stream.speed}
+                </span>
+              </td>
+            </tr>
+          `).join('');
+        } else {
+          streamsTable.innerHTML = `
+            <tr>
+              <td colspan="2" style="text-align: center; color: #64748b;">No active streams</td>
+            </tr>
+          `;
+        }
+
+        // Update Logs Console
+        if (data.ffmpegLogs && data.ffmpegLogs.length > 0) {
+          const currentLogsText = data.ffmpegLogs.join('\n');
+          if (currentLogsText !== previousLogsText) {
+            previousLogsText = currentLogsText;
+            
+            // Format log lines beautifully
+            consoleBody.innerHTML = data.ffmpegLogs.map(line => {
+              let color = '#e2e8f0';
+              if (line.includes('warning') || line.includes('WARN')) {
+                color = '#f59e0b'; // Amber
+              } else if (line.includes('error') || line.includes('ERR')) {
+                color = '#ef4444'; // Red
+              } else if (line.includes('speed=')) {
+                color = '#10b981'; // Green
+              }
+              return `<div class="console-line" style="color: ${color};">${escapeHtml(line)}</div>`;
+            }).join('');
+
+            logCountEl.textContent = `${data.ffmpegLogs.length} Lines`;
+            
+            // Auto scroll console to bottom
+            consoleBody.scrollTop = consoleBody.scrollHeight;
+          }
+        } else {
+          consoleBody.innerHTML = `<div style="color: #64748b;">Waiting for active streaming logs...</div>`;
+          logCountEl.textContent = `0 Lines`;
+        }
+
+        // Update /media Directory files
+        if (data.mediaFiles && data.mediaFiles.length > 0) {
+          fileCountEl.textContent = `${data.mediaFiles.length} Files`;
+          filesTable.innerHTML = data.mediaFiles.map(file => `
+            <tr>
+              <td><code>${file.stream}</code></td>
+              <td><span style="font-family: monospace; color: #38bdf8;">${file.file}</span></td>
+              <td><span style="font-family: monospace;">${formatBytes(file.size)}</span></td>
+              <td><span class="badge badge-secondary" style="font-size: 0.8rem;">${file.modifiedAgo} ago</span></td>
+            </tr>
+          `).join('');
+        } else {
+          fileCountEl.textContent = `0 Files`;
+          filesTable.innerHTML = `
+            <tr>
+              <td colspan="4" style="text-align: center; color: #64748b;">No media segments created yet</td>
+            </tr>
+          `;
+        }
+
+      } catch (err) {
+        console.error('Error parsing SSE monitor message:', err);
+      }
+    };
+
+    sse.onerror = (err) => {
+      console.error('SSE monitoring connection error:', err);
+    };
+
+    function escapeHtml(unsafe) {
+      return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+  })();
+</script>
+
+<%- include('footer') %>
