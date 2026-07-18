@@ -204,7 +204,7 @@
     <div class="console-panel">
       <div class="console-header">
         <div class="console-title">
-          <i class="ti ti-terminal-2" style="color: #38bdf8;"></i> FFmpeg Process Diagnostics
+          <i class="ti ti-terminal-2" style="color: #38bdf8;"></i> WebRTC Signaling Diagnostics
         </div>
         <span class="badge badge-primary" id="log-count">0 Lines</span>
       </div>
@@ -225,7 +225,7 @@
           <thead>
             <tr>
               <th>Stream Key</th>
-              <th>Transcode Speed</th>
+              <th>Viewers Count</th>
             </tr>
           </thead>
           <tbody>
@@ -300,8 +300,8 @@
             <tr>
               <td><code style="color: #6366f1;">${stream.key}</code></td>
               <td>
-                <span class="badge ${parseFloat(stream.speed) < 1.0 ? 'badge-danger' : 'badge-success'}" style="font-family: monospace;">
-                  ${stream.speed}
+                <span class="badge badge-success" style="font-family: monospace;">
+                  ${stream.viewersCount} active
                 </span>
               </td>
             </tr>
@@ -327,8 +327,8 @@
                 color = '#f59e0b'; // Amber
               } else if (line.includes('error') || line.includes('ERR')) {
                 color = '#ef4444'; // Red
-              } else if (line.includes('speed=')) {
-                color = '#10b981'; // Green
+              } else if (line.includes('[Signaling]')) {
+                color = '#10b981'; // Green for WebRTC signaling events
               }
               return `<div class="console-line" style="color: ${color};">${escapeHtml(line)}</div>`;
             }).join('');

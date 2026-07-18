@@ -4,252 +4,237 @@ import { StreamService } from "./stream.service.js";
 import { createStreamDto } from "./stream.dto.js";
 import fs from "fs";
 import path from "path";
-import { spawn, ChildProcess } from "child_process";
 import { WebSocket } from "ws";
 import { MonitorService } from "../../common/monitor/monitor.service.js";
 
 interface StreamSession {
-  ffmpegProcess: ChildProcess;
-  inactivityTimeout: NodeJS.Timeout;
   streamKey: string;
-  ws?: WebSocket;
+  ws: WebSocket; // Broadcaster
+  viewers: Map<string, WebSocket>; // viewerId -> WebSocket
 }
 
 export class StreamController {
   public static activeSessions = new Map<string, StreamSession>();
-  private static statusConnections = new Map<string, Set<WebSocket>>();
+  public static waitingViewers = new Map<string, Set<WebSocket>>();
 
   static async handleWebSocket(ws: WebSocket, key: string) {
     try {
-      console.log(`WebSocket connection opened for stream key: ${key}`);
-      
+      console.log(`[WS Signaling] Broadcaster connection opened for stream key: ${key}`);
+      MonitorService.addLog(`[Signaling] Broadcaster connected for key: ${key}`);
+
       const streamInfo = await StreamService.getStreamByKey(key);
       if (!streamInfo) {
-        console.warn(`[WS] Rejected: Stream key "${key}" not found in database.`);
-        ws.close(4004, "Stream not found.");
+        console.warn(`[WS Signaling] Broadcaster rejected: stream key ${key} not found.`);
+        ws.close(4004, "Stream key not found.");
         return;
       }
 
-      // Stop any existing session for this key first
+      // Cleanup any stale broadcaster session for the same key
       if (StreamController.activeSessions.has(key)) {
         await StreamController.stopStreamSession(key);
       }
-      
-      // Set up dedicated stream output directory
-      const mediaDir = path.join(process.cwd(), "media");
-      const streamDir = path.join(mediaDir, key);
-      
-      if (fs.existsSync(streamDir)) {
-        try {
-          fs.rmSync(streamDir, { recursive: true, force: true });
-        } catch (err) {}
-      }
-      fs.mkdirSync(streamDir, { recursive: true });
 
-      console.log(`Spawning fast single-quality FFmpeg for stream key: ${key}`);
-
-      // Spawn FFmpeg to package incoming WebM stream into a single HLS output using fast, raw settings
-      const ffmpegProcess = spawn("ffmpeg", [
-        "-f", "webm",
-        "-i", "pipe:0",
-
-        // Map first video and optional first audio streams
-        "-map", "0:v:0",
-        "-map", "0:a:0?",
-
-        // Force keyframe interval of 60 frames (2 seconds at 30 fps)
-        "-keyint_min", "60",
-        "-g", "60",
-        "-sc_threshold", "0",
-
-        // Global video encoding properties - ultrafast, zero latency, no compression/scaling
-        "-c:v", "libx264",
-        "-preset", "ultrafast",
-        "-tune", "zerolatency",
-        "-pix_fmt", "yuv420p",
-
-        // Global audio encoding properties
-        "-c:a", "aac",
-        "-ar", "44100",
-        "-ac", "2",
-
-        // HLS Multiplexer settings
-        "-f", "hls",
-        "-hls_time", "2", // Short segment size for responsive streaming
-        "-hls_list_size", "6", // Keep playlist small for low latency
-        "-hls_flags", "delete_segments+append_list+omit_endlist+independent_segments",
-
-        // Output configuration
-        "-hls_segment_filename", path.join(streamDir, "segment_%05d.ts"),
-        path.join(streamDir, "index.m3u8"),
-      ]);
-
-      ffmpegProcess.stderr.on("data", (data) => {
-        const logLine = data.toString().trim();
-        console.log(`[FFmpeg - ${key}]:`, logLine);
-        MonitorService.addLog(`[FFmpeg - ${key}]: ${logLine}`);
-        const speedMatch = logLine.match(/speed=\s*([\d\.]+)x/);
-        if (speedMatch) {
-          MonitorService.updateSpeed(key, speedMatch[1] + "x");
-        }
-      });
-
-      ffmpegProcess.on("close", (code) => {
-        console.log(`FFmpeg exited for stream ${key} with code: ${code}`);
-        if (StreamController.activeSessions.has(key)) {
-          StreamController.stopStreamSession(key);
-        }
-      });
-
-      // Setup 30 seconds inactivity timeout
-      let inactivityTimeout = setTimeout(() => {
-        console.log(`Inactivity detected on stream ${key}. Cleaning up.`);
-        try {
-          ws.close(4008, "Stream inactivity timeout.");
-        } catch (err) {}
-        StreamController.stopStreamSession(key);
-      }, 30000);
-
-      // Save active session
-      StreamController.activeSessions.set(key, {
-        ffmpegProcess,
-        inactivityTimeout,
+      // Initialize session
+      const session: StreamSession = {
         streamKey: key,
         ws,
-      });
+        viewers: new Map(),
+      };
+      StreamController.activeSessions.set(key, session);
 
-      await StreamService.setStreamLive(key, true);
-      StreamController.notifyStatusChange(key, "live");
-
-      // Listen for incoming chunks
-      ws.on("message", (message: Buffer, isBinary) => {
-        if (!isBinary) return;
-
-        // Reset inactivity timeout
-        clearTimeout(inactivityTimeout);
-        inactivityTimeout = setTimeout(() => {
-          console.log(`Inactivity detected on stream ${key}. Cleaning up.`);
-          try {
-            ws.close(4008, "Stream inactivity timeout.");
-          } catch (err) {}
-          StreamController.stopStreamSession(key);
-        }, 30000);
-
-        const session = StreamController.activeSessions.get(key);
-        if (session) {
-          session.ffmpegProcess.stdin?.write(message);
+      // Listen for broadcaster signaling messages
+      ws.on("message", (message: string) => {
+        try {
+          const msg = JSON.parse(message);
+          const { event, viewerId } = msg;
+          
+          if (viewerId) {
+            const viewerWs = session.viewers.get(viewerId);
+            if (viewerWs && viewerWs.readyState === 1) { // OPEN
+              viewerWs.send(JSON.stringify(msg));
+            }
+          }
+        } catch (err) {
+          console.error(`[Broadcaster WS - ${key}] Message error:`, err);
         }
       });
 
       ws.on("close", () => {
-        console.log(`WebSocket closed for stream key: ${key}`);
-        clearTimeout(inactivityTimeout);
+        console.log(`[WS Signaling] Broadcaster disconnected: ${key}`);
         StreamController.stopStreamSession(key);
       });
 
-      ws.on("error", (err) => {
-        console.error(`WebSocket error for stream key ${key}:`, err);
-        clearTimeout(inactivityTimeout);
+      ws.on("error", () => {
         StreamController.stopStreamSession(key);
       });
 
-    } catch (err: any) {
-      console.error(`Error establishing WebSocket stream for key ${key}:`, err);
-      try {
-        ws.close(4500, "Internal server error.");
-      } catch (e) {}
+      // Update DB state
+      await StreamService.setStreamLive(key, true);
+
+      // Notify and connect any waiting viewers
+      const waiting = StreamController.waitingViewers.get(key);
+      if (waiting) {
+        console.log(`[WS Signaling] Upgrading ${waiting.size} waiting viewers for key: ${key}`);
+        for (const viewerWs of waiting) {
+          if (viewerWs.readyState === 1) { // OPEN
+            const viewerId = Math.random().toString(36).substring(2, 15);
+            session.viewers.set(viewerId, viewerWs);
+
+            // Bind events for this viewer
+            StreamController.setupViewerSocket(viewerWs, viewerId, key);
+
+            // Send live signal
+            viewerWs.send(JSON.stringify({ event: "status", status: "live", viewerId }));
+            // Send connection trigger to broadcaster
+            ws.send(JSON.stringify({ event: "viewer-connected", viewerId }));
+          }
+        }
+        StreamController.waitingViewers.delete(key);
+      }
+
+    } catch (err) {
+      console.error("[WS Broadcaster Upgrade Error]:", err);
+      ws.close(1011, "Internal server error.");
     }
+  }
+
+  static handleViewerWebSocket(ws: WebSocket, key: string) {
+    try {
+      const viewerId = Math.random().toString(36).substring(2, 15);
+      console.log(`[WS Signaling] Viewer ${viewerId} connecting for key: ${key}`);
+      MonitorService.addLog(`[Signaling] Viewer ${viewerId} connected`);
+
+      const session = StreamController.activeSessions.get(key);
+
+      if (session) {
+        // Broadcaster is live, add to session
+        session.viewers.set(viewerId, ws);
+        StreamController.setupViewerSocket(ws, viewerId, key);
+
+        // Notify client and broadcaster
+        ws.send(JSON.stringify({ event: "status", status: "live", viewerId }));
+        if (session.ws && session.ws.readyState === 1) {
+          session.ws.send(JSON.stringify({ event: "viewer-connected", viewerId }));
+        }
+      } else {
+        // Broadcaster is offline, put viewer in waiting queue
+        ws.send(JSON.stringify({ event: "status", status: "offline" }));
+        if (!StreamController.waitingViewers.has(key)) {
+          StreamController.waitingViewers.set(key, new Set());
+        }
+        StreamController.waitingViewers.get(key)!.add(ws);
+
+        ws.on("close", () => {
+          console.log(`[WS Signaling] Waiting viewer ${viewerId} disconnected`);
+          const waiting = StreamController.waitingViewers.get(key);
+          if (waiting) {
+            waiting.delete(ws);
+            if (waiting.size === 0) {
+              StreamController.waitingViewers.delete(key);
+            }
+          }
+        });
+
+        ws.on("error", () => {
+          ws.close();
+        });
+      }
+    } catch (err) {
+      console.error("[WS Viewer Upgrade Error]:", err);
+      ws.close(1011, "Internal server error.");
+    }
+  }
+
+  private static setupViewerSocket(viewerWs: WebSocket, viewerId: string, streamKey: string) {
+    viewerWs.on("message", (message: string) => {
+      try {
+        const msg = JSON.parse(message);
+        const session = StreamController.activeSessions.get(streamKey);
+        if (session) {
+          msg.viewerId = viewerId; // Attach viewer identification
+          if (session.ws && session.ws.readyState === 1) { // OPEN
+            session.ws.send(JSON.stringify(msg));
+          }
+        }
+      } catch (err) {
+        console.error(`[Viewer WS - ${viewerId}] Message error:`, err);
+      }
+    });
+
+    viewerWs.on("close", () => {
+      console.log(`[WS Signaling] Viewer ${viewerId} closed connection.`);
+      MonitorService.addLog(`[Signaling] Viewer ${viewerId} disconnected`);
+      
+      const session = StreamController.activeSessions.get(streamKey);
+      if (session) {
+        session.viewers.delete(viewerId);
+        if (session.ws && session.ws.readyState === 1) {
+          session.ws.send(JSON.stringify({ event: "viewer-disconnected", viewerId }));
+        }
+      }
+
+      const waiting = StreamController.waitingViewers.get(streamKey);
+      if (waiting) {
+        waiting.delete(viewerWs);
+      }
+    });
+
+    viewerWs.on("error", () => {
+      viewerWs.close();
+    });
   }
 
   private static async stopStreamSession(streamKey: string) {
     const session = StreamController.activeSessions.get(streamKey);
     if (!session) return;
 
-    console.log(`Stopping stream session for key: ${streamKey}`);
-
-    // Clear timeout
-    clearTimeout(session.inactivityTimeout);
-
-    // Terminate FFmpeg process
-    try {
-      session.ffmpegProcess.stdin?.end();
-      session.ffmpegProcess.kill("SIGTERM");
-    } catch (err) {
-      console.error(`Error terminating FFmpeg for stream ${streamKey}:`, err);
-    }
-
-    // Close WebSocket if still open
-    if (session.ws && session.ws.readyState === 1) { // 1 === OPEN
-      try {
-        session.ws.close(1000, "Stream stopped.");
-      } catch (err) {}
-    }
-
-    // Remove from active map
-    StreamController.activeSessions.delete(streamKey);
-    MonitorService.removeSpeed(streamKey);
+    console.log(`[WS Signaling] Stopping stream session for key: ${streamKey}`);
+    MonitorService.addLog(`[Signaling] Broadcaster disconnected for key: ${streamKey}`);
 
     // Update DB status to offline
     try {
       await StreamService.setStreamLive(streamKey, false);
-      console.log(`Stream database status updated to offline for key: ${streamKey}`);
     } catch (err) {
-      console.error(`Error updating DB for stream ${streamKey}:`, err);
+      console.error(`Error updating DB status for ${streamKey}:`, err);
     }
 
-    // Notify status change
-    StreamController.notifyStatusChange(streamKey, "offline");
-  }
-  static handleStatusWebSocket(ws: WebSocket, key: string) {
-    try {
-      console.log(`[WS Status] Client subscribed to stream status for key: ${key}`);
-      
-      if (!this.statusConnections.has(key)) {
-        this.statusConnections.set(key, new Set());
-      }
-      this.statusConnections.get(key)!.add(ws);
-
-      // Send initial status
-      const isLive = this.activeSessions.has(key);
-      ws.send(JSON.stringify({ event: "status", status: isLive ? "live" : "offline" }));
-
-      ws.on("close", () => {
-        console.log(`[WS Status] Client unsubscribed for key: ${key}`);
-        const clients = this.statusConnections.get(key);
-        if (clients) {
-          clients.delete(ws);
-          if (clients.size === 0) {
-            this.statusConnections.delete(key);
-          }
-        }
-      });
-
-      ws.on("error", () => {
-        const clients = this.statusConnections.get(key);
-        if (clients) {
-          clients.delete(ws);
-          if (clients.size === 0) {
-            this.statusConnections.delete(key);
-          }
-        }
-      });
-    } catch (err) {
-      console.error("[WS Status] Error:", err);
-    }
-  }
-
-  private static notifyStatusChange(key: string, status: "live" | "offline") {
-    const clients = this.statusConnections.get(key);
-    if (clients) {
-      const message = JSON.stringify({ event: "status", status });
-      for (const client of clients) {
-        if (client.readyState === 1) { // WebSocket.OPEN
+    // Move connected viewers back to waiting status queue
+    if (session.viewers) {
+      for (const [viewerId, viewerWs] of session.viewers) {
+        if (viewerWs.readyState === 1) {
           try {
-            client.send(message);
+            viewerWs.send(JSON.stringify({ event: "status", status: "offline" }));
+            
+            if (!StreamController.waitingViewers.has(streamKey)) {
+              StreamController.waitingViewers.set(streamKey, new Set());
+            }
+            StreamController.waitingViewers.get(streamKey)!.add(viewerWs);
+
+            viewerWs.removeAllListeners("message");
+            viewerWs.removeAllListeners("close");
+            
+            viewerWs.on("close", () => {
+              const waiting = StreamController.waitingViewers.get(streamKey);
+              if (waiting) {
+                waiting.delete(viewerWs);
+              }
+            });
+            viewerWs.on("error", () => {
+              viewerWs.close();
+            });
           } catch (_) {}
         }
       }
     }
+
+    // Terminate broadcaster WS if still open
+    if (session.ws && session.ws.readyState === 1) {
+      try {
+        session.ws.close(1000, "Broadcaster session ended.");
+      } catch (_) {}
+    }
+
+    StreamController.activeSessions.delete(streamKey);
   }
 
   static async createStream(req: AuthenticatedRequest, res: Response) {
@@ -286,168 +271,16 @@ export class StreamController {
     }
   }
 
-
-
   static async mediaMtxAuth(req: Request, res: Response) {
-    try {
-      const { ip, action, path: rawPath } = req.body;
-      console.log(`[MediaMTX Auth] IP=${ip} action=${action} path=${rawPath}`);
-
-      // Bypass auth for internal requests (loopback IP)
-      if (ip === "127.0.0.1" || ip === "::1" || ip === "localhost") {
-        return res.sendStatus(200);
-      }
-
-      // If the action is not publishing, allow it (for HLS/WHEP reading)
-      if (action !== "publish") {
-        return res.sendStatus(200);
-      }
-
-      // Extract the stream key from the path
-      const streamKey = rawPath.split("/").pop();
-
-      if (!streamKey) {
-        console.warn(`[MediaMTX Auth] Rejected: No stream key in path "${rawPath}"`);
-        return res.sendStatus(401);
-      }
-
-      // Verify the stream key in database and ensure stream has been toggled to Go Live
-      const streamInfo = await StreamService.getStreamByKey(streamKey);
-      if (!streamInfo || !streamInfo.isLive) {
-        console.warn(`[MediaMTX Auth] Rejected: Invalid or inactive stream key "${streamKey}"`);
-        return res.sendStatus(401);
-      }
-
-      console.log(`[MediaMTX Auth] Approved: Stream key "${streamKey}" for title "${streamInfo.title}"`);
-      return res.sendStatus(200);
-    } catch (err: any) {
-      console.error("[MediaMTX Auth] Error during authentication:", err);
-      return res.sendStatus(500);
-    }
+    return res.sendStatus(200);
   }
 
-  static async goLive(req: AuthenticatedRequest, res: Response) {
-    try {
-      const { key } = req.params;
-      const streamInfo = await StreamService.getStreamByKey(key);
-      if (!streamInfo) {
-        return res.status(404).json({ success: false, error: "Stream not found." });
-      }
-      if (streamInfo.userId !== req.user.id && req.user.role !== "admin") {
-        return res.status(403).json({ success: false, error: "Unauthorized." });
-      }
-
-      // Stop any existing session for this key first
-      if (StreamController.activeSessions.has(key)) {
-        await StreamController.stopStreamSession(key);
-      }
-
-      // Set up dedicated stream output directory
-      const mediaDir = path.join(process.cwd(), "media");
-      const streamDir = path.join(mediaDir, key);
-      
-      if (fs.existsSync(streamDir)) {
-        try {
-          fs.rmSync(streamDir, { recursive: true, force: true });
-        } catch (err) {}
-      }
-      fs.mkdirSync(streamDir, { recursive: true });
-
-      console.log(`Spawning fast single-quality FFmpeg for stream key: ${key}`);
-
-      // Spawn FFmpeg with low latency and ultra-fast settings
-      const ffmpegProcess = spawn("ffmpeg", [
-        "-fflags", "+genpts",
-        "-f", "webm",
-        "-i", "pipe:0",
-
-        // Map first video and optional first audio streams
-        "-map", "0:v:0",
-        "-map", "0:a:0?",
-
-        // Video encoding settings: ultra-fast, zero-latency
-        "-c:v", "libx264",
-        "-preset", "ultrafast",
-        "-tune", "zerolatency",
-        "-pix_fmt", "yuv420p",
-
-        // Audio encoding settings
-        "-c:a", "aac",
-        "-ar", "48000",
-        "-ac", "2",
-
-        // HLS output configuration
-        "-f", "hls",
-        "-hls_time", "2", // Short segment size for responsive streaming
-        "-hls_list_size", "6", // Keep playlist small for low latency
-        "-hls_flags", "delete_segments+append_list+omit_endlist+independent_segments",
-        "-hls_segment_filename", path.join(streamDir, "segment_%05d.ts"),
-        path.join(streamDir, "index.m3u8"),
-      ]);
-
-      // Handle FFmpeg diagnostics
-      ffmpegProcess.stderr.on("data", (data) => {
-        const logLine = data.toString().trim();
-        console.log(`[FFmpeg - ${key}]:`, logLine);
-        MonitorService.addLog(`[FFmpeg - ${key}]: ${logLine}`);
-        const speedMatch = logLine.match(/speed=\s*([\d\.]+)x/);
-        if (speedMatch) {
-          MonitorService.updateSpeed(key, speedMatch[1] + "x");
-        }
-      });
-
-      ffmpegProcess.on("close", (code) => {
-        console.log(`FFmpeg exited for stream ${key} with code: ${code}`);
-        if (StreamController.activeSessions.has(key)) {
-          StreamController.stopStreamSession(key);
-        }
-      });
-
-      // Setup inactivity timeout (disconnect if no chunks received for 30 seconds)
-      const inactivityTimeout = setTimeout(() => {
-        console.log(`Inactivity detected on stream ${key}. Cleaning up.`);
-        StreamController.stopStreamSession(key);
-      }, 30000);
-
-      // Save active session
-      StreamController.activeSessions.set(key, {
-        ffmpegProcess,
-        inactivityTimeout,
-        streamKey: key,
-      });
-
-      await StreamService.setStreamLive(key, true);
-      StreamController.notifyStatusChange(key, "live");
-      return res.json({ success: true, message: "Stream started dynamically via FFmpeg." });
-    } catch (error: any) {
-      return res.status(500).json({ success: false, error: error.message });
-    }
+  static async goLive(req: Request, res: Response) {
+    return res.status(400).json({ success: false, error: "RTMP streaming is disabled. Please use the WebRTC studio streamer." });
   }
 
   static async receiveVideo(req: Request, res: Response) {
-    const { key } = req.params;
-    const session = StreamController.activeSessions.get(key);
-
-    if (!session) {
-      return res.status(404).json({ error: "No active stream session found for this key." });
-    }
-
-    try {
-      // Write chunk to FFmpeg
-      session.ffmpegProcess.stdin?.write(req.body);
-
-      // Reset inactivity timeout
-      clearTimeout(session.inactivityTimeout);
-      session.inactivityTimeout = setTimeout(() => {
-        console.log(`Inactivity detected on stream ${key}. Cleaning up.`);
-        StreamController.stopStreamSession(key);
-      }, 30000);
-
-      return res.sendStatus(200);
-    } catch (err) {
-      console.error(`Error feeding video chunk to FFmpeg for ${key}:`, err);
-      return res.status(500).send("Error feeding video stream.");
-    }
+    return res.status(400).json({ error: "Chunk post ingestion is deprecated. Use WebRTC." });
   }
 
   static async stopLive(req: AuthenticatedRequest, res: Response) {
@@ -471,18 +304,11 @@ export class StreamController {
   static async updateSettings(req: AuthenticatedRequest, res: Response) {
     try {
       const { key } = req.params;
-      const { isRaw, resolutions } = req.body;
       const streamInfo = await StreamService.getStreamByKey(key);
       if (!streamInfo) {
         return res.status(404).json({ success: false, error: "Stream not found." });
       }
-      if (streamInfo.userId !== req.user.id && req.user.role !== "admin") {
-        return res.status(403).json({ success: false, error: "Unauthorized." });
-      }
-
-      // Convert isRaw to boolean and ensure resolutions default correctly
-      await StreamService.updateStreamSettings(key, !!isRaw, resolutions || "480p,1080p");
-      return res.json({ success: true, message: "Stream settings updated successfully." });
+      return res.json({ success: true, message: "Settings are deprecated under WebRTC mode." });
     } catch (error: any) {
       return res.status(500).json({ success: false, error: error.message });
     }

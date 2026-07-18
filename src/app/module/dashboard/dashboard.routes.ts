@@ -138,9 +138,9 @@ router.get("/api/monitor/sse", requireAuth, (req, res) => {
         egressKbps: Math.round(currentEgressKbps),
         mediaFiles: MonitorService.getMediaFiles(),
         ffmpegLogs: MonitorService.getLogs(),
-        activeStreams: Array.from(StreamController.activeSessions.keys()).map(key => ({
-          key,
-          speed: MonitorService.getSpeed(key),
+        activeStreams: Array.from(StreamController.activeSessions.values()).map(session => ({
+          key: session.streamKey,
+          viewersCount: session.viewers ? session.viewers.size : 0,
         })),
       };
       res.write(`data: ${JSON.stringify(data)}\n\n`);

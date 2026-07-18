@@ -114,32 +114,32 @@ app.use(streamRoutes);
 app.use(dashboardRoutes);
 app.use(liveRoutes);
 
-// Setup WebSocket Server for stream chunks
-const wss = new WebSocketServer({ noServer: true });
-// Setup WebSocket Server for stream status
-const statusWss = new WebSocketServer({ noServer: true });
+// Setup WebSocket Server for stream broadcaster
+const broadcasterWss = new WebSocketServer({ noServer: true });
+// Setup WebSocket Server for stream viewers
+const viewerWss = new WebSocketServer({ noServer: true });
 
-wss.on("connection", (ws: any, request: any, key: any) => {
+broadcasterWss.on("connection", (ws: any, request: any, key: any) => {
   StreamController.handleWebSocket(ws, key as string);
 });
 
-statusWss.on("connection", (ws: any, request: any, key: any) => {
-  StreamController.handleStatusWebSocket(ws, key as string);
+viewerWss.on("connection", (ws: any, request: any, key: any) => {
+  StreamController.handleViewerWebSocket(ws, key as string);
 });
 
 server.on("upgrade", (request, socket, head) => {
   const pathname = new URL(request.url || "", `http://${request.headers.host}`).pathname;
   const match = pathname.match(/^\/api\/stream\/([^\/]+)\/ws$/);
-  const statusMatch = pathname.match(/^\/api\/stream\/([^\/]+)\/status$/);
+  const viewerMatch = pathname.match(/^\/api\/stream\/([^\/]+)\/viewer$/);
   if (match) {
     const key = match[1];
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit("connection", ws, request, key);
+    broadcasterWss.handleUpgrade(request, socket, head, (ws) => {
+      broadcasterWss.emit("connection", ws, request, key);
     });
-  } else if (statusMatch) {
-    const key = statusMatch[1];
-    statusWss.handleUpgrade(request, socket, head, (ws) => {
-      statusWss.emit("connection", ws, request, key);
+  } else if (viewerMatch) {
+    const key = viewerMatch[1];
+    viewerWss.handleUpgrade(request, socket, head, (ws) => {
+      viewerWss.emit("connection", ws, request, key);
     });
   } else {
     socket.destroy();
