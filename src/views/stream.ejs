@@ -169,6 +169,10 @@
         let reconnectTimeout = null;
         let isManuallyStopped = false;
 
+        let audioCtx = null;
+        let activeAudioSourceNode = null;
+        let activeAudioDestNode = null;
+
         const peerConnections = new Map(); // viewerId -> RTCPeerConnection
         const candidateQueues = new Map(); // viewerId -> Array of candidate objects
 
@@ -348,9 +352,6 @@
             // Prioritize higher efficiency codecs for good/bad internet performance
             return reorderVideoCodecs(modifiedLines.join('\r\n'));
         }
-
-        let activeAudioSourceNode = null;
-        let activeAudioDestNode = null;
 
         function getDownmixedAudioStream(rawAudioStream) {
             try {
