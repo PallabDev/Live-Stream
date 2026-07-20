@@ -496,8 +496,8 @@
                             if (!parameters.encodings) {
                                 parameters.encodings = [{}];
                             }
-                            parameters.encodings[0].maxBitrate = 6000000;
-                            delete parameters.encodings[0].minBitrate;
+                            parameters.encodings[0].maxBitrate = 8000000;
+                            parameters.encodings[0].minBitrate = 1200000; // 1.2 Mbps min floor (prevents extreme blur)
                             sender.setParameters(parameters).catch(err => {
                                 console.warn("[Studio WebRTC] Failed to set video encoding parameters:", err);
                             });
@@ -601,13 +601,13 @@
             let targetMaxBitrate;
             
             if (count === 1) {
-                targetMaxBitrate = 6000000; // 6.0 Mbps for 1 viewer
-            } else if (count === 2) {
-                targetMaxBitrate = 3500000; // 3.5 Mbps per viewer (7.0 Mbps total upload)
-            } else if (count === 3) {
-                targetMaxBitrate = 2500000; // 2.5 Mbps per viewer (7.5 Mbps total upload)
+                targetMaxBitrate = 8000000; // 8.0 Mbps for 1 viewer (Ultra HD)
+            } else if (count <= 3) {
+                targetMaxBitrate = 4500000; // 4.5 Mbps max per viewer
+            } else if (count <= 6) {
+                targetMaxBitrate = 3000000; // 3.0 Mbps max per viewer
             } else {
-                targetMaxBitrate = 1800000; // 1.8 Mbps per viewer (~7.2 Mbps total upload for 4+)
+                targetMaxBitrate = 2000000; // 2.0 Mbps max per viewer (Smooth 720p HD for 7-10 viewers)
             }
 
             console.log(`[Studio WebRTC] Balancing host upload bandwidth across ${count} connected viewer(s) (${Math.round(targetMaxBitrate / 1000)} Kbps per peer)`);
@@ -620,7 +620,7 @@
                             const parameters = sender.getParameters();
                             if (!parameters.encodings) parameters.encodings = [{}];
                             parameters.encodings[0].maxBitrate = targetMaxBitrate;
-                            delete parameters.encodings[0].minBitrate;
+                            parameters.encodings[0].minBitrate = 1200000; // 1.2 Mbps min floor (prevents extreme blur)
                             sender.setParameters(parameters).catch(err => {
                                 console.warn(`[Studio WebRTC] Error setting bitrate for viewer ${viewerId}:`, err);
                             });

@@ -387,6 +387,12 @@ html, body {
                 statusSocket.send(JSON.stringify({ event: "viewer-ready" }));
               }
             }
+          } else if (status === 'capacity_reached') {
+            const subtitle = document.querySelector('#offline-screen p');
+            if (subtitle) subtitle.textContent = msg.message || 'Stream has reached the maximum capacity of 10 viewers.';
+            const title = document.querySelector('#offline-screen h3');
+            if (title) title.textContent = 'Room Full (10 Viewers Max)';
+            showOffline();
           } else {
             showOffline();
           }
