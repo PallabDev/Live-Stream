@@ -330,10 +330,8 @@
             for (let i = 0; i < lines.length; i++) {
                 let line = lines[i];
 
-                if (line.startsWith('a=fmtp:') && line.includes('opus')) {
-                    if (!line.includes('stereo=1')) {
-                        line = line + ';stereo=1;sprop-stereo=1;maxaveragebitrate=256000;useinbandfec=1';
-                    }
+                if (line.startsWith('a=fmtp:') && line.includes('stereo=1')) {
+                    line = line + ';maxaveragebitrate=256000;sprop-stereo=1';
                 }
 
                 if (line.startsWith('m=video')) {
@@ -369,69 +367,20 @@
                     activeAudioSourceNode = null;
                 }
 
-                const sourceNode = audioCtx.createMediaStreamSource(rawAudioStream);
                 const destNode = audioCtx.createMediaStreamDestination();
                 destNode.channelCount = 2;
                 destNode.channelCountMode = "explicit";
                 destNode.channelInterpretation = "speakers";
 
-                // Detect input channels (e.g. 5.1 surround = 6 channels)
-                const rawTrack = rawAudioStream.getAudioTracks()[0];
-                const settings = rawTrack && typeof rawTrack.getSettings === 'function' ? rawTrack.getSettings() : {};
-                const inputChannels = settings.channelCount || sourceNode.channelCount || 2;
-
-                if (inputChannels >= 5) {
-                    // 5.1 / 7.1 Surround Downmix Matrix (Explicitly mixes Center Dialogue Channel 2 into Stereo)
-                    console.log(`[Studio Audio] Downmixing 5.1 Surround (${inputChannels} channels) to Stereo (preserves Center Dialogue Channel 2)...`);
-                    const splitter = audioCtx.createChannelSplitter(inputChannels);
-                    const merger = audioCtx.createChannelMerger(2);
-
-                    sourceNode.connect(splitter);
-
-                    // Gains for Center Channel (Character Dialogue): Mixes Channel 2 into Left & Right outputs
-                    const centerGainL = audioCtx.createGain();
-                    const centerGainR = audioCtx.createGain();
-                    centerGainL.gain.value = 0.707;
-                    centerGainR.gain.value = 0.707;
-
-                    // 0: Front Left -> Left Output (0)
-                    splitter.connect(merger, 0, 0);
-                    // 1: Front Right -> Right Output (1)
-                    splitter.connect(merger, 1, 1);
-
-                    // 2: Center (Character Dialogue) -> Left Output (0) & Right Output (1)
-                    splitter.connect(centerGainL, 2);
-                    centerGainL.connect(merger, 0, 0);
-                    splitter.connect(centerGainR, 2);
-                    centerGainR.connect(merger, 0, 1);
-
-                    // 4: Surround Left -> Left Output (0)
-                    if (inputChannels >= 5) {
-                        const surrL = audioCtx.createGain();
-                        surrL.gain.value = 0.5;
-                        splitter.connect(surrL, 4);
-                        surrL.connect(merger, 0, 0);
-                    }
-                    // 5: Surround Right -> Right Output (1)
-                    if (inputChannels >= 6) {
-                        const surrR = audioCtx.createGain();
-                        surrR.gain.value = 0.5;
-                        splitter.connect(surrR, 5);
-                        surrR.connect(merger, 0, 1);
-                    }
-
-                    merger.connect(destNode);
-                } else {
-                    // 2.0 Stereo: Direct downmix
-                    sourceNode.connect(destNode);
-                }
+                const sourceNode = audioCtx.createMediaStreamSource(rawAudioStream);
+                sourceNode.connect(destNode);
 
                 activeAudioSourceNode = sourceNode;
                 activeAudioDestNode = destNode;
 
                 return destNode.stream;
             } catch (err) {
-                console.error("[Studio Audio] Downmix error, returning raw stream:", err);
+                console.error("[Studio Audio] Error downmixing audio stream, falling back to raw track:", err);
                 return rawAudioStream;
             }
         }
