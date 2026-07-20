@@ -475,34 +475,60 @@ html, body {
 
     pcInstance = new RTCPeerConnection(config);
 
+    let viewerAudioCtx = null;
+    let syncedStream = null;
+
     pcInstance.ontrack = (event) => {
       console.log('[Viewer WebRTC] Remote track received:', event.track.kind);
+      const remoteStream = event.streams[0];
 
-      // Apply unified playout delay hint to both audio and video receivers to maintain lip-sync
-      // Video encoding on the host takes ~250ms longer than audio. By setting a 400ms buffer,
-      // the receiver waits for the video frames to arrive and uses RTCP timestamps to sync them perfectly.
-      if (event.receiver) {
+      if (!syncedStream) {
+        syncedStream = new MediaStream();
+        video.srcObject = syncedStream;
+      }
+
+      if (event.track.kind === 'video') {
+        syncedStream.addTrack(event.track);
+      } else if (event.track.kind === 'audio') {
         try {
-          if ('playoutDelayHint' in event.receiver) {
-            event.receiver.playoutDelayHint = 0.4; // 400ms buffer to allow video to catch up
+          // Route the WebRTC audio track through a DelayNode on the viewer side.
+          // This delays the audio by 250ms to perfectly match the broadcaster's video encoding latency,
+          // without suffering from the clock-drift jitter of a broadcaster-side video element.
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (!viewerAudioCtx) viewerAudioCtx = new AudioContextClass({ latencyHint: 'playback' });
+
+          const tempAudioStream = new MediaStream([event.track]);
+          const sourceNode = viewerAudioCtx.createMediaStreamSource(tempAudioStream);
+          const delayNode = viewerAudioCtx.createDelay(1.0);
+          delayNode.delayTime.value = 0.25; // 250ms delay for lip-sync
+          
+          const destNode = viewerAudioCtx.createMediaStreamDestination();
+          sourceNode.connect(delayNode);
+          delayNode.connect(destNode);
+
+          const delayedAudioTrack = destNode.stream.getAudioTracks()[0];
+          if (delayedAudioTrack) {
+            syncedStream.addTrack(delayedAudioTrack);
+            console.log('[Viewer WebRTC] Added delayed audio track (250ms) to video element');
+          } else {
+            syncedStream.addTrack(event.track);
           }
-          if ('jitterBufferTarget' in event.receiver) {
-            event.receiver.jitterBufferTarget = 400;
-          }
-        } catch (e) {
-          console.warn('[Viewer WebRTC] Receiver delay hint error:', e);
+        } catch (err) {
+          console.warn('[Viewer WebRTC] Failed to create audio delay node, falling back to raw track:', err);
+          syncedStream.addTrack(event.track);
         }
       }
 
-      if (video.srcObject !== event.streams[0]) {
-        video.srcObject = event.streams[0];
-        console.log('[Viewer WebRTC] Attached media stream to video element');
-        
+      // Automatically attempt playback once we have tracks
+      if (video.paused && syncedStream.getTracks().length > 0) {
         video.play().then(() => {
           hideLoading();
           hideOffline();
           playbackStarted = true;
           updatePlayIcon();
+          if (viewerAudioCtx && viewerAudioCtx.state === 'suspended') {
+            viewerAudioCtx.resume().catch(e => console.warn("Viewer AudioContext resume error:", e));
+          }
         }).catch(err => {
           console.warn('[Viewer WebRTC] Autoplay prevented by browser policy:', err);
           hideLoading();
