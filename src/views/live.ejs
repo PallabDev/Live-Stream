@@ -498,6 +498,14 @@ html, body {
           if (!viewerAudioCtx) viewerAudioCtx = new AudioContextClass({ latencyHint: 'playback' });
 
           const tempAudioStream = new MediaStream([event.track]);
+          
+          // CRITICAL CHROME BUG FIX: WebRTC audio tracks passed to AudioContext are silent
+          // unless they are also attached to an actively playing HTML media element.
+          const dummyAudioEl = new Audio();
+          dummyAudioEl.srcObject = tempAudioStream;
+          dummyAudioEl.muted = true;
+          dummyAudioEl.play().catch(e => console.warn("Dummy audio play failed:", e));
+
           const sourceNode = viewerAudioCtx.createMediaStreamSource(tempAudioStream);
           const delayNode = viewerAudioCtx.createDelay(1.0);
           delayNode.delayTime.value = 0.25; // 250ms delay for lip-sync
