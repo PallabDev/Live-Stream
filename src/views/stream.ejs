@@ -349,29 +349,41 @@
             return reorderVideoCodecs(modifiedLines.join('\r\n'));
         }
 
-        let audioCtx = null;
+        let activeAudioSourceNode = null;
+        let activeAudioDestNode = null;
 
         function getDownmixedAudioStream(rawAudioStream) {
-            if (!audioCtx) {
-                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                audioCtx = new AudioContextClass({ latencyHint: 'interactive', sampleRate: 48000 });
-            }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-            
-            // Create a node to read from the raw captured audio stream
-            const sourceNode = audioCtx.createMediaStreamSource(rawAudioStream);
-            const destNode = audioCtx.createMediaStreamDestination();
-            
-            destNode.channelCount = 2;
-            destNode.channelCountMode = "explicit";
-            destNode.channelInterpretation = "speakers";
+            try {
+                if (!audioCtx || audioCtx.state === 'closed') {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    audioCtx = new AudioContextClass({ latencyHint: 'interactive', sampleRate: 48000 });
+                }
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(e => console.warn("AudioContext resume error:", e));
+                }
 
-            // Connect source to destination. Browser auto-downmixes multi-channel layout to stereo!
-            sourceNode.connect(destNode);
-            
-            return destNode.stream;
+                // Disconnect previous audio nodes to prevent distorted or crackling audio accumulation
+                if (activeAudioSourceNode) {
+                    try { activeAudioSourceNode.disconnect(); } catch (_) {}
+                    activeAudioSourceNode = null;
+                }
+
+                const destNode = audioCtx.createMediaStreamDestination();
+                destNode.channelCount = 2;
+                destNode.channelCountMode = "explicit";
+                destNode.channelInterpretation = "speakers";
+
+                const sourceNode = audioCtx.createMediaStreamSource(rawAudioStream);
+                sourceNode.connect(destNode);
+
+                activeAudioSourceNode = sourceNode;
+                activeAudioDestNode = destNode;
+
+                return destNode.stream;
+            } catch (err) {
+                console.error("[Studio Audio] Error downmixing audio stream, falling back to raw track:", err);
+                return rawAudioStream;
+            }
         }
 
         function showReconnectingStatus() {
@@ -583,6 +595,9 @@
         }
 
         function toggleLiveState() {
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume().catch(e => console.warn("AudioContext resume failed:", e));
+            }
             if (isStreaming || isLive) {
                 triggerStopLive();
             } else {
@@ -669,23 +684,28 @@
                     capturedStream = canvas.captureStream(30);
                 }
 
+                // Ensure preview player is unmuted so captured audio track is active
+                previewPlayer.muted = false;
+                if (previewPlayer.volume === 0) previewPlayer.volume = 1.0;
+
                 const videoTrack = capturedStream.getVideoTracks()[0];
-                const rawAudioTrack = capturedStream.getAudioTracks()[0];
+                const rawAudioTracks = capturedStream.getAudioTracks();
+                const rawAudioTrack = rawAudioTracks.find(t => t.enabled && t.readyState !== 'ended') || rawAudioTracks[0];
 
                 if (rawAudioTrack) {
-                    // Create a single-track stream for the AudioContext downmixer
+                    rawAudioTrack.enabled = true;
                     const rawAudioStream = new MediaStream([rawAudioTrack]);
                     const downmixedStream = getDownmixedAudioStream(rawAudioStream);
-                    const stereoAudioTrack = downmixedStream.getAudioTracks()[0];
+                    const stereoAudioTrack = (downmixedStream && downmixedStream.getAudioTracks().length > 0) 
+                        ? downmixedStream.getAudioTracks()[0] 
+                        : rawAudioTrack;
 
                     mediaStream = new MediaStream();
-                    mediaStream.addTrack(videoTrack);
-                    if (stereoAudioTrack) {
-                        mediaStream.addTrack(stereoAudioTrack);
-                    }
+                    if (videoTrack) mediaStream.addTrack(videoTrack);
+                    if (stereoAudioTrack) mediaStream.addTrack(stereoAudioTrack);
                 } else {
                     mediaStream = new MediaStream();
-                    mediaStream.addTrack(videoTrack);
+                    if (videoTrack) mediaStream.addTrack(videoTrack);
                 }
 
                 if (previewPlayer.paused) {
