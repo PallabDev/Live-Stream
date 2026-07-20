@@ -49,6 +49,9 @@
                     <!-- Video Element for local preview and movie playback -->
                     <video id="preview-player" class="video-element" playsinline controls
                         style="display: none; width: 100%; height: 100%; object-fit: contain;"></video>
+                        
+                    <!-- Hidden Audio Element for Chrome bug workaround -->
+                    <audio id="audio-player" style="display: none;"></audio>
 
                     <!-- Offline/Ready State Placeholder -->
                     <div id="preview-placeholder"
@@ -179,6 +182,7 @@
 
         const movieFileInput = document.getElementById("movie-file-input");
         const previewPlayer = document.getElementById("preview-player");
+        const audioPlayer = document.getElementById("audio-player");
         const previewPlaceholder = document.getElementById("preview-placeholder");
 
         // Handle local video file selection
@@ -198,6 +202,22 @@
             previewPlayer.srcObject = null;
             previewPlayer.src = fileUrl;
             previewPlayer.load();
+
+            audioPlayer.srcObject = null;
+            audioPlayer.src = fileUrl;
+            audioPlayer.load();
+
+            // Sync playback state between the two players
+            previewPlayer.onplay = () => {
+                audioPlayer.currentTime = previewPlayer.currentTime;
+                audioPlayer.play().catch(e => console.warn("audioPlayer play error:", e));
+            };
+            previewPlayer.onpause = () => {
+                audioPlayer.pause();
+            };
+            previewPlayer.onseeked = () => {
+                audioPlayer.currentTime = previewPlayer.currentTime;
+            };
 
             currentSourceType = 'file';
             document.getElementById("active-source-text").textContent = `Movie File: ${file.name}`;
@@ -220,6 +240,7 @@
                 if (movieFileInput.value) {
                     movieFileInput.value = "";
                     previewPlayer.src = "";
+                    audioPlayer.src = "";
                 }
 
                 // Prompt screen capture with system audio request
@@ -638,34 +659,31 @@
                 }
 
                 let capturedStream;
-                
-                // BYPASS Chrome's createMediaElementSource + captureStream silence bug
-                // by using an invisible Canvas to capture the video frames!
-                const canvas = document.createElement("canvas");
-                // Default to 1280x720 if video metadata isn't fully loaded yet
-                canvas.width = previewPlayer.videoWidth || 1280;
-                canvas.height = previewPlayer.videoHeight || 720;
-                const ctx = canvas.getContext("2d");
-                
-                function renderCanvasFrame() {
-                    // Stop drawing if the stream is stopped or source changes
-                    if (isManuallyStopped || currentSourceType !== 'file') return;
+                if (previewPlayer.captureStream) {
+                    capturedStream = previewPlayer.captureStream(30);
+                } else if (previewPlayer.mozCaptureStream) {
+                    capturedStream = previewPlayer.mozCaptureStream(30);
+                } else {
+                    console.warn("[Mobile Studio] captureStream not available on video element, using Canvas capture fallback.");
+                    const canvas = document.createElement("canvas");
+                    canvas.width = previewPlayer.videoWidth || 1280;
+                    canvas.height = previewPlayer.videoHeight || 720;
+                    const ctx = canvas.getContext("2d");
                     
-                    if (!previewPlayer.paused && !previewPlayer.ended) {
-                        // Dynamically update canvas resolution if the video metadata loads late
-                        if (previewPlayer.videoWidth && canvas.width !== previewPlayer.videoWidth) {
-                            canvas.width = previewPlayer.videoWidth;
-                            canvas.height = previewPlayer.videoHeight;
+                    function renderCanvasFrame() {
+                        if (isManuallyStopped || currentSourceType !== 'file') return;
+                        if (!previewPlayer.paused && !previewPlayer.ended) {
+                            if (previewPlayer.videoWidth && canvas.width !== previewPlayer.videoWidth) {
+                                canvas.width = previewPlayer.videoWidth;
+                                canvas.height = previewPlayer.videoHeight;
+                            }
+                            ctx.drawImage(previewPlayer, 0, 0, canvas.width, canvas.height);
                         }
-                        ctx.drawImage(previewPlayer, 0, 0, canvas.width, canvas.height);
+                        requestAnimationFrame(renderCanvasFrame);
                     }
-                    requestAnimationFrame(renderCanvasFrame);
+                    renderCanvasFrame();
+                    capturedStream = canvas.captureStream(30);
                 }
-                
-                // Start the canvas rendering loop
-                renderCanvasFrame();
-
-                capturedStream = canvas.captureStream(60);
 
                 // Ensure preview player is unmuted so captured audio track is active
                 previewPlayer.muted = false;
@@ -680,8 +698,9 @@
                     }
 
                     // Native audio extraction: JITTER FREE, perfectly stable!
+                    // Extract from the hidden audioPlayer to bypass Chrome's captureStream audio muting bug!
                     if (!mediaElementSource) {
-                        mediaElementSource = audioCtx.createMediaElementSource(previewPlayer);
+                        mediaElementSource = audioCtx.createMediaElementSource(audioPlayer);
                         // Connect to local destination so broadcaster can still hear the video
                         mediaElementSource.connect(audioCtx.destination);
                         
@@ -689,11 +708,13 @@
                         activeAudioSourceNode = audioCtx.createDelay(1.0); // DelayNode
                         activeAudioSourceNode.delayTime.value = 0.25;      // 250ms offset for VP8 latency
                         
-                        activeAudioDestNode = audioCtx.createMediaStreamDestination();
-                        
                         mediaElementSource.connect(activeAudioSourceNode);
-                        activeAudioSourceNode.connect(activeAudioDestNode);
                     }
+
+                    // Create a FRESH destination node for every new stream.
+                    // This prevents the audio from permanently freezing if track.stop() was called on a previous stream!
+                    activeAudioDestNode = audioCtx.createMediaStreamDestination();
+                    activeAudioSourceNode.connect(activeAudioDestNode);
 
                     const syncedAudioTrack = activeAudioDestNode.stream.getAudioTracks()[0];
                     const videoTrack = capturedStream.getVideoTracks()[0];
