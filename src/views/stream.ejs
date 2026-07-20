@@ -358,7 +358,8 @@
             try {
                 if (!audioCtx || audioCtx.state === 'closed') {
                     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                    audioCtx = new AudioContextClass({ latencyHint: 'interactive', sampleRate: 48000 });
+                    // Use 'playback' latency hint to buffer media decoding clock drift and eliminate audio jitter
+                    audioCtx = new AudioContextClass({ latencyHint: 'playback' });
                 }
                 if (audioCtx.state === 'suspended') {
                     audioCtx.resume().catch(e => console.warn("AudioContext resume error:", e));
