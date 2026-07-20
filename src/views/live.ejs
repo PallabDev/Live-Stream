@@ -479,13 +479,15 @@ html, body {
       console.log('[Viewer WebRTC] Remote track received:', event.track.kind);
 
       // Apply unified playout delay hint to both audio and video receivers to maintain lip-sync
+      // Video encoding on the host takes ~250ms longer than audio. By setting a 400ms buffer,
+      // the receiver waits for the video frames to arrive and uses RTCP timestamps to sync them perfectly.
       if (event.receiver) {
         try {
           if ('playoutDelayHint' in event.receiver) {
-            event.receiver.playoutDelayHint = 0.15; // 150ms buffer for seamless lip-sync
+            event.receiver.playoutDelayHint = 0.4; // 400ms buffer to allow video to catch up
           }
           if ('jitterBufferTarget' in event.receiver) {
-            event.receiver.jitterBufferTarget = 150;
+            event.receiver.jitterBufferTarget = 400;
           }
         } catch (e) {
           console.warn('[Viewer WebRTC] Receiver delay hint error:', e);
