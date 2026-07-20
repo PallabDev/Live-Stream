@@ -476,7 +476,19 @@ html, body {
     pcInstance = new RTCPeerConnection(config);
 
     pcInstance.ontrack = (event) => {
-      console.log('[Viewer WebRTC] Remote track received:', event.streams);
+      console.log('[Viewer WebRTC] Remote track received:', event.track.kind);
+
+      // Sync audio with video: video encoding takes longer than audio, so audio arrives first.
+      // playoutDelayHint tells the browser to buffer audio slightly to match video latency.
+      if (event.receiver && event.track.kind === 'audio') {
+        try {
+          event.receiver.playoutDelayHint = 0.05; // 50ms delay to align with video encoding latency
+          console.log('[Viewer WebRTC] Set audio playoutDelayHint to 50ms for A/V sync');
+        } catch (e) {
+          console.warn('[Viewer WebRTC] playoutDelayHint not supported:', e);
+        }
+      }
+
       if (video.srcObject !== event.streams[0]) {
         video.srcObject = event.streams[0];
         console.log('[Viewer WebRTC] Attached media stream to video element');
