@@ -47,7 +47,7 @@
                     style="position: relative; background: #000; border-radius: var(--radius); overflow: hidden; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center;">
 
                     <!-- Video Element for local preview and movie playback -->
-                    <video id="preview-player" class="video-element" playsinline controls
+                    <video id="preview-player" class="video-element" playsinline controls muted
                         style="display: none; width: 100%; height: 100%; object-fit: contain;"></video>
                         
                     <!-- Hidden Audio Element for Chrome bug workaround -->
@@ -651,9 +651,8 @@
 
             // Obtain the media tracks based on selected source type
             if (currentSourceType === 'file') {
-                // Ensure preview player is unmuted and playing BEFORE captureStream for synchronized timestamps
-                previewPlayer.muted = false;
-                if (previewPlayer.volume === 0) previewPlayer.volume = 1.0;
+                // Keep preview player muted to prevent broadcaster echo. audioPlayer handles the sound.
+                previewPlayer.muted = true;
                 if (previewPlayer.paused) {
                     try { await previewPlayer.play(); } catch (e) { console.warn("Player play error:", e); }
                 }
@@ -685,9 +684,8 @@
                     capturedStream = canvas.captureStream(30);
                 }
 
-                // Ensure preview player is unmuted so captured audio track is active
-                previewPlayer.muted = false;
-                if (previewPlayer.volume === 0) previewPlayer.volume = 1.0;
+                // Keep preview player muted to prevent double-audio echo on the broadcaster side
+                previewPlayer.muted = true;
 
                 try {
                     if (!audioCtx) {
