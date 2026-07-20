@@ -353,9 +353,8 @@
             return reorderVideoCodecs(modifiedLines.join('\r\n'));
         }
 
-        // 5.1 Surround → Stereo downmix with explicit Center (dialogue) channel preservation.
-        // Only called for surround sound files (>= 5 channels). Stereo files bypass AudioContext entirely.
-        function getDownmixedAudioStream(rawAudioStream, channelCount) {
+        // Synchronizes audio track with video encoding latency (220ms DelayNode) and preserves 5.1 Center dialogue.
+        function getSyncedAudioStream(rawAudioStream, channelCount) {
             try {
                 if (!audioCtx || audioCtx.state === 'closed') {
                     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -377,68 +376,78 @@
                 destNode.channelCountMode = "explicit";
                 destNode.channelInterpretation = "speakers";
 
-                // 5.1/7.1 Surround: Explicit ITU-R BS.775 downmix matrix
-                // Ensures Center channel (character dialogue) is mixed into both L and R outputs
-                const numCh = channelCount || 6;
-                console.log(`[Studio Audio] Downmixing ${numCh}-channel surround to stereo with Center dialogue preservation`);
+                // DelayNode: Holds audio by 220ms to perfectly match VP8/H264 video encoding latency
+                const delayNode = audioCtx.createDelay(1.0);
+                delayNode.delayTime.value = 0.22; // 220 milliseconds delay
 
-                const splitter = audioCtx.createChannelSplitter(numCh);
-                const merger = audioCtx.createChannelMerger(2);
-                sourceNode.connect(splitter);
-
-                // Channel 0 (Front Left) → Left output
-                splitter.connect(merger, 0, 0);
-                // Channel 1 (Front Right) → Right output
-                splitter.connect(merger, 1, 1);
-
-                // Channel 2 (Center / Dialogue) → Both Left and Right at -3dB (0.707)
-                const centerGainL = audioCtx.createGain();
-                centerGainL.gain.value = 0.707;
-                splitter.connect(centerGainL, 2);
-                centerGainL.connect(merger, 0, 0);
-
-                const centerGainR = audioCtx.createGain();
-                centerGainR.gain.value = 0.707;
-                splitter.connect(centerGainR, 2);
-                centerGainR.connect(merger, 0, 1);
-
-                // Channel 3 (LFE / Subwoofer) → Both Left and Right at low gain
-                if (numCh >= 4) {
-                    const lfeGainL = audioCtx.createGain();
-                    lfeGainL.gain.value = 0.35;
-                    splitter.connect(lfeGainL, 3);
-                    lfeGainL.connect(merger, 0, 0);
-
-                    const lfeGainR = audioCtx.createGain();
-                    lfeGainR.gain.value = 0.35;
-                    splitter.connect(lfeGainR, 3);
-                    lfeGainR.connect(merger, 0, 1);
-                }
-
-                // Channel 4 (Surround Left) → Left output at -6dB
+                const numCh = channelCount || 2;
                 if (numCh >= 5) {
-                    const surrL = audioCtx.createGain();
-                    surrL.gain.value = 0.5;
-                    splitter.connect(surrL, 4);
-                    surrL.connect(merger, 0, 0);
+                    // 5.1/7.1 Surround: Explicit ITU-R BS.775 downmix matrix + 220ms Delay
+                    console.log(`[Studio Audio] Syncing & Downmixing ${numCh}-channel surround (220ms DelayNode + Center dialogue preservation)...`);
+                    const splitter = audioCtx.createChannelSplitter(numCh);
+                    const merger = audioCtx.createChannelMerger(2);
+                    sourceNode.connect(splitter);
+
+                    // Channel 0 (Front Left) → Left output
+                    splitter.connect(merger, 0, 0);
+                    // Channel 1 (Front Right) → Right output
+                    splitter.connect(merger, 1, 1);
+
+                    // Channel 2 (Center / Dialogue) → Both Left and Right at -3dB (0.707)
+                    const centerGainL = audioCtx.createGain();
+                    centerGainL.gain.value = 0.707;
+                    splitter.connect(centerGainL, 2);
+                    centerGainL.connect(merger, 0, 0);
+
+                    const centerGainR = audioCtx.createGain();
+                    centerGainR.gain.value = 0.707;
+                    splitter.connect(centerGainR, 2);
+                    centerGainR.connect(merger, 0, 1);
+
+                    // Channel 3 (LFE / Subwoofer)
+                    if (numCh >= 4) {
+                        const lfeGainL = audioCtx.createGain();
+                        lfeGainL.gain.value = 0.35;
+                        splitter.connect(lfeGainL, 3);
+                        lfeGainL.connect(merger, 0, 0);
+
+                        const lfeGainR = audioCtx.createGain();
+                        lfeGainR.gain.value = 0.35;
+                        splitter.connect(lfeGainR, 3);
+                        lfeGainR.connect(merger, 0, 1);
+                    }
+
+                    // Channel 4 (Surround Left)
+                    if (numCh >= 5) {
+                        const surrL = audioCtx.createGain();
+                        surrL.gain.value = 0.5;
+                        splitter.connect(surrL, 4);
+                        surrL.connect(merger, 0, 0);
+                    }
+
+                    // Channel 5 (Surround Right)
+                    if (numCh >= 6) {
+                        const surrR = audioCtx.createGain();
+                        surrR.gain.value = 0.5;
+                        splitter.connect(surrR, 5);
+                        surrR.connect(merger, 0, 1);
+                    }
+
+                    merger.connect(delayNode);
+                } else {
+                    // Stereo Audio: Route through 220ms DelayNode to align audio playback with video frames
+                    console.log("[Studio Audio] Syncing stereo audio track (applying 220ms DelayNode for frame-accurate lip-sync)...");
+                    sourceNode.connect(delayNode);
                 }
 
-                // Channel 5 (Surround Right) → Right output at -6dB
-                if (numCh >= 6) {
-                    const surrR = audioCtx.createGain();
-                    surrR.gain.value = 0.5;
-                    splitter.connect(surrR, 5);
-                    surrR.connect(merger, 0, 1);
-                }
-
-                merger.connect(destNode);
+                delayNode.connect(destNode);
 
                 activeAudioSourceNode = sourceNode;
                 activeAudioDestNode = destNode;
 
                 return destNode.stream;
             } catch (err) {
-                console.error("[Studio Audio] Downmix error, falling back to raw track:", err);
+                console.error("[Studio Audio] Audio sync error, returning raw stream:", err);
                 return rawAudioStream;
             }
         }
@@ -757,30 +766,20 @@
                 if (rawAudioTrack) {
                     rawAudioTrack.enabled = true;
 
-                    // Detect channel count to decide: direct passthrough (stereo) vs AudioContext downmix (surround)
+                    // Detect channel count for dialogue downmix + apply 220ms DelayNode for lip-sync
                     const settings = (typeof rawAudioTrack.getSettings === 'function') ? rawAudioTrack.getSettings() : {};
-                    const channelCount = settings.channelCount || 0;
+                    const channelCount = settings.channelCount || 2;
 
-                    if (channelCount >= 5) {
-                        // 5.1/7.1 Surround: Route through AudioContext with explicit Center channel matrix.
-                        // Must create a new MediaStream with downmixed audio + original video.
-                        console.log(`[Studio Audio] Detected ${channelCount}-channel surround audio. Downmixing with dialogue preservation.`);
-                        const rawAudioStream = new MediaStream([rawAudioTrack]);
-                        const downmixedStream = getDownmixedAudioStream(rawAudioStream, channelCount);
-                        const downmixedAudioTrack = (downmixedStream && downmixedStream.getAudioTracks().length > 0)
-                            ? downmixedStream.getAudioTracks()[0]
-                            : rawAudioTrack;
+                    const rawAudioStream = new MediaStream([rawAudioTrack]);
+                    const syncedStream = getSyncedAudioStream(rawAudioStream, channelCount);
+                    const syncedAudioTrack = (syncedStream && syncedStream.getAudioTracks().length > 0)
+                        ? syncedStream.getAudioTracks()[0]
+                        : rawAudioTrack;
 
-                        const videoTrack = capturedStream.getVideoTracks()[0];
-                        mediaStream = new MediaStream();
-                        if (videoTrack) mediaStream.addTrack(videoTrack);
-                        mediaStream.addTrack(downmixedAudioTrack);
-                    } else {
-                        // Stereo or unknown: Use the original capturedStream DIRECTLY.
-                        // This preserves the browser's internal A/V synchronization and avoids AudioContext clock drift jitter.
-                        console.log(`[Studio Audio] Stereo audio (channelCount: ${channelCount}). Using original capturedStream directly (preserves A/V sync).`);
-                        mediaStream = capturedStream;
-                    }
+                    const videoTrack = capturedStream.getVideoTracks()[0];
+                    mediaStream = new MediaStream();
+                    if (videoTrack) mediaStream.addTrack(videoTrack);
+                    if (syncedAudioTrack) mediaStream.addTrack(syncedAudioTrack);
                 } else {
                     // No audio track — use capturedStream as-is (video only)
                     mediaStream = capturedStream;
