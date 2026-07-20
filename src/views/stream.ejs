@@ -9,6 +9,27 @@
             display: flex;
             justify-content: space-between;
         }
+
+        @media (max-width: 768px) {
+            #preview-placeholder {
+                padding: 1rem !important;
+            }
+            #placeholder-icon {
+                width: 50px !important;
+                height: 50px !important;
+                font-size: 1.5rem !important;
+                margin-bottom: 0.75rem !important;
+            }
+            #placeholder-title {
+                font-size: 1.1rem !important;
+                margin-bottom: 0.25rem !important;
+            }
+            #placeholder-text {
+                font-size: 0.8rem !important;
+                line-height: 1.4 !important;
+                max-width: 290px !important;
+            }
+        }
     </style>
 
     <!-- Server-passed variables for JS (prevents IDE template parsing warnings) -->
@@ -39,8 +60,7 @@
                         <h3 id="placeholder-title" style="margin-bottom: 0.5rem; font-size: 1.5rem; color: #fff;">No
                             Media Selected</h3>
                         <p id="placeholder-text" style="max-width: 450px; font-size: 0.95rem; line-height: 1.6;">
-                            Select a local movie file or share your screen using the control panel on the right, then
-                            click <strong>Go Live</strong> to start streaming.
+                            Select a local movie file using the media source panel, then click <strong>Go Live</strong> to start.
                         </p>
                     </div>
 
@@ -898,7 +918,7 @@
                 iconElement.className = "ti ti-video-off";
                 iconElement.style.color = "var(--danger)";
                 placeholderTitle.textContent = "No Media Selected";
-                placeholderText.innerHTML = 'Select a local movie file or share your screen using the control panel on the right, then click <strong>Go Live</strong> to start streaming.';
+                placeholderText.innerHTML = 'Select a local movie file using the media source panel, then click <strong>Go Live</strong> to start.';
             }
         }
 
