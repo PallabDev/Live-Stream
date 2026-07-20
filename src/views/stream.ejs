@@ -30,6 +30,12 @@
                 max-width: 290px !important;
             }
         }
+
+        /* Permanently hide volume/mute controls on the preview player to prevent accidental unmuting (echo) */
+        #preview-player::-webkit-media-controls-mute-button,
+        #preview-player::-webkit-media-controls-volume-slider {
+            display: none !important;
+        }
     </style>
 
     <!-- Server-passed variables for JS (prevents IDE template parsing warnings) -->
@@ -217,6 +223,14 @@
             };
             previewPlayer.onseeked = () => {
                 audioPlayer.currentTime = previewPlayer.currentTime;
+            };
+
+            // Force previewPlayer to remain muted permanently to prevent broadcaster echo
+            previewPlayer.onvolumechange = () => {
+                if (!previewPlayer.muted || previewPlayer.volume > 0) {
+                    previewPlayer.muted = true;
+                    previewPlayer.volume = 0;
+                }
             };
 
             currentSourceType = 'file';
