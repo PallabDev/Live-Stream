@@ -4,6 +4,7 @@ import { StreamService } from "../stream/stream.service.js";
 import { MonitorService } from "../../common/monitor/monitor.service.js";
 import { currentEgressKbps } from "../../../server.js";
 import { StreamController } from "../stream/stream.controller.js";
+import { auth } from "../../../../lib/auth.js";
 
 const router = Router();
 
@@ -100,12 +101,28 @@ router.get("/admin", requireAuth, async (req: AuthenticatedRequest, res) => {
   }
 });
 
-// Logout Route (GET request to clear cookies and redirect)
-router.get("/logout", (req, res) => {
+// Logout Route (clears better-auth session server-side & client-side cookies)
+router.all("/logout", async (req, res) => {
+  try {
+    await auth.api.signOut({
+      headers: new Headers(req.headers as any),
+    });
+  } catch (err) {
+    console.error("[Logout] Better-auth signOut error:", err);
+  }
+
+  const cookieOptions = { path: "/" };
+  res.clearCookie("better-auth.session_token", cookieOptions);
+  res.clearCookie("better-auth.session-token", cookieOptions);
+  res.clearCookie("__secure-better-auth.session_token", cookieOptions);
+  res.clearCookie("__secure-better-auth.session-token", cookieOptions);
+
+  // Fallback clearance without explicit path
   res.clearCookie("better-auth.session_token");
   res.clearCookie("better-auth.session-token");
   res.clearCookie("__secure-better-auth.session_token");
   res.clearCookie("__secure-better-auth.session-token");
+
   res.redirect("/login");
 });
 

@@ -377,8 +377,15 @@ html, body {
           if (status === 'live') {
             viewerId = id;
             hideOffline();
-            showLoading();
-            await initWebRTC();
+            if (!pcInstance || pcInstance.connectionState !== 'connected') {
+              showLoading();
+              await initWebRTC();
+            } else {
+              // We are already connected. Let the broadcaster know we are ready just in case
+              if (statusSocket && statusSocket.readyState === WebSocket.OPEN) {
+                statusSocket.send(JSON.stringify({ event: "viewer-ready" }));
+              }
+            }
           } else {
             showOffline();
           }
@@ -408,7 +415,7 @@ html, body {
     statusSocket.onclose = () => {
       console.log('[Viewer] Signaling WebSocket closed. Reconnecting in 3s...');
       statusSocket = null;
-      showOffline();
+      // Do not call showOffline() here so active WebRTC stream is not interrupted by temporary signal drops.
       setTimeout(connectViewerSocket, 3000);
     };
 
@@ -471,6 +478,11 @@ html, body {
         showOffline();
       }
     };
+
+    // Send viewer-ready signal to tell the broadcaster we are fully initialized and listening
+    if (statusSocket && statusSocket.readyState === WebSocket.OPEN) {
+      statusSocket.send(JSON.stringify({ event: "viewer-ready" }));
+    }
   }
 
   function formatTime(sec) {
@@ -721,6 +733,26 @@ html, body {
       controls.style.transform = 'translateY(10px)';
       controls.style.pointerEvents = 'none';
       controlsHidden = true;
+    }
+  });
+
+  player.addEventListener('dblclick', (e) => {
+    if (controls.contains(e.target)) return;
+    toggleFullscreen();
+  });
+
+  window.addEventListener('keydown', (e) => {
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+    if (e.key === ' ' || e.key === 'k') {
+      e.preventDefault();
+      if (video.paused) video.play(); else video.pause();
+    } else if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault();
+      toggleFullscreen();
+    } else if (e.key === 'm' || e.key === 'M') {
+      e.preventDefault();
+      volumeBtn.click();
     }
   });
 

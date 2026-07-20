@@ -330,8 +330,8 @@
                 if (line.startsWith('m=video')) {
                     inVideoSection = true;
                     modifiedLines.push(line);
-                    modifiedLines.push('b=AS:8000');
-                    modifiedLines.push('b=TIAS:8000000');
+                    modifiedLines.push('b=AS:10000');
+                    modifiedLines.push('b=TIAS:10000000');
                     continue;
                 } else if (line.startsWith('m=audio')) {
                     inVideoSection = false;
@@ -371,11 +371,6 @@
         function showReconnectingStatus() {
             isLive = false;
             isStreaming = false;
-            // Close old connections
-            for (const [viewerId, pcInstance] of peerConnections) {
-                pcInstance.close();
-            }
-            peerConnections.clear();
 
             const statusBadge = document.getElementById("status-badge");
             statusBadge.className = "badge badge-warning";
@@ -413,7 +408,7 @@
                         const msg = JSON.parse(event.data);
                         const { event: signalEvent, viewerId, sdp, candidate } = msg;
 
-                        if (signalEvent === "viewer-connected") {
+                        if (signalEvent === "viewer-connected" || signalEvent === "viewer-ready") {
                             await createPeerConnection(viewerId);
                         } else if (signalEvent === "viewer-disconnected") {
                             closePeerConnection(viewerId);
@@ -476,16 +471,16 @@
                             if (!parameters.encodings) {
                                 parameters.encodings = [{}];
                             }
-                            parameters.encodings[0].maxBitrate = 8000000; // 8 Mbps max
-                            parameters.encodings[0].minBitrate = 800000;  // 800 Kbps min floor
+                            parameters.encodings[0].maxBitrate = 10000000; // 10 Mbps max
+                            parameters.encodings[0].minBitrate = 6000000;  // 6 Mbps min floor (ensures high quality)
                             sender.setParameters(parameters).catch(err => {
                                 console.warn("[Studio WebRTC] Failed to set video encoding parameters:", err);
                             });
 
-                            // Enforce balanced degradation (prevents excessive blur during congestion by slightly trading frame rate)
+                            // Enforce maintain-resolution degradation (prevents blur by keeping resolution sharp and dropping frame rate if needed)
                             const transceiver = pcInstance.getTransceivers().find(t => t.sender === sender);
                             if (transceiver) {
-                                transceiver.degradationPreference = 'balanced';
+                                transceiver.degradationPreference = 'maintain-resolution';
                             }
                         } catch (err) {
                             console.warn("[Studio WebRTC] Failed to modify transceiver parameters:", err);
@@ -554,6 +549,7 @@
 
         async function triggerGoLive() {
             if (isStreaming) return;
+            isManuallyStopped = false;
 
             mediaStream = null;
 
@@ -644,7 +640,7 @@
                         const msg = JSON.parse(event.data);
                         const { event: signalEvent, viewerId, sdp, candidate } = msg;
 
-                        if (signalEvent === "viewer-connected") {
+                        if (signalEvent === "viewer-connected" || signalEvent === "viewer-ready") {
                             await createPeerConnection(viewerId);
                         } else if (signalEvent === "viewer-disconnected") {
                             closePeerConnection(viewerId);

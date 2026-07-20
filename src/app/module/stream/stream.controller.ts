@@ -66,8 +66,8 @@ export class StreamController {
       });
 
       ws.on("close", () => {
-        console.log(`[WS Signaling] Broadcaster disconnected temporarily: ${key}. Starting 10s grace period.`);
-        MonitorService.addLog(`[Signaling] Broadcaster disconnected: ${key}. Waiting 10s for reconnect.`);
+        console.log(`[WS Signaling] Broadcaster disconnected temporarily: ${key}. Starting 60s grace period.`);
+        MonitorService.addLog(`[Signaling] Broadcaster disconnected: ${key}. Waiting 60s for reconnect.`);
         
         setTimeout(async () => {
           const currentSession = StreamController.activeSessions.get(key);
@@ -75,7 +75,7 @@ export class StreamController {
             console.log(`[WS Signaling] Broadcaster grace period expired for: ${key}. Stopping session.`);
             await StreamController.stopStreamSession(key);
           }
-        }, 10000);
+        }, 60000);
       });
 
       ws.on("error", (err: any) => {
@@ -90,7 +90,6 @@ export class StreamController {
         for (const [viewerId, viewerWs] of session.viewers) {
           if (viewerWs.readyState === 1) {
             viewerWs.send(JSON.stringify({ event: "status", status: "live", viewerId }));
-            ws.send(JSON.stringify({ event: "viewer-connected", viewerId }));
           }
         }
       } else {
@@ -108,8 +107,6 @@ export class StreamController {
 
               // Send live signal
               viewerWs.send(JSON.stringify({ event: "status", status: "live", viewerId }));
-              // Send connection trigger to broadcaster
-              ws.send(JSON.stringify({ event: "viewer-connected", viewerId }));
             }
           }
           StreamController.waitingViewers.delete(key);
@@ -135,11 +132,8 @@ export class StreamController {
         session.viewers.set(viewerId, ws);
         StreamController.setupViewerSocket(ws, viewerId, key);
 
-        // Notify client and broadcaster
+        // Notify client
         ws.send(JSON.stringify({ event: "status", status: "live", viewerId }));
-        if (session.ws && session.ws.readyState === 1) {
-          session.ws.send(JSON.stringify({ event: "viewer-connected", viewerId }));
-        }
       } else {
         // Broadcaster is offline, put viewer in waiting queue
         ws.send(JSON.stringify({ event: "status", status: "offline" }));
