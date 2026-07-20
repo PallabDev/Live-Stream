@@ -330,8 +330,10 @@
             for (let i = 0; i < lines.length; i++) {
                 let line = lines[i];
 
-                if (line.startsWith('a=fmtp:') && line.includes('stereo=1')) {
-                    line = line + ';maxaveragebitrate=256000;sprop-stereo=1';
+                if (line.startsWith('a=fmtp:') && line.includes('opus')) {
+                    if (!line.includes('stereo=1')) {
+                        line = line + ';stereo=1;sprop-stereo=1;maxaveragebitrate=256000;useinbandfec=1';
+                    }
                 }
 
                 if (line.startsWith('m=video')) {
@@ -355,13 +357,13 @@
             try {
                 if (!audioCtx || audioCtx.state === 'closed') {
                     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                    // Use 'playback' latency hint to buffer media decoding clock drift and eliminate audio jitter
-                    audioCtx = new AudioContextClass({ latencyHint: 'playback', sampleRate: 48000 });
+                    audioCtx = new AudioContextClass({ latencyHint: 'interactive', sampleRate: 48000 });
                 }
                 if (audioCtx.state === 'suspended') {
-                    audioCtx.resume().catch(() => {});
+                    audioCtx.resume().catch(e => console.warn("AudioContext resume error:", e));
                 }
 
+                // Disconnect previous audio nodes to prevent distorted or crackling audio accumulation
                 if (activeAudioSourceNode) {
                     try { activeAudioSourceNode.disconnect(); } catch (_) {}
                     activeAudioSourceNode = null;
@@ -688,7 +690,8 @@
                 if (previewPlayer.volume === 0) previewPlayer.volume = 1.0;
 
                 const videoTrack = capturedStream.getVideoTracks()[0];
-                const rawAudioTrack = capturedStream.getAudioTracks()[0];
+                const rawAudioTracks = capturedStream.getAudioTracks();
+                const rawAudioTrack = rawAudioTracks.find(t => t.enabled && t.readyState !== 'ended') || rawAudioTracks[0];
 
                 if (rawAudioTrack) {
                     rawAudioTrack.enabled = true;
