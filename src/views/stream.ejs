@@ -745,7 +745,6 @@
                 previewPlayer.muted = false;
                 if (previewPlayer.volume === 0) previewPlayer.volume = 1.0;
 
-                const videoTrack = capturedStream.getVideoTracks()[0];
                 const rawAudioTrack = capturedStream.getAudioTracks()[0];
 
                 if (rawAudioTrack) {
@@ -754,29 +753,30 @@
                     // Detect channel count to decide: direct passthrough (stereo) vs AudioContext downmix (surround)
                     const settings = (typeof rawAudioTrack.getSettings === 'function') ? rawAudioTrack.getSettings() : {};
                     const channelCount = settings.channelCount || 0;
-                    let finalAudioTrack;
 
                     if (channelCount >= 5) {
-                        // 5.1/7.1 Surround: Route through AudioContext with explicit Center channel matrix
+                        // 5.1/7.1 Surround: Route through AudioContext with explicit Center channel matrix.
+                        // Must create a new MediaStream with downmixed audio + original video.
                         console.log(`[Studio Audio] Detected ${channelCount}-channel surround audio. Downmixing with dialogue preservation.`);
                         const rawAudioStream = new MediaStream([rawAudioTrack]);
                         const downmixedStream = getDownmixedAudioStream(rawAudioStream, channelCount);
-                        finalAudioTrack = (downmixedStream && downmixedStream.getAudioTracks().length > 0)
+                        const downmixedAudioTrack = (downmixedStream && downmixedStream.getAudioTracks().length > 0)
                             ? downmixedStream.getAudioTracks()[0]
                             : rawAudioTrack;
-                    } else {
-                        // Stereo or unknown: Pass captureStream audio DIRECTLY to WebRTC.
-                        // Skipping AudioContext entirely eliminates clock-drift jitter.
-                        console.log(`[Studio Audio] Stereo audio (channelCount: ${channelCount}). Using direct captureStream track (no AudioContext).`);
-                        finalAudioTrack = rawAudioTrack;
-                    }
 
-                    mediaStream = new MediaStream();
-                    if (videoTrack) mediaStream.addTrack(videoTrack);
-                    mediaStream.addTrack(finalAudioTrack);
+                        const videoTrack = capturedStream.getVideoTracks()[0];
+                        mediaStream = new MediaStream();
+                        if (videoTrack) mediaStream.addTrack(videoTrack);
+                        mediaStream.addTrack(downmixedAudioTrack);
+                    } else {
+                        // Stereo or unknown: Use the original capturedStream DIRECTLY.
+                        // This preserves the browser's internal A/V synchronization and avoids AudioContext clock drift jitter.
+                        console.log(`[Studio Audio] Stereo audio (channelCount: ${channelCount}). Using original capturedStream directly (preserves A/V sync).`);
+                        mediaStream = capturedStream;
+                    }
                 } else {
-                    mediaStream = new MediaStream();
-                    if (videoTrack) mediaStream.addTrack(videoTrack);
+                    // No audio track — use capturedStream as-is (video only)
+                    mediaStream = capturedStream;
                 }
 
                 if (previewPlayer.paused) {
