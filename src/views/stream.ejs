@@ -16,23 +16,7 @@
         style="display: none;">
     </div>
 
-    <!-- Mobile Blocking Overlay -->
-    <div id="mobile-block-overlay">
-        <div class="block-card">
-            <div class="block-icon">
-                <i class="ti ti-device-laptop"></i>
-            </div>
-            <h2>Desktop Screen Required</h2>
-            <p>
-                Broadcasting studio and dashboard configurations are only supported on desktop screens. Please open this
-                link on a computer.
-            </p>
-            <a href="/dashboard" class="btn btn-primary"
-                style="display: inline-flex; align-items: center; gap: 0.5rem; justify-content: center; width: 100%;">
-                <i class="ti ti-arrow-left"></i> Go to Dashboard
-            </a>
-        </div>
-    </div>
+
 
     <div class="stream-grid">
         <!-- Left Side: Streaming Preview and Controls -->
@@ -102,7 +86,7 @@
                 </div>
 
                 <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-                    <input type="file" id="movie-file-input" accept="video/*" style="display: none;">
+                    <input type="file" id="movie-file-input" accept="video/*,video/mp4,video/mkv,video/webm,video/x-matroska,video/quicktime" style="display: none;">
 
                     <!-- Select Movie File Button -->
                     <button id="btn-select-file" class="btn btn-secondary"
@@ -129,7 +113,7 @@
                         <strong id="active-source-text" style="font-size: 0.9rem; color: #fff;">None Selected</strong>
                     </div>
 
-                    <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem;">
+                    <div class="screen-share-tip" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem;">
                         <p style="color: var(--text-muted); font-size: 0.8rem; line-height: 1.5; margin: 0;">
                             <i class="ti ti-info-circle" style="color: var(--primary);"></i>
                             <strong>Pro Tip:</strong> When sharing your screen, make sure to check the <strong>"Share
@@ -647,8 +631,22 @@
                 } else if (previewPlayer.mozCaptureStream) {
                     capturedStream = previewPlayer.mozCaptureStream(30);
                 } else {
-                    alert("Your browser does not support video capturing API.");
-                    return;
+                    console.warn("[Mobile Studio] captureStream not available on video element, using Canvas capture fallback.");
+                    const canvas = document.createElement("canvas");
+                    canvas.width = previewPlayer.videoWidth || 1280;
+                    canvas.height = previewPlayer.videoHeight || 720;
+                    const ctx = canvas.getContext("2d");
+                    
+                    function renderCanvasFrame() {
+                        if (!previewPlayer.paused && !previewPlayer.ended) {
+                            ctx.drawImage(previewPlayer, 0, 0, canvas.width, canvas.height);
+                            requestAnimationFrame(renderCanvasFrame);
+                        }
+                    }
+                    previewPlayer.addEventListener("play", renderCanvasFrame);
+                    renderCanvasFrame();
+
+                    capturedStream = canvas.captureStream(30);
                 }
 
                 const videoTrack = capturedStream.getVideoTracks()[0];

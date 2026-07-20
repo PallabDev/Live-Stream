@@ -667,21 +667,15 @@ input:checked + .slider:before {
   display: none;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 768px) {
   #mobile-block-overlay {
-    display: flex;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: linear-gradient(135deg, #0b0f19 0%, #111827 100%);
-    z-index: 99999;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    padding: 2rem;
-    text-align: center;
+    display: none !important;
+  }
+
+  .desktop-only-control,
+  #btn-select-screen,
+  .screen-share-tip {
+    display: none !important;
   }
   
   .block-card {
