@@ -665,7 +665,7 @@
                 // Start the canvas rendering loop
                 renderCanvasFrame();
 
-                capturedStream = canvas.captureStream(30);
+                capturedStream = canvas.captureStream(60);
 
                 // Ensure preview player is unmuted so captured audio track is active
                 previewPlayer.muted = false;
@@ -729,15 +729,15 @@
 
                 mediaStream.getVideoTracks().forEach(track => {
                     if ('contentHint' in track) {
-                        track.contentHint = 'motion';
-                        console.log("[WebRTC] Set video track contentHint to 'motion'");
+                        track.contentHint = 'detail';
+                        console.log("[WebRTC] Set video track contentHint to 'detail' for maximum quality");
                     }
                     if (typeof track.applyConstraints === 'function') {
                         track.applyConstraints({
-                            width: { ideal: 1280, max: 1280 },
-                            height: { ideal: 720, max: 720 },
-                            frameRate: { ideal: 30, max: 30 }
-                        }).catch(err => console.warn("Failed to apply 720p constraints:", err));
+                            width: { ideal: 1920 },
+                            height: { ideal: 1080 },
+                            frameRate: { ideal: 60, max: 60 }
+                        }).catch(err => console.warn("Failed to apply 1080p constraints:", err));
                     }
                 });
             }
