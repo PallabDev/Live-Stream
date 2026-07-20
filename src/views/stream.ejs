@@ -649,7 +649,7 @@
                 
                 function renderCanvasFrame() {
                     // Stop drawing if the stream is stopped or source changes
-                    if (!isStreaming || currentSourceType !== 'file') return;
+                    if (isManuallyStopped || currentSourceType !== 'file') return;
                     
                     if (!previewPlayer.paused && !previewPlayer.ended) {
                         // Dynamically update canvas resolution if the video metadata loads late
