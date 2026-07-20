@@ -330,8 +330,10 @@
             for (let i = 0; i < lines.length; i++) {
                 let line = lines[i];
 
-                if (line.startsWith('a=fmtp:') && line.includes('stereo=1')) {
-                    line = line + ';maxaveragebitrate=256000;sprop-stereo=1';
+                if (line.startsWith('a=fmtp:') && (line.includes('opus') || line.includes('111'))) {
+                    if (!line.includes('stereo=1')) {
+                        line = line + ';stereo=1;sprop-stereo=1;maxaveragebitrate=256000;useinbandfec=1';
+                    }
                 }
 
                 if (line.startsWith('m=video')) {
@@ -352,37 +354,26 @@
         }
 
         function getDownmixedAudioStream(rawAudioStream) {
-            try {
-                if (!audioCtx || audioCtx.state === 'closed') {
-                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                    audioCtx = new AudioContextClass({ latencyHint: 'interactive', sampleRate: 48000 });
-                }
-                if (audioCtx.state === 'suspended') {
-                    audioCtx.resume().catch(e => console.warn("AudioContext resume error:", e));
-                }
-
-                // Disconnect previous audio nodes to prevent distorted or crackling audio accumulation
-                if (activeAudioSourceNode) {
-                    try { activeAudioSourceNode.disconnect(); } catch (_) {}
-                    activeAudioSourceNode = null;
-                }
-
-                const destNode = audioCtx.createMediaStreamDestination();
-                destNode.channelCount = 2;
-                destNode.channelCountMode = "explicit";
-                destNode.channelInterpretation = "speakers";
-
-                const sourceNode = audioCtx.createMediaStreamSource(rawAudioStream);
-                sourceNode.connect(destNode);
-
-                activeAudioSourceNode = sourceNode;
-                activeAudioDestNode = destNode;
-
-                return destNode.stream;
-            } catch (err) {
-                console.error("[Studio Audio] Error downmixing audio stream, falling back to raw track:", err);
-                return rawAudioStream;
+            if (!audioCtx) {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContextClass({ latencyHint: 'interactive', sampleRate: 48000 });
             }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume().catch(() => {});
+            }
+            
+            // Create a node to read from the raw captured audio stream
+            const sourceNode = audioCtx.createMediaStreamSource(rawAudioStream);
+            const destNode = audioCtx.createMediaStreamDestination();
+            
+            destNode.channelCount = 2;
+            destNode.channelCountMode = "explicit";
+            destNode.channelInterpretation = "speakers";
+
+            // Connect source to destination. Browser auto-downmixes multi-channel layout to stereo!
+            sourceNode.connect(destNode);
+            
+            return destNode.stream;
         }
 
         function showReconnectingStatus() {
