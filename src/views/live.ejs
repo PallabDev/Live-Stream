@@ -76,8 +76,7 @@ html, body {
 .sh-volume-range {
   -webkit-appearance: none;
   appearance: none;
-  writing-mode: bt-lr;           /* vertical */
-  -webkit-appearance: slider-vertical;
+  writing-mode: vertical-lr; direction: rtl;
   width: 12px;                   /* thickness of the track */
   height: 100%;
   padding: 0;
@@ -346,6 +345,12 @@ html, body {
   let playbackStarted = false;
   let iceCandidateQueue = [];
 
+  let viewerAudioCtx = null;
+  let syncedStream = null;
+  let dummyAudioEl = null;
+  let scrubbing = false;
+  let controlsTimeout = null;
+
   function showOffline() {
     offlineScreen.style.display = 'flex';
     hideLoading();
@@ -475,8 +480,7 @@ html, body {
 
     pcInstance = new RTCPeerConnection(config);
 
-    let viewerAudioCtx = null;
-    let syncedStream = null;
+    // Uses global viewerAudioCtx and syncedStream
 
     pcInstance.ontrack = (event) => {
       console.log('[Viewer WebRTC] Remote track received:', event.track.kind);
@@ -501,9 +505,11 @@ html, body {
           
           // CRITICAL CHROME BUG FIX: WebRTC audio tracks passed to AudioContext are silent
           // unless they are also attached to an actively playing HTML media element.
-          const dummyAudioEl = new Audio();
+          if (!dummyAudioEl) {
+            dummyAudioEl = new Audio();
+            dummyAudioEl.muted = true;
+          }
           dummyAudioEl.srcObject = tempAudioStream;
-          dummyAudioEl.muted = true;
           dummyAudioEl.play().catch(e => console.warn("Dummy audio play failed:", e));
 
           const sourceNode = viewerAudioCtx.createMediaStreamSource(tempAudioStream);
@@ -621,6 +627,12 @@ html, body {
   playBtn.addEventListener('click', () => {
     if (video.paused) {
       video.play();
+      if (viewerAudioCtx && viewerAudioCtx.state === 'suspended') {
+        viewerAudioCtx.resume().catch(e => console.warn("AudioContext resume error:", e));
+      }
+      if (dummyAudioEl && dummyAudioEl.paused) {
+        dummyAudioEl.play().catch(e => console.warn("Dummy audio play error:", e));
+      }
     } else {
       video.pause();
     }
