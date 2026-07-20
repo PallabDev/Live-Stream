@@ -349,7 +349,8 @@
 
         function getDownmixedAudioStream(rawAudioStream) {
             if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContextClass({ latencyHint: 'interactive', sampleRate: 48000 });
             }
             if (audioCtx.state === 'suspended') {
                 audioCtx.resume();
@@ -601,13 +602,13 @@
             let targetMaxBitrate;
             
             if (count === 1) {
-                targetMaxBitrate = 8000000; // 8.0 Mbps for 1 viewer (Ultra HD)
+                targetMaxBitrate = 4500000; // 4.5 Mbps max for 1 viewer (Zero-lag 720p HD)
             } else if (count <= 3) {
-                targetMaxBitrate = 4500000; // 4.5 Mbps max per viewer
+                targetMaxBitrate = 3500000; // 3.5 Mbps max per viewer
             } else if (count <= 6) {
-                targetMaxBitrate = 3000000; // 3.0 Mbps max per viewer
+                targetMaxBitrate = 2500000; // 2.5 Mbps max per viewer
             } else {
-                targetMaxBitrate = 2000000; // 2.0 Mbps max per viewer (Smooth 720p HD for 7-10 viewers)
+                targetMaxBitrate = 1800000; // 1.8 Mbps max per viewer
             }
 
             console.log(`[Studio WebRTC] Balancing host upload bandwidth across ${count} connected viewer(s) (${Math.round(targetMaxBitrate / 1000)} Kbps per peer)`);

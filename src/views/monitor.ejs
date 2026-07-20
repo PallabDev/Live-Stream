@@ -181,7 +181,7 @@
         <i class="ti ti-database"></i>
       </div>
       <div class="stat-info">
-        <span class="stat-label">Node Memory</span>
+        <span class="stat-label">System VPS RAM</span>
         <span class="stat-value" id="val-mem">0 MB / 0 MB</span>
       </div>
     </div>
@@ -293,12 +293,14 @@
         try {
           const data = JSON.parse(event.data);
 
-          // Update CPU and Memory
+          // Update CPU and System RAM
           cpuEl.textContent = `${data.cpu}%`;
-          memEl.textContent = `${data.memory.heapUsed} / ${data.memory.heapTotal}`;
+          if (data.memory && data.memory.systemUsedMB) {
+            memEl.textContent = `${data.memory.systemUsedMB} MB / ${data.memory.systemTotalMB} MB`;
+          }
           
           // Update Egress network bandwidth
-          const egressMbps = (data.egressKbps / 1024).toFixed(2);
+          const egressMbps = ((data.egressKbps || 0) / 1024).toFixed(2);
           netEl.textContent = `${egressMbps} Mbps`;
 
           // Update Active Streams table

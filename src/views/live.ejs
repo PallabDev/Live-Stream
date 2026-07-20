@@ -579,7 +579,7 @@ html, body {
   video.addEventListener('play', updatePlayIcon);
   video.addEventListener('pause', updatePlayIcon);
 
-  // Time + progress
+  // Time + progress & zero-latency catchup
   video.addEventListener('timeupdate', () => {
     const ct = video.currentTime || 0;
     const dur = video.duration || 0;
@@ -589,6 +589,14 @@ html, body {
       const percent = (ct / dur) * 100;
       progressBar.style.width = percent + '%';
       progressHandle.style.left = percent + '%';
+    }
+
+    // Auto catch up if WebRTC playout buffer accumulates > 1.5s latency
+    if (video.buffered && video.buffered.length > 0) {
+      const liveEdge = video.buffered.end(video.buffered.length - 1);
+      if (liveEdge - ct > 1.5) {
+        video.currentTime = liveEdge - 0.1;
+      }
     }
   });
 

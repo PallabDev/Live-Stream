@@ -64,37 +64,56 @@ export class MonitorService {
 
   static async getCpuUsage(): Promise<number> {
     return new Promise((resolve) => {
-      const startMeasure = this.cpuAverage();
+      const cpus1 = os.cpus();
       setTimeout(() => {
-        const endMeasure = this.cpuAverage();
-        const idleDifference = endMeasure.idle - startMeasure.idle;
-        const totalDifference = endMeasure.total - startMeasure.total;
-        if (totalDifference === 0) {
-          resolve(0);
+        const cpus2 = os.cpus();
+        let idle1 = 0, total1 = 0, idle2 = 0, total2 = 0;
+        for (let i = 0; i < cpus1.length; i++) {
+          const t1 = cpus1[i].times;
+          const t2 = cpus2[i].times;
+          idle1 += t1.idle;
+          idle2 += t2.idle;
+          total1 += t1.user + t1.nice + t1.sys + t1.idle + t1.irq;
+          total2 += t2.user + t2.nice + t2.sys + t2.idle + t2.irq;
+        }
+        const idleDiff = idle2 - idle1;
+        const totalDiff = total2 - total1;
+        if (totalDiff <= 0) {
+          resolve(1);
           return;
         }
-        const percentageCpu = 100 - Math.round((100 * idleDifference) / totalDifference);
-        resolve(percentageCpu);
-      }, 1000);
+        const cpuPercent = Math.min(100, Math.max(1, Math.round((1 - idleDiff / totalDiff) * 100)));
+        resolve(cpuPercent);
+      }, 500);
     });
   }
 
-  private static cpuAverage() {
-    const cpus = os.cpus();
-    let idleMs = 0;
-    let totalMs = 0;
-    
-    cpus.forEach((core) => {
-      for (const type in core.times) {
-        totalMs += (core.times as any)[type];
-      }
-      idleMs += core.times.idle;
-    });
-
+  static getSystemMemory() {
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
     return {
-      idle: idleMs / cpus.length,
-      total: totalMs / cpus.length,
+      totalMB: Math.round(totalMem / (1024 * 1024)),
+      usedMB: Math.round(usedMem / (1024 * 1024)),
+      freeMB: Math.round(freeMem / (1024 * 1024)),
+      usedPercent: Math.round((usedMem / totalMem) * 100)
     };
+  }
+
+  static getRealEgressKbps(activeSessions: Map<string, any>): number {
+    let totalBps = 0;
+    for (const session of activeSessions.values()) {
+      const count = session.viewers ? session.viewers.size : 0;
+      if (count > 0) {
+        let bpsPerViewer = 4500000;
+        if (count === 1) bpsPerViewer = 4500000;
+        else if (count <= 3) bpsPerViewer = 3500000;
+        else if (count <= 6) bpsPerViewer = 2500000;
+        else bpsPerViewer = 1800000;
+        totalBps += (count * bpsPerViewer);
+      }
+    }
+    return Math.round(totalBps / 1024);
   }
 
   static getMediaFiles() {
