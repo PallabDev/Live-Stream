@@ -673,21 +673,26 @@
                         await audioCtx.resume();
                     }
 
-                    // Extract audio natively from the video element to prevent WebAudio clock-drift jitter
-                    if (!mediaElementSource) {
-                        mediaElementSource = audioCtx.createMediaElementSource(previewPlayer);
-                        // Connect to local destination so broadcaster can still hear the video
-                        mediaElementSource.connect(audioCtx.destination);
+                    const rawAudioTrack = capturedStream.getAudioTracks()[0];
+                    if (!rawAudioTrack) throw new Error("No audio track found in captureStream");
 
-                        // Create the permanent A/V sync delay pipeline
-                        activeAudioSourceNode = audioCtx.createDelay(1.0); // DelayNode
-                        activeAudioSourceNode.delayTime.value = 0.25;      // 250ms offset for VP8 latency
-                        
-                        activeAudioDestNode = audioCtx.createMediaStreamDestination();
-                        
-                        mediaElementSource.connect(activeAudioSourceNode);
-                        activeAudioSourceNode.connect(activeAudioDestNode);
+                    // Clean up previous audio graph
+                    if (activeAudioSourceNode) {
+                        try { activeAudioSourceNode.disconnect(); } catch (e) {}
                     }
+
+                    // Extract audio from captureStream (avoiding createMediaElementSource bug in Chrome)
+                    const tempAudioStream = new MediaStream([rawAudioTrack]);
+                    activeAudioSourceNode = audioCtx.createMediaStreamSource(tempAudioStream);
+
+                    // Apply a 250ms delay to perfectly offset the VP8 video encoding latency
+                    const delayNode = audioCtx.createDelay(1.0);
+                    delayNode.delayTime.value = 0.25;
+                    
+                    activeAudioDestNode = audioCtx.createMediaStreamDestination();
+                    
+                    activeAudioSourceNode.connect(delayNode);
+                    delayNode.connect(activeAudioDestNode);
 
                     const syncedAudioTrack = activeAudioDestNode.stream.getAudioTracks()[0];
                     const videoTrack = capturedStream.getVideoTracks()[0];
@@ -696,7 +701,7 @@
                     if (videoTrack) mediaStream.addTrack(videoTrack);
                     if (syncedAudioTrack) mediaStream.addTrack(syncedAudioTrack);
 
-                    console.log(`[Studio Audio] Successfully extracted and delayed native audio track by 250ms for A/V sync.`);
+                    console.log(`[Studio Audio] Successfully extracted and delayed captureStream audio track by 250ms for A/V sync.`);
                 } catch (e) {
                     console.error("[Studio Audio] Native audio extraction failed, falling back to raw captureStream:", e);
                     mediaStream = capturedStream;

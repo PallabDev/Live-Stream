@@ -586,7 +586,9 @@ html, body {
 
   playBtn.addEventListener('click', () => {
     if (video.paused) {
-      video.play();
+      video.muted = false; // Always unmute on explicit user play intent
+      video.play().catch(e => console.warn("Play error:", e));
+      if (volumeIcon) volumeIcon.className = 'fas fa-volume-up';
     } else {
       video.pause();
     }
