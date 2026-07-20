@@ -479,15 +479,12 @@ html, body {
           hideLoading();
           hideOffline();
           playbackStarted = true;
+          updatePlayIcon();
         }).catch(err => {
-          console.warn('[Viewer WebRTC] Unmuted play auto-prevented on refresh:', err);
+          console.warn('[Viewer WebRTC] Autoplay prevented by browser policy:', err);
           hideLoading();
           hideOffline();
-          // Fallback to muted playback if browser blocked unmuted autoplay on refresh
-          video.muted = true;
-          video.play().then(() => {
-            playbackStarted = true;
-          }).catch(e => console.error('[Viewer WebRTC] Muted playback retry failed:', e));
+          updatePlayIcon();
         });
       }
     };

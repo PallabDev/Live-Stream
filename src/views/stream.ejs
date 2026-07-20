@@ -496,7 +496,7 @@
                             if (!parameters.encodings) {
                                 parameters.encodings = [{}];
                             }
-                            parameters.encodings[0].maxBitrate = 15000000; // 15 Mbps max bandwidth utilization
+                            parameters.encodings[0].maxBitrate = 6000000;
                             delete parameters.encodings[0].minBitrate;
                             sender.setParameters(parameters).catch(err => {
                                 console.warn("[Studio WebRTC] Failed to set video encoding parameters:", err);
@@ -513,6 +513,9 @@
                     }
                 });
             }
+
+            // Recalculate host upload bandwidth allocation across all viewers
+            updateAdaptiveBitrates();
 
             // Handle candidate negotiation
             pcInstance.onicecandidate = (e) => {
@@ -589,6 +592,43 @@
                 pcInstance.close();
                 peerConnections.delete(viewerId);
                 candidateQueues.delete(viewerId);
+                updateAdaptiveBitrates();
+            }
+        }
+
+        function updateAdaptiveBitrates() {
+            const count = Math.max(1, peerConnections.size);
+            let targetMaxBitrate;
+            
+            if (count === 1) {
+                targetMaxBitrate = 6000000; // 6.0 Mbps for 1 viewer
+            } else if (count === 2) {
+                targetMaxBitrate = 3500000; // 3.5 Mbps per viewer (7.0 Mbps total upload)
+            } else if (count === 3) {
+                targetMaxBitrate = 2500000; // 2.5 Mbps per viewer (7.5 Mbps total upload)
+            } else {
+                targetMaxBitrate = 1800000; // 1.8 Mbps per viewer (~7.2 Mbps total upload for 4+)
+            }
+
+            console.log(`[Studio WebRTC] Balancing host upload bandwidth across ${count} connected viewer(s) (${Math.round(targetMaxBitrate / 1000)} Kbps per peer)`);
+
+            for (const [viewerId, pcInstance] of peerConnections) {
+                try {
+                    const senders = pcInstance.getSenders();
+                    for (const sender of senders) {
+                        if (sender.track && sender.track.kind === 'video') {
+                            const parameters = sender.getParameters();
+                            if (!parameters.encodings) parameters.encodings = [{}];
+                            parameters.encodings[0].maxBitrate = targetMaxBitrate;
+                            delete parameters.encodings[0].minBitrate;
+                            sender.setParameters(parameters).catch(err => {
+                                console.warn(`[Studio WebRTC] Error setting bitrate for viewer ${viewerId}:`, err);
+                            });
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`[Studio WebRTC] Error updating bitrate parameters for viewer ${viewerId}:`, err);
+                }
             }
         }
 
