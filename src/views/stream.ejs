@@ -678,24 +678,7 @@
                 previewPlayer.muted = false;
                 if (previewPlayer.volume === 0) previewPlayer.volume = 1.0;
 
-                const videoTrack = capturedStream.getVideoTracks()[0];
-                const rawAudioTrack = capturedStream.getAudioTracks()[0];
-
-                if (rawAudioTrack) {
-                    rawAudioTrack.enabled = true;
-                    const rawAudioStream = new MediaStream([rawAudioTrack]);
-                    const downmixedStream = getDownmixedAudioStream(rawAudioStream);
-                    const stereoAudioTrack = (downmixedStream && downmixedStream.getAudioTracks().length > 0) 
-                        ? downmixedStream.getAudioTracks()[0] 
-                        : rawAudioTrack;
-
-                    mediaStream = new MediaStream();
-                    if (videoTrack) mediaStream.addTrack(videoTrack);
-                    if (stereoAudioTrack) mediaStream.addTrack(stereoAudioTrack);
-                } else {
-                    mediaStream = new MediaStream();
-                    if (videoTrack) mediaStream.addTrack(videoTrack);
-                }
+                mediaStream = capturedStream;
 
                 if (previewPlayer.paused) {
                     previewPlayer.play().catch(e => console.warn("Player play error:", e));
