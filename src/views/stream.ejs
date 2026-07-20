@@ -330,7 +330,7 @@
             for (let i = 0; i < lines.length; i++) {
                 let line = lines[i];
 
-                if (line.startsWith('a=fmtp:') && (line.includes('opus') || line.includes('111'))) {
+                if (line.startsWith('a=fmtp:') && line.includes('opus')) {
                     if (!line.includes('stereo=1')) {
                         line = line + ';stereo=1;sprop-stereo=1;maxaveragebitrate=256000;useinbandfec=1';
                     }
@@ -354,26 +354,37 @@
         }
 
         function getDownmixedAudioStream(rawAudioStream) {
-            if (!audioCtx) {
-                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                audioCtx = new AudioContextClass({ latencyHint: 'interactive', sampleRate: 48000 });
-            }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume().catch(() => {});
-            }
-            
-            // Create a node to read from the raw captured audio stream
-            const sourceNode = audioCtx.createMediaStreamSource(rawAudioStream);
-            const destNode = audioCtx.createMediaStreamDestination();
-            
-            destNode.channelCount = 2;
-            destNode.channelCountMode = "explicit";
-            destNode.channelInterpretation = "speakers";
+            try {
+                if (!audioCtx || audioCtx.state === 'closed') {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    audioCtx = new AudioContextClass({ latencyHint: 'interactive', sampleRate: 48000 });
+                }
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(e => console.warn("AudioContext resume error:", e));
+                }
 
-            // Connect source to destination. Browser auto-downmixes multi-channel layout to stereo!
-            sourceNode.connect(destNode);
-            
-            return destNode.stream;
+                // Disconnect previous audio nodes to prevent distorted or crackling audio accumulation
+                if (activeAudioSourceNode) {
+                    try { activeAudioSourceNode.disconnect(); } catch (_) {}
+                    activeAudioSourceNode = null;
+                }
+
+                const destNode = audioCtx.createMediaStreamDestination();
+                destNode.channelCount = 2;
+                destNode.channelCountMode = "explicit";
+                destNode.channelInterpretation = "speakers";
+
+                const sourceNode = audioCtx.createMediaStreamSource(rawAudioStream);
+                sourceNode.connect(destNode);
+
+                activeAudioSourceNode = sourceNode;
+                activeAudioDestNode = destNode;
+
+                return destNode.stream;
+            } catch (err) {
+                console.error("[Studio Audio] Error downmixing audio stream, falling back to raw track:", err);
+                return rawAudioStream;
+            }
         }
 
         function showReconnectingStatus() {
@@ -678,7 +689,35 @@
                 previewPlayer.muted = false;
                 if (previewPlayer.volume === 0) previewPlayer.volume = 1.0;
 
-                mediaStream = capturedStream;
+                const videoTrack = capturedStream.getVideoTracks()[0];
+                const rawAudioTracks = capturedStream.getAudioTracks();
+                const rawAudioTrack = rawAudioTracks.find(t => t.enabled && t.readyState !== 'ended') || rawAudioTracks[0];
+
+                if (rawAudioTrack) {
+                    rawAudioTrack.enabled = true;
+                    const settings = (typeof rawAudioTrack.getSettings === 'function') ? rawAudioTrack.getSettings() : {};
+                    let stereoAudioTrack;
+
+                    // If track is already stereo (<= 2 channels), pass directly to WebRTC to avoid AudioContext VBR sample jitter
+                    if (settings.channelCount && settings.channelCount <= 2) {
+                        console.log("[Studio Audio] Track is stereo (channelCount: " + settings.channelCount + "), using direct raw audio track.");
+                        stereoAudioTrack = rawAudioTrack;
+                    } else {
+                        // Multi-channel surround (5.1/7.1): downmix via AudioContext
+                        const rawAudioStream = new MediaStream([rawAudioTrack]);
+                        const downmixedStream = getDownmixedAudioStream(rawAudioStream);
+                        stereoAudioTrack = (downmixedStream && downmixedStream.getAudioTracks().length > 0) 
+                            ? downmixedStream.getAudioTracks()[0] 
+                            : rawAudioTrack;
+                    }
+
+                    mediaStream = new MediaStream();
+                    if (videoTrack) mediaStream.addTrack(videoTrack);
+                    if (stereoAudioTrack) mediaStream.addTrack(stereoAudioTrack);
+                } else {
+                    mediaStream = new MediaStream();
+                    if (videoTrack) mediaStream.addTrack(videoTrack);
+                }
 
                 if (previewPlayer.paused) {
                     previewPlayer.play().catch(e => console.warn("Player play error:", e));
