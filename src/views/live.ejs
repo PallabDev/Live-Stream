@@ -478,14 +478,17 @@ html, body {
     pcInstance.ontrack = (event) => {
       console.log('[Viewer WebRTC] Remote track received:', event.track.kind);
 
-      // Sync audio with video: video encoding takes longer than audio, so audio arrives first.
-      // playoutDelayHint tells the browser to buffer audio slightly to match video latency.
-      if (event.receiver && event.track.kind === 'audio') {
+      // Apply unified playout delay hint to both audio and video receivers to maintain lip-sync
+      if (event.receiver) {
         try {
-          event.receiver.playoutDelayHint = 0.05; // 50ms delay to align with video encoding latency
-          console.log('[Viewer WebRTC] Set audio playoutDelayHint to 50ms for A/V sync');
+          if ('playoutDelayHint' in event.receiver) {
+            event.receiver.playoutDelayHint = 0.15; // 150ms buffer for seamless lip-sync
+          }
+          if ('jitterBufferTarget' in event.receiver) {
+            event.receiver.jitterBufferTarget = 150;
+          }
         } catch (e) {
-          console.warn('[Viewer WebRTC] playoutDelayHint not supported:', e);
+          console.warn('[Viewer WebRTC] Receiver delay hint error:', e);
         }
       }
 

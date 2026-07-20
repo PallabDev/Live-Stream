@@ -717,6 +717,13 @@
 
             // Obtain the media tracks based on selected source type
             if (currentSourceType === 'file') {
+                // Ensure preview player is unmuted and playing BEFORE captureStream for synchronized timestamps
+                previewPlayer.muted = false;
+                if (previewPlayer.volume === 0) previewPlayer.volume = 1.0;
+                if (previewPlayer.paused) {
+                    try { await previewPlayer.play(); } catch (e) { console.warn("Player play error:", e); }
+                }
+
                 let capturedStream;
                 if (previewPlayer.captureStream) {
                     capturedStream = previewPlayer.captureStream(30);
