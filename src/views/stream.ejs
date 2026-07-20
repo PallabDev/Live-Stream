@@ -166,6 +166,7 @@
         let isManuallyStopped = false;
 
         const peerConnections = new Map(); // viewerId -> RTCPeerConnection
+        const candidateQueues = new Map(); // viewerId -> Array of candidate objects
 
         const movieFileInput = document.getElementById("movie-file-input");
         const previewPlayer = document.getElementById("preview-player");
@@ -215,9 +216,9 @@
                 // Prompt screen capture with system audio request
                 const stream = await navigator.mediaDevices.getDisplayMedia({
                     video: {
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
-                        frameRate: { ideal: 30 }
+                        width: { ideal: 1280, max: 1280 },
+                        height: { ideal: 720, max: 720 },
+                        frameRate: { ideal: 30, max: 30 }
                     },
                     audio: {
                         echoCancellation: false,
@@ -330,8 +331,8 @@
                 if (line.startsWith('m=video')) {
                     inVideoSection = true;
                     modifiedLines.push(line);
-                    modifiedLines.push('b=AS:10000');
-                    modifiedLines.push('b=TIAS:10000000');
+                    modifiedLines.push('b=AS:15000');
+                    modifiedLines.push('b=TIAS:15000000');
                     continue;
                 } else if (line.startsWith('m=audio')) {
                     inVideoSection = false;
@@ -416,11 +417,34 @@
                             const pcInstance = peerConnections.get(viewerId);
                             if (pcInstance) {
                                 await pcInstance.setRemoteDescription(new RTCSessionDescription(sdp));
+
+                                const queue = candidateQueues.get(viewerId) || [];
+                                while (queue.length > 0) {
+                                    const cand = queue.shift();
+                                    try {
+                                        await pcInstance.addIceCandidate(new RTCIceCandidate(cand));
+                                    } catch (e) {
+                                        console.warn(`[Studio WebRTC] Error adding queued candidate for viewer ${viewerId}:`, e);
+                                    }
+                                }
                             }
                         } else if (signalEvent === "candidate") {
                             const pcInstance = peerConnections.get(viewerId);
                             if (pcInstance && candidate) {
-                                await pcInstance.addIceCandidate(new RTCIceCandidate(candidate));
+                                if (!pcInstance.remoteDescription || !pcInstance.remoteDescription.type) {
+                                    let queue = candidateQueues.get(viewerId);
+                                    if (!queue) {
+                                        queue = [];
+                                        candidateQueues.set(viewerId, queue);
+                                    }
+                                    queue.push(candidate);
+                                } else {
+                                    try {
+                                        await pcInstance.addIceCandidate(new RTCIceCandidate(candidate));
+                                    } catch (e) {
+                                        console.warn(`[Studio WebRTC] Error adding candidate for viewer ${viewerId}:`, e);
+                                    }
+                                }
                             }
                         }
                     } catch (err) {
@@ -449,6 +473,7 @@
             if (peerConnections.has(viewerId)) {
                 closePeerConnection(viewerId);
             }
+            candidateQueues.set(viewerId, []);
 
             console.log(`[Studio WebRTC] Initializing connection for viewer: ${viewerId}`);
             const config = {
@@ -471,16 +496,16 @@
                             if (!parameters.encodings) {
                                 parameters.encodings = [{}];
                             }
-                            parameters.encodings[0].maxBitrate = 10000000; // 10 Mbps max
-                            parameters.encodings[0].minBitrate = 6000000;  // 6 Mbps min floor (ensures high quality)
+                            parameters.encodings[0].maxBitrate = 15000000; // 15 Mbps max bandwidth utilization
+                            delete parameters.encodings[0].minBitrate;
                             sender.setParameters(parameters).catch(err => {
                                 console.warn("[Studio WebRTC] Failed to set video encoding parameters:", err);
                             });
 
-                            // Enforce maintain-resolution degradation (prevents blur by keeping resolution sharp and dropping frame rate if needed)
+                            // Adaptive degradation: scale resolution down during congestion, recover when stable
                             const transceiver = pcInstance.getTransceivers().find(t => t.sender === sender);
                             if (transceiver) {
-                                transceiver.degradationPreference = 'maintain-resolution';
+                                transceiver.degradationPreference = 'balanced';
                             }
                         } catch (err) {
                             console.warn("[Studio WebRTC] Failed to modify transceiver parameters:", err);
@@ -500,9 +525,28 @@
                 }
             };
 
+            let disconnectTimer = null;
             pcInstance.onconnectionstatechange = () => {
-                console.log(`[Studio WebRTC] Connection state for viewer ${viewerId}: ${pcInstance.connectionState}`);
-                if (pcInstance.connectionState === "disconnected" || pcInstance.connectionState === "failed" || pcInstance.connectionState === "closed") {
+                const state = pcInstance.connectionState;
+                console.log(`[Studio WebRTC] Connection state for viewer ${viewerId}: ${state}`);
+                if (state === "connected") {
+                    if (disconnectTimer) {
+                        clearTimeout(disconnectTimer);
+                        disconnectTimer = null;
+                    }
+                } else if (state === "disconnected") {
+                    if (!disconnectTimer) {
+                        disconnectTimer = setTimeout(() => {
+                            if (pcInstance.connectionState === "disconnected") {
+                                closePeerConnection(viewerId);
+                            }
+                        }, 5000);
+                    }
+                } else if (state === "failed" || state === "closed") {
+                    if (disconnectTimer) {
+                        clearTimeout(disconnectTimer);
+                        disconnectTimer = null;
+                    }
                     closePeerConnection(viewerId);
                 }
             };
@@ -544,6 +588,7 @@
                 console.log(`[Studio WebRTC] Closing peer connection for viewer: ${viewerId}`);
                 pcInstance.close();
                 peerConnections.delete(viewerId);
+                candidateQueues.delete(viewerId);
             }
         }
 
@@ -608,6 +653,13 @@
                         track.contentHint = 'motion';
                         console.log("[WebRTC] Set video track contentHint to 'motion'");
                     }
+                    if (typeof track.applyConstraints === 'function') {
+                        track.applyConstraints({
+                            width: { ideal: 1280, max: 1280 },
+                            height: { ideal: 720, max: 720 },
+                            frameRate: { ideal: 30, max: 30 }
+                        }).catch(err => console.warn("Failed to apply 720p constraints:", err));
+                    }
                 });
             }
 
@@ -648,11 +700,34 @@
                             const pcInstance = peerConnections.get(viewerId);
                             if (pcInstance) {
                                 await pcInstance.setRemoteDescription(new RTCSessionDescription(sdp));
+
+                                const queue = candidateQueues.get(viewerId) || [];
+                                while (queue.length > 0) {
+                                    const cand = queue.shift();
+                                    try {
+                                        await pcInstance.addIceCandidate(new RTCIceCandidate(cand));
+                                    } catch (e) {
+                                        console.warn(`[Studio WebRTC] Error adding queued candidate for viewer ${viewerId}:`, e);
+                                    }
+                                }
                             }
                         } else if (signalEvent === "candidate") {
                             const pcInstance = peerConnections.get(viewerId);
                             if (pcInstance && candidate) {
-                                await pcInstance.addIceCandidate(new RTCIceCandidate(candidate));
+                                if (!pcInstance.remoteDescription || !pcInstance.remoteDescription.type) {
+                                    let queue = candidateQueues.get(viewerId);
+                                    if (!queue) {
+                                        queue = [];
+                                        candidateQueues.set(viewerId, queue);
+                                    }
+                                    queue.push(candidate);
+                                } else {
+                                    try {
+                                        await pcInstance.addIceCandidate(new RTCIceCandidate(candidate));
+                                    } catch (e) {
+                                        console.warn(`[Studio WebRTC] Error adding candidate for viewer ${viewerId}:`, e);
+                                    }
+                                }
                             }
                         }
                     } catch (err) {

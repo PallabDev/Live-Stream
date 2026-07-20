@@ -344,6 +344,7 @@ html, body {
   let pcInstance = null;
   let statusSocket = null;
   let playbackStarted = false;
+  let iceCandidateQueue = [];
 
   function showOffline() {
     offlineScreen.style.display = 'flex';
@@ -393,6 +394,17 @@ html, body {
           console.log('[Viewer] Received SDP Offer from broadcaster');
           if (pcInstance) {
             await pcInstance.setRemoteDescription(new RTCSessionDescription(sdp));
+
+            // Drain queued ICE candidates that arrived before the remote offer was set
+            while (iceCandidateQueue.length > 0) {
+              const cand = iceCandidateQueue.shift();
+              try {
+                await pcInstance.addIceCandidate(new RTCIceCandidate(cand));
+              } catch (e) {
+                console.warn('[Viewer WebRTC] Error adding queued ICE candidate:', e);
+              }
+            }
+
             const answer = await pcInstance.createAnswer();
             await pcInstance.setLocalDescription(answer);
 
@@ -404,7 +416,16 @@ html, body {
         } else if (signalEvent === 'candidate') {
           console.log('[Viewer] Received ICE Candidate from broadcaster');
           if (pcInstance && candidate) {
-            await pcInstance.addIceCandidate(new RTCIceCandidate(candidate));
+            if (!pcInstance.remoteDescription || !pcInstance.remoteDescription.type) {
+              console.log('[Viewer WebRTC] Queuing ICE candidate until SDP offer is applied');
+              iceCandidateQueue.push(candidate);
+            } else {
+              try {
+                await pcInstance.addIceCandidate(new RTCIceCandidate(candidate));
+              } catch (err) {
+                console.warn('[Viewer WebRTC] Error adding ICE candidate:', err);
+              }
+            }
           }
         }
       } catch (err) {
@@ -436,6 +457,7 @@ html, body {
     if (pcInstance) {
       pcInstance.close();
     }
+    iceCandidateQueue = [];
 
     console.log('[Viewer WebRTC] Initializing RTCPeerConnection');
     const config = {
@@ -455,10 +477,17 @@ html, body {
         
         video.play().then(() => {
           hideLoading();
+          hideOffline();
           playbackStarted = true;
         }).catch(err => {
-          console.warn('[Viewer WebRTC] Play auto-prevented:', err);
+          console.warn('[Viewer WebRTC] Unmuted play auto-prevented on refresh:', err);
           hideLoading();
+          hideOffline();
+          // Fallback to muted playback if browser blocked unmuted autoplay on refresh
+          video.muted = true;
+          video.play().then(() => {
+            playbackStarted = true;
+          }).catch(e => console.error('[Viewer WebRTC] Muted playback retry failed:', e));
         });
       }
     };
@@ -472,9 +501,34 @@ html, body {
       }
     };
 
+    let disconnectTimer = null;
     pcInstance.onconnectionstatechange = () => {
-      console.log(`[Viewer WebRTC] Connection state: ${pcInstance.connectionState}`);
-      if (pcInstance.connectionState === "disconnected" || pcInstance.connectionState === "failed" || pcInstance.connectionState === "closed") {
+      const state = pcInstance.connectionState;
+      console.log(`[Viewer WebRTC] Connection state: ${state}`);
+      
+      if (state === "connected") {
+        if (disconnectTimer) {
+          clearTimeout(disconnectTimer);
+          disconnectTimer = null;
+        }
+        hideOffline();
+        hideLoading();
+      } else if (state === "disconnected") {
+        console.warn("[Viewer WebRTC] Connection temporarily lost. Waiting up to 5s to auto-recover...");
+        showLoading();
+        if (!disconnectTimer) {
+          disconnectTimer = setTimeout(() => {
+            if (pcInstance && pcInstance.connectionState === "disconnected") {
+              console.error("[Viewer WebRTC] Failed to recover within 5s. Showing offline screen.");
+              showOffline();
+            }
+          }, 5000);
+        }
+      } else if (state === "failed" || state === "closed") {
+        if (disconnectTimer) {
+          clearTimeout(disconnectTimer);
+          disconnectTimer = null;
+        }
         showOffline();
       }
     };
