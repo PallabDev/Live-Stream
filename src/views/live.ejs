@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title><%= stream.title %> | CoWatch Player</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/favicon.png">
 <link
   rel="stylesheet"
   href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
@@ -15,11 +16,12 @@ tailwind.config = {
   theme: {
     extend: {
       colors: {
-        accent: '#6366f1', /* High-Voltage Indigo to match CoWatch brand */
-        'accent-dark': '#4f46e5',
-        'control-bg': 'rgba(15, 23, 42, 0.95)',
-        'glass-bg': 'rgba(30, 41, 59, 0.7)',
-        'glass-border': 'rgba(255, 255, 255, 0.08)',
+        accent: '#82A3A1',
+        'accent-dark': '#465362',
+        secondary: '#9FC490',
+        'control-bg': 'rgba(18, 22, 26, 0.95)',
+        'glass-bg': 'rgba(70, 83, 98, 0.4)',
+        'glass-border': 'rgba(130, 163, 161, 0.25)',
       },
       animation: {
         'spin-slow': 'spin 1s linear infinite',
@@ -34,8 +36,8 @@ tailwind.config = {
 </script>
 <style>
 :root {
-  --progress-bg: #3a3a3a;
-  --progress-fill: #6366f1;
+  --progress-bg: #2a323b;
+  --progress-fill: #82A3A1;
   --value: 100%;
 }
 

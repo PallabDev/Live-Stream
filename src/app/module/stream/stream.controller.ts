@@ -81,8 +81,8 @@ export class StreamController {
       });
 
       ws.on("close", () => {
-        console.log(`[WS Signaling] Broadcaster disconnected temporarily: ${key}. Starting 60s grace period.`);
-        MonitorService.addLog(`[Signaling] Broadcaster disconnected: ${key}. Waiting 60s for reconnect.`);
+        console.log(`[WS Signaling] Broadcaster disconnected temporarily: ${key}. Starting 90s grace period.`);
+        MonitorService.addLog(`[Signaling] Broadcaster disconnected: ${key}. Waiting 90s for reconnect.`);
         
         setTimeout(async () => {
           const currentSession = StreamController.activeSessions.get(key);
@@ -90,7 +90,7 @@ export class StreamController {
             console.log(`[WS Signaling] Broadcaster grace period expired for: ${key}. Stopping session.`);
             await StreamController.stopStreamSession(key);
           }
-        }, 60000);
+        }, 90000);
       });
 
       ws.on("error", (err: any) => {
