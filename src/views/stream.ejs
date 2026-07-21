@@ -822,55 +822,6 @@
                             closePeerConnection(viewerId);
                         } else if (signalEvent === "answer") {
                             const pcInstance = peerConnections.get(viewerId);
-                            if (pcInstance) {
-                                await pcInstance.setRemoteDescription(new RTCSessionDescription(sdp));
-
-                                const queue = candidateQueues.get(viewerId) || [];
-                                while (queue.length > 0) {
-                                    const cand = queue.shift();
-                                    try {
-                                        await pcInstance.addIceCandidate(new RTCIceCandidate(cand));
-                                    } catch (e) {
-                                        console.warn(`[Studio WebRTC] Error adding queued candidate for viewer ${viewerId}:`, e);
-                                    }
-                                }
-                toggleLiveIcon.className = "ti ti-player-play";
-                toggleLiveText.textContent = "Go Live";
-
-                if (hasMediaSelected) {
-                    btnToggleLive.disabled = false;
-                    btnToggleLive.style.opacity = "1";
-                } else {
-                    btnToggleLive.disabled = true;
-                    btnToggleLive.style.opacity = "0.5";
-                }
-            }
-
-            // Update placeholder text if media selection changes
-            if (!hasMediaSelected) {
-                playerEl.style.display = "none";
-                placeholderEl.style.display = "flex";
-                iconElement.className = "ti ti-video-off";
-                iconElement.style.color = "var(--danger)";
-                placeholderTitle.textContent = "No Media Selected";
-                placeholderText.innerHTML = 'Select a local movie file using the media source panel, then click <strong>Go Live</strong> to start.';
-            }
-        }
-
-        function updateDuration() {
-            if (!streamStartTime) return;
-            const elapsedMs = Date.now() - streamStartTime;
-            const totalSecs = Math.floor(elapsedMs / 1000);
-            const hrs = Math.floor(totalSecs / 3600).toString().padStart(2, '0');
-            const mins = Math.floor((totalSecs % 3600) / 60).toString().padStart(2, '0');
-            const secs = (totalSecs % 60).toString().padStart(2, '0');
-            document.getElementById('duration-badge').textContent = `${hrs}:${mins}:${secs}`;
-        }
-
-        function copyViewerLink() {
-            const link = window.location.origin + "/live/" + streamKey;
-            navigator.clipboard.writeText(link).then(() => {
-                if (window.showToast) window.showToast("Viewer link copied to clipboard!", "success");
             }).catch(() => {
                 if (window.showToast) window.showToast("Failed to copy link.", "error");
             });
