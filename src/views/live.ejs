@@ -460,6 +460,16 @@ html, body {
       console.warn('[Viewer] Connection to ' + viewerWsUrl + ' failed. Note: If you are testing over a local network using HTTPS with a self-signed certificate, mobile browsers (like iOS Safari) block WebSockets (wss://) silently. Consider testing with a valid secure tunnel like ngrok or HTTP.');
       showOffline();
     };
+  }
+
+  window.checkStreamStatus = function () {
+    if (!statusSocket || statusSocket.readyState !== WebSocket.OPEN) {
+      connectViewerSocket();
+    } else {
+      statusSocket.send(JSON.stringify({ event: "viewer-ready" }));
+    }
+  };
+
   function preferHighFidelityAudioAndVideo(sdp) {
     let lines = sdp.split('\r\n');
     let opusPt = null;
