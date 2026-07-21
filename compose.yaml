@@ -28,6 +28,18 @@ services:
     networks:
       - default
 
+  coturn:
+    image: coturn/coturn:latest
+    container_name: coturn
+    restart: always
+    command: turnserver -a -v -n -u guest:somepassword -p 3478 -L 0.0.0.0 -r cowatch.local --no-tls --no-dtls --min-port 50000 --max-port 50050
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "50000-50050:50000-50050/udp"
+    networks:
+      - default
+
 networks:
   caddy_net:
     external: true

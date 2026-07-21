@@ -468,10 +468,16 @@ html, body {
     iceCandidateQueue = [];
 
     console.log('[Viewer WebRTC] Initializing RTCPeerConnection');
+    const turnHost = window.location.hostname;
     const config = {
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" }
+        { urls: "stun:stun1.l.google.com:19302" },
+        { 
+            urls: [`turn:${turnHost}:3478`, `turn:${turnHost}:3478?transport=tcp`], 
+            username: "guest", 
+            credential: "somepassword" 
+        }
       ]
     };
 

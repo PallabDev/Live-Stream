@@ -19,5 +19,4 @@ jobs:
           script: |
             cd /root/project/Live-Stream
             git pull
-            docker compose down
             docker compose up -d --build
