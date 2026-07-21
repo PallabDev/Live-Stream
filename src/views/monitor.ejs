@@ -3,16 +3,16 @@
 <style>
   .monitor-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.25rem;
     margin-bottom: 2rem;
   }
 
   .stat-card {
-    background: rgba(30, 41, 59, 0.45);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(70, 83, 98, 0.25);
+    border: 1px solid rgba(130, 163, 161, 0.2);
     border-radius: 16px;
-    padding: 1.5rem;
+    padding: 1.25rem 1.5rem;
     backdrop-filter: blur(12px);
     display: flex;
     align-items: center;
@@ -23,7 +23,7 @@
   .stat-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
-    border-color: rgba(99, 102, 241, 0.3);
+    border-color: #82A3A1;
   }
 
   .stat-icon {
@@ -38,8 +38,9 @@
   }
 
   .icon-cpu { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
-  .icon-mem { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
-  .icon-net { background: rgba(99, 102, 241, 0.15); color: #6366f1; border: 1px solid rgba(99, 102, 241, 0.3); }
+  .icon-mem { background: rgba(159, 196, 144, 0.15); color: #9FC490; border: 1px solid rgba(159, 196, 144, 0.3); }
+  .icon-net { background: rgba(130, 163, 161, 0.15); color: #82A3A1; border: 1px solid rgba(130, 163, 161, 0.3); }
+  .icon-bw  { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
 
   .stat-info {
     display: flex;
@@ -47,18 +48,24 @@
   }
 
   .stat-label {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: var(--text-muted, #94a3b8);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
 
   .stat-value {
-    font-size: 1.75rem;
+    font-size: 1.5rem;
     font-weight: 700;
     color: #fff;
-    margin-top: 0.25rem;
+    margin-top: 0.2rem;
     font-family: monospace;
+  }
+
+  .stat-sub {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin-top: 0.15rem;
   }
 
   .monitor-layout {
@@ -74,8 +81,8 @@
   }
 
   .console-panel {
-    background: rgba(15, 23, 42, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(18, 22, 26, 0.85);
+    border: 1px solid rgba(130, 163, 161, 0.2);
     border-radius: 16px;
     padding: 1.25rem;
     display: flex;
@@ -103,14 +110,14 @@
 
   .console-body {
     flex: 1;
-    background: #090d16;
+    background: #0d1013;
     border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 8px;
     padding: 1rem;
     font-family: 'Fira Code', monospace, Courier;
     font-size: 0.85rem;
     overflow-y: auto;
-    color: #38bdf8;
+    color: #82A3A1;
     white-space: pre-wrap;
     word-break: break-all;
     line-height: 1.5;
@@ -121,8 +128,8 @@
   }
 
   .table-panel {
-    background: rgba(30, 41, 59, 0.45);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(70, 83, 98, 0.25);
+    border: 1px solid rgba(130, 163, 161, 0.2);
     border-radius: 16px;
     padding: 1.25rem;
     backdrop-filter: blur(12px);
@@ -157,42 +164,60 @@
   
   <div style="margin-bottom: 2rem;">
     <h2 style="font-size: 2rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 0.75rem;">
-      <i class="ti ti-activity-heartbeat" style="color: var(--primary, #6366f1); font-size: 2.5rem;"></i> System Control Center
+      <i class="ti ti-activity-heartbeat" style="color: #82A3A1; font-size: 2.5rem;"></i> System & Telemetry Insights
     </h2>
     <p style="color: var(--text-muted, #94a3b8); margin-top: 0.5rem; font-size: 1rem;">
-      Realtime server performance metrics, egress network bandwidth, media files and transcode pipelines logs.
+      Real-time server CPU & load, monthly bandwidth usage, active WebRTC broadcasts, and system telemetry logs.
     </p>
   </div>
 
-  <!-- Row 1: Metrics -->
+  <!-- Row 1: Enhanced Metric Cards -->
   <div class="monitor-grid">
+    <!-- CPU & Load -->
     <div class="stat-card">
       <div class="stat-icon icon-cpu">
         <i class="ti ti-cpu"></i>
       </div>
       <div class="stat-info">
-        <span class="stat-label">CPU Usage</span>
+        <span class="stat-label">CPU & Load Avg</span>
         <span class="stat-value" id="val-cpu">0%</span>
+        <span class="stat-sub" id="val-load">Load: 0.00, 0.00, 0.00</span>
       </div>
     </div>
     
+    <!-- RAM & Uptime -->
     <div class="stat-card">
       <div class="stat-icon icon-mem">
         <i class="ti ti-database"></i>
       </div>
       <div class="stat-info">
-        <span class="stat-label">System VPS RAM</span>
-        <span class="stat-value" id="val-mem">0 MB / 0 MB</span>
+        <span class="stat-label">System RAM & Uptime</span>
+        <span class="stat-value" id="val-mem">0 MB</span>
+        <span class="stat-sub" id="val-uptime">Uptime: 0h 0m</span>
       </div>
     </div>
 
+    <!-- Live Egress Bandwidth -->
     <div class="stat-card">
       <div class="stat-icon icon-net">
         <i class="ti ti-network"></i>
       </div>
       <div class="stat-info">
-        <span class="stat-label">Egress Bandwidth</span>
+        <span class="stat-label">Live Egress Speed</span>
         <span class="stat-value" id="val-net">0.00 Mbps</span>
+        <span class="stat-sub">Real-time outbound</span>
+      </div>
+    </div>
+
+    <!-- Monthly Bandwidth Consumed -->
+    <div class="stat-card">
+      <div class="stat-icon icon-bw">
+        <i class="ti ti-chart-arrows-vertical"></i>
+      </div>
+      <div class="stat-info">
+        <span class="stat-label">Monthly Data Used</span>
+        <span class="stat-value" id="val-monthly-bw">0.00 GB</span>
+        <span class="stat-sub" id="val-monthly-sessions">0 Sessions (&ge;1.5h)</span>
       </div>
     </div>
   </div>
@@ -200,16 +225,16 @@
   <!-- Row 2: Logs & Directory & Active Streams -->
   <div class="monitor-layout" style="margin-bottom: 2rem;">
     
-    <!-- Left Column: FFmpeg logs -->
+    <!-- Left Column: WebRTC logs -->
     <div class="console-panel">
       <div class="console-header">
         <div class="console-title">
-          <i class="ti ti-terminal-2" style="color: #38bdf8;"></i> WebRTC Signaling Diagnostics
+          <i class="ti ti-terminal-2" style="color: #82A3A1;"></i> Telemetry Diagnostics Log
         </div>
         <span class="badge badge-primary" id="log-count">0 Lines</span>
       </div>
       <div class="console-body" id="console-body">
-        <div style="color: #64748b;">Waiting for active streaming logs...</div>
+        <div style="color: #64748b;">Waiting for telemetry logs...</div>
       </div>
     </div>
 
@@ -217,7 +242,7 @@
     <div class="table-panel">
       <div class="card-header" style="margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.5rem;">
         <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: #fff;">
-          <i class="ti ti-player-play" style="color: #10b981;"></i> Active Streams
+          <i class="ti ti-player-play" style="color: #9FC490;"></i> Active Live Sessions
         </h4>
       </div>
       <div style="overflow-x: auto;">
@@ -225,7 +250,7 @@
           <thead>
             <tr>
               <th>Stream Key</th>
-              <th>Viewers Count</th>
+              <th>Viewers (Max 5)</th>
             </tr>
           </thead>
           <tbody>
@@ -243,11 +268,11 @@
   <div class="table-panel">
     <div class="card-header" style="margin-bottom: 1.25rem; padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
       <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: #fff;">
-        <i class="ti ti-folder" style="color: #eab308; font-size: 1.25rem;"></i> Media Directory Inspector (/media)
+        <i class="ti ti-folder" style="color: #82A3A1; font-size: 1.25rem;"></i> Media Storage Inspector (/media)
       </h4>
       <span class="badge badge-secondary" id="file-count">0 Files</span>
     </div>
-    <div style="overflow-x: auto; max-height: 400px;">
+    <div style="overflow-x: auto; max-height: 350px;">
       <table class="monitor-table" id="files-table">
         <thead>
           <tr>
@@ -259,7 +284,7 @@
         </thead>
         <tbody>
           <tr>
-            <td colspan="4" style="text-align: center; color: #64748b;">No media segments created yet</td>
+            <td colspan="4" style="text-align: center; color: #64748b;">No media files created yet</td>
           </tr>
         </tbody>
       </table>
@@ -271,8 +296,13 @@
 <script>
   (function() {
     const cpuEl = document.getElementById('val-cpu');
+    const loadEl = document.getElementById('val-load');
     const memEl = document.getElementById('val-mem');
+    const uptimeEl = document.getElementById('val-uptime');
     const netEl = document.getElementById('val-net');
+    const monthlyBwEl = document.getElementById('val-monthly-bw');
+    const monthlySessionsEl = document.getElementById('val-monthly-sessions');
+    
     const logCountEl = document.getElementById('log-count');
     const consoleBody = document.getElementById('console-body');
     const streamsTable = document.getElementById('streams-table').querySelector('tbody');
@@ -293,12 +323,21 @@
         try {
           const data = JSON.parse(event.data);
 
-          // Update CPU and System RAM
+          // Update CPU, Load Avg, System RAM, and Uptime
           cpuEl.textContent = `${data.cpu}%`;
+          if (data.loadAvg) loadEl.textContent = `Load: ${data.loadAvg}`;
+
           if (data.memory && data.memory.systemUsedMB) {
-            memEl.textContent = `${data.memory.systemUsedMB} MB / ${data.memory.systemTotalMB} MB`;
+            memEl.textContent = `${data.memory.systemUsedMB} / ${data.memory.systemTotalMB} MB`;
           }
-          
+          if (data.uptimeFormatted) uptimeEl.textContent = `Uptime: ${data.uptimeFormatted}`;
+
+          // Update Monthly Bandwidth Consumed & Counted Sessions
+          if (data.monthlyStats) {
+            monthlyBwEl.textContent = `${data.monthlyStats.monthlyGbConsumed} GB`;
+            monthlySessionsEl.textContent = `${data.monthlyStats.countedSessionsThisMonth} Counted / ${data.monthlyStats.totalSessionsThisMonth} Total`;
+          }
+
           // Update Egress network bandwidth
           const egressMbps = ((data.egressKbps || 0) / 1024).toFixed(2);
           netEl.textContent = `${egressMbps} Mbps`;
@@ -307,10 +346,10 @@
           if (data.activeStreams && data.activeStreams.length > 0) {
             streamsTable.innerHTML = data.activeStreams.map(stream => `
               <tr>
-                <td><code style="color: #6366f1;">${stream.key}</code></td>
+                <td><code style="color: #82A3A1;">${stream.key}</code></td>
                 <td>
                   <span class="badge badge-success" style="font-family: monospace;">
-                    ${stream.viewersCount} active
+                    ${stream.viewersCount} / 5 Viewers
                   </span>
                 </td>
               </tr>
@@ -329,26 +368,24 @@
             if (currentLogsText !== previousLogsText) {
               previousLogsText = currentLogsText;
               
-              // Format log lines beautifully
+              // Format log lines
               consoleBody.innerHTML = data.ffmpegLogs.map(line => {
                 let color = '#e2e8f0';
                 if (line.includes('warning') || line.includes('WARN')) {
-                  color = '#f59e0b'; // Amber
+                  color = '#f59e0b';
                 } else if (line.includes('error') || line.includes('ERR')) {
-                  color = '#ef4444'; // Red
-                } else if (line.includes('[Signaling]')) {
-                  color = '#10b981'; // Green for WebRTC signaling events
+                  color = '#ef4444';
+                } else if (line.includes('[Signaling]') || line.includes('[Telemetry]')) {
+                  color = '#9FC490';
                 }
                 return `<div class="console-line" style="color: ${color};">${escapeHtml(line)}</div>`;
               }).join('');
 
               logCountEl.textContent = `${data.ffmpegLogs.length} Lines`;
-              
-              // Auto scroll console to bottom
               consoleBody.scrollTop = consoleBody.scrollHeight;
             }
           } else {
-            consoleBody.innerHTML = `<div style="color: #64748b;">Waiting for active streaming logs...</div>`;
+            consoleBody.innerHTML = `<div style="color: #64748b;">Waiting for telemetry logs...</div>`;
             logCountEl.textContent = `0 Lines`;
           }
 
@@ -358,7 +395,7 @@
             filesTable.innerHTML = data.mediaFiles.map(file => `
               <tr>
                 <td><code>${file.stream}</code></td>
-                <td><span style="font-family: monospace; color: #38bdf8;">${file.file}</span></td>
+                <td><span style="font-family: monospace; color: #82A3A1;">${file.file}</span></td>
                 <td><span style="font-family: monospace;">${formatBytes(file.size)}</span></td>
                 <td><span class="badge badge-secondary" style="font-size: 0.8rem;">${file.modifiedAgo} ago</span></td>
               </tr>
@@ -367,7 +404,7 @@
             fileCountEl.textContent = `0 Files`;
             filesTable.innerHTML = `
               <tr>
-                <td colspan="4" style="text-align: center; color: #64748b;">No media segments created yet</td>
+                <td colspan="4" style="text-align: center; color: #64748b;">No media files created yet</td>
               </tr>
             `;
           }

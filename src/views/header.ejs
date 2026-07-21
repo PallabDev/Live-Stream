@@ -60,7 +60,30 @@
     </div>
   </header>
 
+  <div id="toast-container"></div>
+
   <script>
+    window.showToast = function(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      
+      let icon = 'ti-info-circle';
+      if (type === 'success') icon = 'ti-circle-check';
+      if (type === 'error') icon = 'ti-alert-triangle';
+      if (type === 'warning') icon = 'ti-alert-circle';
+
+      toast.innerHTML = `<i class="ti ${icon}" style="font-size:1.2rem;"></i> <span>${message}</span>`;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.classList.add('toast-out');
+        setTimeout(() => toast.remove(), 250);
+      }, 4000);
+    };
+
     document.addEventListener('DOMContentLoaded', () => {
       const toggle = document.getElementById('nav-toggle');
       const menu = document.querySelector('.nav-links');

@@ -6,9 +6,12 @@ import fs from "fs";
 import path from "path";
 import { WebSocket } from "ws";
 import { MonitorService } from "../../common/monitor/monitor.service.js";
+import { TelemetryService } from "./telemetry.service.js";
 
 interface StreamSession {
   streamKey: string;
+  userId: string;
+  telemetryId?: string;
   ws: WebSocket; // Broadcaster
   viewers: Map<string, WebSocket>; // viewerId -> WebSocket
 }
@@ -29,6 +32,15 @@ export class StreamController {
         return;
       }
 
+      // Check quota & block status before allowing live stream
+      const canStart = await TelemetryService.canUserStartStream(streamInfo.userId);
+      if (!canStart.allowed) {
+        console.warn(`[WS Signaling] Broadcaster rejected for ${key}: ${canStart.reason}`);
+        ws.send(JSON.stringify({ event: "error", error: canStart.reason }));
+        ws.close(4003, canStart.reason || "Quota limit reached or account blocked.");
+        return;
+      }
+
       // Check for existing session (reconnection path)
       let session = StreamController.activeSessions.get(key);
       let isReconnecting = false;
@@ -39,9 +51,12 @@ export class StreamController {
         isReconnecting = true;
         session.ws = ws;
       } else {
-        // Initialize new session
+        // Initialize new session and start telemetry tracking
+        const telemetryId = await TelemetryService.startSession(streamInfo.userId, key);
         session = {
           streamKey: key,
+          userId: streamInfo.userId,
+          telemetryId,
           ws,
           viewers: new Map(),
         };
@@ -99,6 +114,7 @@ export class StreamController {
           console.log(`[WS Signaling] Upgrading ${waiting.size} waiting viewers for key: ${key}`);
           for (const viewerWs of waiting) {
             if (viewerWs.readyState === 1) { // OPEN
+              if (session.viewers.size >= 5) break; // Enforce 5 viewers max
               const viewerId = Math.random().toString(36).substring(2, 15);
               session.viewers.set(viewerId, viewerWs);
 
@@ -128,13 +144,13 @@ export class StreamController {
       const session = StreamController.activeSessions.get(key);
 
       if (session) {
-        // Enforce maximum 10 viewers capacity limit per stream key
-        if (session.viewers.size >= 10) {
-          console.warn(`[WS Signaling] Viewer ${viewerId} rejected: Stream key ${key} reached maximum capacity of 10 viewers.`);
+        // Enforce maximum 5 viewers capacity limit per stream key
+        if (session.viewers.size >= 5) {
+          console.warn(`[WS Signaling] Viewer ${viewerId} rejected: Stream key ${key} reached maximum capacity of 5 viewers.`);
           ws.send(JSON.stringify({ 
             event: "status", 
             status: "capacity_reached", 
-            message: "Stream is at maximum capacity (10 viewers max allowed)." 
+            message: "Stream is at maximum capacity (5 viewers max allowed)." 
           }));
           return;
         }
@@ -219,6 +235,11 @@ export class StreamController {
 
     console.log(`[WS Signaling] Stopping stream session for key: ${streamKey}`);
     MonitorService.addLog(`[Signaling] Broadcaster disconnected for key: ${streamKey}`);
+
+    // Record session end in telemetry (only sessions >= 1.5h count)
+    if (session.telemetryId) {
+      await TelemetryService.endSession(session.telemetryId);
+    }
 
     // Update DB status to offline
     try {

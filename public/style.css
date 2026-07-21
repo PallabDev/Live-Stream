@@ -1,17 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
 
 :root {
-  --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #020617 100%);
-  --panel-bg: rgba(30, 41, 59, 0.45);
-  --panel-border: rgba(255, 255, 255, 0.08);
-  --primary: #6366f1;
-  --primary-hover: #4f46e5;
-  --secondary: #ec4899;
-  --accent: #10b981;
+  --bg-gradient: linear-gradient(135deg, #111417 0%, #1c2228 50%, #0c0e10 100%);
+  --panel-bg: rgba(70, 83, 98, 0.3);
+  --panel-border: rgba(130, 163, 161, 0.2);
+  --primary: #82A3A1;
+  --primary-hover: #465362;
+  --secondary: #9FC490;
+  --accent: #9FC490;
   --danger: #ef4444;
   --warning: #f59e0b;
   --text-main: #f8fafc;
-  --text-muted: #cbd5e1; /* Increased contrast for readability */
+  --text-muted: #cbd5e1;
   --font-sans: 'Outfit', sans-serif;
   --radius: 16px;
   --radius-sm: 4px;
@@ -719,5 +719,84 @@ input:checked + .slider:before {
     font-size: 0.9rem;
     line-height: 1.6;
     margin: 0 0 0.5rem 0;
+  }
+}
+
+/* === TOP-CENTER TOAST ALERT SYSTEM === */
+#toast-container {
+  position: fixed;
+  top: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  pointer-events: none;
+  width: 90%;
+  max-width: 480px;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.25rem;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: rgba(30, 38, 46, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(12px);
+  animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition: all 0.25s ease;
+}
+
+.toast-success {
+  border-left: 4px solid #9FC490;
+  background: rgba(24, 32, 28, 0.95);
+}
+
+.toast-error {
+  border-left: 4px solid #ef4444;
+  background: rgba(38, 20, 24, 0.95);
+}
+
+.toast-warning {
+  border-left: 4px solid #f59e0b;
+  background: rgba(38, 30, 20, 0.95);
+}
+
+.toast-info {
+  border-left: 4px solid #82A3A1;
+  background: rgba(20, 32, 36, 0.95);
+}
+
+.toast-out {
+  animation: toastOut 0.25s ease forwards;
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toastOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-15px) scale(0.95);
   }
 }

@@ -33,4 +33,32 @@ router.post("/api/users/change-role", requireAuth, (req: any, res, next) => {
   return AuthController.changeRole(req, res);
 });
 
+router.post("/api/users/update-quota", requireAuth, (req: any, res, next) => {
+  if (req.user.role !== "admin") {
+    return res.status(403).json({ success: false, error: "Only admins can perform this action." });
+  }
+  return AuthController.updateQuota(req, res);
+});
+
+router.post("/api/users/toggle-block", requireAuth, (req: any, res, next) => {
+  if (req.user.role !== "admin") {
+    return res.status(403).json({ success: false, error: "Only admins can perform this action." });
+  }
+  return AuthController.toggleBlock(req, res);
+});
+
+router.post("/api/users/reset-quota", requireAuth, (req: any, res, next) => {
+  if (req.user.role !== "admin") {
+    return res.status(403).json({ success: false, error: "Only admins can perform this action." });
+  }
+  return AuthController.resetQuota(req, res);
+});
+
+router.get("/api/admin/telemetry", requireAuth, (req: any, res, next) => {
+  if (req.user.role !== "admin") {
+    return res.status(403).json({ success: false, error: "Only admins can perform this action." });
+  }
+  return AuthController.getTelemetry(req, res);
+});
+
 export default router;

@@ -78,6 +78,9 @@
                         <span id="status-badge" class="badge badge-danger">
                             <i class="ti ti-point-filled"></i> Offline
                         </span>
+                        <span id="viewers-badge" class="badge badge-secondary" style="background: rgba(70, 83, 98, 0.85); color: #fff; border: 1px solid rgba(130, 163, 161, 0.3);">
+                            <i class="ti ti-users"></i> <span id="viewers-count">0</span> / 5 Viewers
+                        </span>
                         <span id="duration-badge" class="badge badge-primary" style="display: none;">
                             00:00:00
                         </span>
@@ -294,7 +297,7 @@
 
                 updateUI();
             } catch (err) {
-                alert("Screen sharing cancelled or failed: " + err.message);
+                if (window.showToast) window.showToast("Screen sharing cancelled or failed: " + err.message, "error");
             }
         }
 
@@ -368,7 +371,7 @@
 
                 if (line.startsWith('a=fmtp:') && line.includes('opus')) {
                     if (!line.includes('stereo=1')) {
-                        line = line + ';stereo=1;sprop-stereo=1;maxaveragebitrate=256000;useinbandfec=1';
+                        line = line + ';stereo=1;sprop-stereo=1;maxaveragebitrate=128000;useinbandfec=1';
                     }
                 }
 
@@ -629,16 +632,19 @@
 
         function updateAdaptiveBitrates() {
             const count = Math.max(1, peerConnections.size);
+            const viewersCountEl = document.getElementById("viewers-count");
+            if (viewersCountEl) viewersCountEl.textContent = peerConnections.size;
+
             let targetMaxBitrate;
             
             if (count === 1) {
                 targetMaxBitrate = 8000000; // 8.0 Mbps max for 1 viewer (Ultra 1080p)
             } else if (count <= 3) {
                 targetMaxBitrate = 6000000; // 6.0 Mbps max per viewer (Full 1080p HD)
-            } else if (count <= 6) {
-                targetMaxBitrate = 3500000; // 3.5 Mbps max per viewer
+            } else if (count <= 5) {
+                targetMaxBitrate = 3500000; // 3.5 Mbps max per viewer (5 Viewers Max Cap)
             } else {
-                targetMaxBitrate = 2000000; // 2.0 Mbps max per viewer
+                targetMaxBitrate = 2000000;
             }
 
             console.log(`[Studio WebRTC] Balancing host upload bandwidth across ${count} connected viewer(s) (${Math.round(targetMaxBitrate / 1000)} Kbps per peer)`);
@@ -782,7 +788,7 @@
             }
 
             if (!mediaStream || mediaStream.getTracks().length === 0) {
-                alert("No active media tracks found. Please play the video or start screen sharing first.");
+                if (window.showToast) window.showToast("No active media tracks found. Please play the video or start screen sharing first.", "error");
                 return;
             }
 
@@ -868,7 +874,7 @@
                 };
 
             } catch (err) {
-                alert("Failed to establish signaling socket connection: " + err.message);
+                if (window.showToast) window.showToast("Failed to establish signaling socket connection: " + err.message, "error");
                 triggerStopLive();
             }
         }
@@ -894,6 +900,7 @@
                 pcInstance.close();
             }
             peerConnections.clear();
+            document.getElementById("viewers-count").textContent = "0";
 
             if (mediaStream) {
                 if (currentSourceType === 'file') {
@@ -908,6 +915,7 @@
                 durationInterval = null;
             }
             document.getElementById("duration-badge").style.display = "none";
+            document.getElementById("viewers-count-badge").style.display = "none";
 
             isStreaming = false;
             isLive = false;
@@ -994,9 +1002,9 @@
         function copyViewerLink() {
             const link = window.location.origin + "/live/" + streamKey;
             navigator.clipboard.writeText(link).then(() => {
-                alert("Viewer link copied to clipboard!");
-            }).catch(err => {
-                console.error("Copy failed:", err);
+                if (window.showToast) window.showToast("Viewer link copied to clipboard!", "success");
+            }).catch(() => {
+                if (window.showToast) window.showToast("Failed to copy link.", "error");
             });
         }
     </script>

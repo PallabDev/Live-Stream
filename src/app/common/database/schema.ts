@@ -10,6 +10,8 @@ export const user = sqliteTable("user", {
   updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
   role: text("role").$type<"admin" | "user">().default("user").notNull(),
   hasAccess: integer("hasAccess", { mode: "boolean" }).default(false).notNull(),
+  maxAllowedStreams: integer("maxAllowedStreams").default(30).notNull(),
+  isBlockedFromStreaming: integer("isBlockedFromStreaming", { mode: "boolean" }).default(false).notNull(),
 });
 
 export const session = sqliteTable("session", {
@@ -72,5 +74,18 @@ export const streamLog = sqliteTable("stream_log", {
   message: text("message").notNull(),
   level: text("level").default("info").notNull(),
   timestamp: integer("timestamp", { mode: "timestamp" }).notNull(),
+});
+
+export const streamTelemetry = sqliteTable("stream_telemetry", {
+  id: text("id").primaryKey(),
+  userId: text("userId")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  streamKey: text("streamKey").notNull(),
+  startTime: integer("startTime", { mode: "timestamp" }).notNull(),
+  endTime: integer("endTime", { mode: "timestamp" }),
+  durationSeconds: integer("durationSeconds").default(0).notNull(),
+  countedTowardsQuota: integer("countedTowardsQuota", { mode: "boolean" }).default(false).notNull(),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
 });
 

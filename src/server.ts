@@ -189,15 +189,19 @@ monitorWss.on("connection", (ws: any) => {
     if (ws.readyState !== 1) return; // OPEN
     try {
       const cpu = await MonitorService.getCpuUsage();
-      const sysMem = MonitorService.getSystemMemory();
+      const sysMetrics = MonitorService.getSystemMetrics();
+      const monthlyStats = await MonitorService.getMonthlyStats();
       const realEgressKbps = MonitorService.getRealEgressKbps(StreamController.activeSessions);
       const data = {
         cpu,
         memory: {
-          systemUsedMB: sysMem.usedMB,
-          systemTotalMB: sysMem.totalMB,
-          systemUsedPercent: sysMem.usedPercent,
+          systemUsedMB: sysMetrics.memory.usedMB,
+          systemTotalMB: sysMetrics.memory.totalMB,
+          systemUsedPercent: sysMetrics.memory.usedPercent,
         },
+        loadAvg: sysMetrics.loadAvg,
+        uptimeFormatted: sysMetrics.uptimeFormatted,
+        monthlyStats,
         egressKbps: realEgressKbps,
         mediaFiles: MonitorService.getMediaFiles(),
         ffmpegLogs: MonitorService.getLogs(),

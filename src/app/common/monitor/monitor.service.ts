@@ -2,8 +2,8 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { db } from "../database/db.js";
-import { streamLog } from "../database/schema.js";
-import { desc } from "drizzle-orm";
+import { streamLog, streamTelemetry } from "../database/schema.js";
+import { desc, gte } from "drizzle-orm";
 
 export class MonitorService {
   static async addStreamLog(streamKey: string, message: string, level: string = "info") {
@@ -18,6 +18,7 @@ export class MonitorService {
       console.error("[MonitorService] Failed to save stream log to DB:", err);
     }
   }
+
   private static ffmpegLogs: string[] = [];
   private static transcodeSpeeds = new Map<string, string>();
   private static MAX_LOGS = 150;
@@ -42,7 +43,6 @@ export class MonitorService {
     if (this.ffmpegLogs.length > this.MAX_LOGS) {
       this.ffmpegLogs.shift();
     }
-    // Write system/telemetry logs to DB
     this.addStreamLog("system", line, "info").catch(() => {});
   }
 
@@ -88,16 +88,71 @@ export class MonitorService {
     });
   }
 
-  static getSystemMemory() {
+  static getSystemMetrics() {
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
     const usedMem = totalMem - freeMem;
+    const loadAvg = os.loadavg().map(l => l.toFixed(2));
+    const uptimeSec = os.uptime();
+
     return {
-      totalMB: Math.round(totalMem / (1024 * 1024)),
-      usedMB: Math.round(usedMem / (1024 * 1024)),
-      freeMB: Math.round(freeMem / (1024 * 1024)),
-      usedPercent: Math.round((usedMem / totalMem) * 100)
+      memory: {
+        totalMB: Math.round(totalMem / (1024 * 1024)),
+        usedMB: Math.round(usedMem / (1024 * 1024)),
+        freeMB: Math.round(freeMem / (1024 * 1024)),
+        usedPercent: Math.round((usedMem / totalMem) * 100),
+      },
+      loadAvg: `${loadAvg[0]}, ${loadAvg[1]}, ${loadAvg[2]}`,
+      uptimeFormatted: this.formatUptime(uptimeSec),
     };
+  }
+
+  private static formatUptime(seconds: number): string {
+    const d = Math.floor(seconds / (3600 * 24));
+    const h = Math.floor((seconds % (3600 * 24)) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    return `${h}h ${m}m`;
+  }
+
+  static async getMonthlyStats() {
+    try {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const records = await db
+        .select()
+        .from(streamTelemetry)
+        .where(gte(streamTelemetry.startTime, startOfMonth));
+
+      let totalDurationSeconds = 0;
+      let countedSessionsCount = 0;
+
+      for (const r of records) {
+        totalDurationSeconds += r.durationSeconds || 0;
+        if (r.countedTowardsQuota) {
+          countedSessionsCount++;
+        }
+      }
+
+      // Estimate bandwidth consumed: average stream bitrate ~ 5.0 Mbps (0.625 MB/sec)
+      const bytesConsumed = totalDurationSeconds * (5 * 1000 * 1000 / 8);
+      const gbConsumed = (bytesConsumed / (1024 * 1024 * 1024)).toFixed(2);
+
+      return {
+        totalSessionsThisMonth: records.length,
+        countedSessionsThisMonth: countedSessionsCount,
+        totalHoursThisMonth: (totalDurationSeconds / 3600).toFixed(1),
+        monthlyGbConsumed: gbConsumed,
+      };
+    } catch (err) {
+      return {
+        totalSessionsThisMonth: 0,
+        countedSessionsThisMonth: 0,
+        totalHoursThisMonth: "0.0",
+        monthlyGbConsumed: "0.00",
+      };
+    }
   }
 
   static getRealEgressKbps(activeSessions: Map<string, any>): number {
@@ -105,11 +160,11 @@ export class MonitorService {
     for (const session of activeSessions.values()) {
       const count = session.viewers ? session.viewers.size : 0;
       if (count > 0) {
-        let bpsPerViewer = 4500000;
-        if (count === 1) bpsPerViewer = 4500000;
-        else if (count <= 3) bpsPerViewer = 3500000;
-        else if (count <= 6) bpsPerViewer = 2500000;
-        else bpsPerViewer = 1800000;
+        let bpsPerViewer = 6000000;
+        if (count === 1) bpsPerViewer = 8000000;
+        else if (count <= 3) bpsPerViewer = 6000000;
+        else if (count <= 5) bpsPerViewer = 3500000;
+        else bpsPerViewer = 2000000;
         totalBps += (count * bpsPerViewer);
       }
     }

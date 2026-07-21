@@ -1,16 +1,16 @@
 <%- include('header') %>
 
-<div style="max-width: 960px; margin: 1.5rem auto; display: flex; flex-direction: column; gap: 1.5rem;">
-  <!-- Admin Panel -->
+<div style="max-width: 1100px; margin: 1.5rem auto; display: flex; flex-direction: column; gap: 1.5rem;">
+  <!-- Admin Access & Quota Control Panel -->
   <div class="glass-panel">
-    <div class="card-header">
-      <h3 class="card-title">
-        <i class="ti ti-shield-lock" style="color: var(--secondary);"></i> Admin Access Panel
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h3 class="card-title" style="display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+        <i class="ti ti-shield-lock" style="color: var(--secondary);"></i> Admin Stream & Quota Management
       </h3>
-      <span class="badge badge-danger">Administrator Privilege</span>
+      <span class="badge badge-danger">Administrator Access</span>
     </div>
-    <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">
-      As an admin, you have master access. You can promote users to Admins or grant them access to create streams.
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
+      Manage user access, stream quotas (only live sessions &ge; 1.5h count towards quota), reset usage counters, or block broadcasting.
     </p>
 
     <div style="overflow-x: auto;">
@@ -20,12 +20,46 @@
             <th>User</th>
             <th>Email</th>
             <th>Role</th>
-            <th>Streaming Access</th>
+            <th>Access</th>
+            <th>Stream Quota Used (&ge;1.5h)</th>
+            <th>Max Quota Limit</th>
+            <th>Status / Block</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody id="users-list">
           <tr>
-            <td colspan="4" style="text-align: center; color: var(--text-muted);">Loading users list...</td>
+            <td colspan="8" style="text-align: center; color: var(--text-muted);">Loading users & telemetry...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Telemetry Session Logs Inspector -->
+  <div class="glass-panel">
+    <div class="card-header" style="margin-bottom: 1rem;">
+      <h3 class="card-title" style="display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+        <i class="ti ti-history" style="color: var(--primary);"></i> Broadcast Telemetry Logs
+      </h3>
+    </div>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
+      Detailed logs of past stream sessions. Sessions &ge; 90 minutes (1.5h) increment user quota usage.
+    </p>
+    <div style="overflow-x: auto;">
+      <table class="premium-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Stream Key</th>
+            <th>Start Time</th>
+            <th>Duration</th>
+            <th>Quota Status</th>
+          </tr>
+        </thead>
+        <tbody id="telemetry-list">
+          <tr>
+            <td colspan="5" style="text-align: center; color: var(--text-muted);">Loading telemetry logs...</td>
           </tr>
         </tbody>
       </table>
@@ -34,7 +68,10 @@
 </div>
 
 <script>
-  document.addEventListener('DOMContentLoaded', fetchUsers);
+  document.addEventListener('DOMContentLoaded', () => {
+    fetchUsers();
+    fetchTelemetry();
+  });
 
   async function fetchUsers() {
     try {
@@ -44,18 +81,18 @@
       list.innerHTML = '';
       
       users.forEach(u => {
-        // Skip self to prevent self lockouts
         const isSelf = u.id === '<%= user.id %>';
+        const isBlocked = !!u.isBlockedFromStreaming;
         
         list.innerHTML += `
           <tr>
             <td data-label="User">
               <div style="display:flex; align-items:center; gap:0.5rem;">
-                <div class="avatar" style="width:24px; height:24px; font-size:0.75rem;">${u.name.charAt(0).toUpperCase()}</div>
+                <div class="avatar" style="width:28px; height:28px; font-size:0.75rem;">${u.name.charAt(0).toUpperCase()}</div>
                 <span style="font-weight:600;">${u.name} ${isSelf ? '(You)' : ''}</span>
               </div>
             </td>
-            <td data-label="Email" style="color:var(--text-muted); font-size:0.9rem;">${u.email}</td>
+            <td data-label="Email" style="color:var(--text-muted); font-size:0.85rem;">${u.email}</td>
             <td data-label="Role">
               <select class="form-input" style="padding:0.25rem 0.5rem; font-size:0.85rem; width:auto;" ${isSelf ? 'disabled' : ''} onchange="changeRole('${u.id}', this.value)">
                 <option value="user" ${u.role === 'user' ? 'selected' : ''}>User</option>
@@ -63,21 +100,70 @@
               </select>
             </td>
             <td data-label="Access">
-              <div class="toggle-wrapper" style="border:none; padding:0; justify-content:flex-start; gap:0.5rem;">
-                <label class="switch">
-                  <input type="checkbox" ${u.hasAccess || u.role === 'admin' ? 'checked' : ''} ${isSelf || u.role === 'admin' ? 'disabled' : ''} onchange="toggleAccess('${u.id}', this.checked)">
-                  <span class="slider"></span>
-                </label>
-                <span style="font-size:0.85rem; color:${u.hasAccess || u.role === 'admin' ? 'var(--accent)' : 'var(--text-muted)'}">
-                  ${u.role === 'admin' ? 'Always Allowed' : (u.hasAccess ? 'Allowed' : 'Denied')}
-                </span>
-              </div>
+              <label class="switch">
+                <input type="checkbox" ${u.hasAccess || u.role === 'admin' ? 'checked' : ''} ${isSelf || u.role === 'admin' ? 'disabled' : ''} onchange="toggleAccess('${u.id}', this.checked)">
+                <span class="slider"></span>
+              </label>
+            </td>
+            <td data-label="Used">
+              <span class="badge ${u.usedCount >= u.maxAllowedStreams ? 'badge-danger' : 'badge-primary'}">
+                ${u.usedCount} / ${u.maxAllowedStreams} Counted
+              </span>
+            </td>
+            <td data-label="Limit">
+              <input type="number" class="form-input" style="width: 70px; padding: 0.25rem; font-size: 0.85rem;" value="${u.maxAllowedStreams}" min="0" onchange="updateQuota('${u.id}', this.value)" />
+            </td>
+            <td data-label="Status">
+              <button class="btn ${isBlocked ? 'btn-danger' : 'btn-secondary'}" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" ${isSelf ? 'disabled' : ''} onclick="toggleBlock('${u.id}', ${!isBlocked})">
+                <i class="ti ${isBlocked ? 'ti-user-x' : 'ti-user-check'}"></i> ${isBlocked ? 'Blocked' : 'Active'}
+              </button>
+            </td>
+            <td data-label="Actions">
+              <button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="resetQuota('${u.id}')" title="Reset counted stream usage">
+                <i class="ti ti-rotate-clockwise"></i> Reset
+              </button>
             </td>
           </tr>
         `;
       });
     } catch (err) {
-      console.error(err);
+      if (window.showToast) window.showToast(err.message, 'error');
+    }
+  }
+
+  async function fetchTelemetry() {
+    try {
+      const res = await fetch('/api/admin/telemetry');
+      const data = await res.json();
+      const list = document.getElementById('telemetry-list');
+      list.innerHTML = '';
+
+      if (!data.logs || data.logs.length === 0) {
+        list.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No telemetry sessions recorded yet.</td></tr>';
+        return;
+      }
+
+      data.logs.slice(-20).reverse().forEach(log => {
+        const startStr = new Date(log.startTime).toLocaleString();
+        const mins = log.durationSeconds ? Math.floor(log.durationSeconds / 60) : 0;
+        const counted = log.countedTowardsQuota;
+
+        list.innerHTML += `
+          <tr>
+            <td><strong>${log.userName}</strong> (${log.userEmail})</td>
+            <td style="font-family: monospace; font-size: 0.85rem;">${log.streamKey}</td>
+            <td style="font-size: 0.85rem;">${startStr}</td>
+            <td>${mins} mins (${log.durationSeconds || 0}s)</td>
+            <td>
+              <span class="badge ${counted ? 'badge-danger' : 'badge-primary'}">
+                ${counted ? 'Counted (&ge;1.5h)' : 'Ignored (<1.5h)'}
+              </span>
+            </td>
+          </tr>
+        `;
+      });
+    } catch (err) {
+      console.error("Telemetry fetch error:", err);
     }
   }
 
@@ -88,10 +174,12 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, hasAccess })
       });
-      if (!res.ok) throw new Error('Failed to update access.');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update access.');
+      if (window.showToast) window.showToast(data.message, 'success');
       fetchUsers();
     } catch (err) {
-      alert(err.message);
+      if (window.showToast) window.showToast(err.message, 'error');
     }
   }
 
@@ -102,10 +190,60 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, role })
       });
-      if (!res.ok) throw new Error('Failed to update role.');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update role.');
+      if (window.showToast) window.showToast(data.message, 'success');
       fetchUsers();
     } catch (err) {
-      alert(err.message);
+      if (window.showToast) window.showToast(err.message, 'error');
+    }
+  }
+
+  async function updateQuota(userId, maxAllowedStreams) {
+    try {
+      const res = await fetch('/api/users/update-quota', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, maxAllowedStreams: parseInt(maxAllowedStreams, 10) })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update quota.');
+      if (window.showToast) window.showToast(data.message, 'success');
+      fetchUsers();
+    } catch (err) {
+      if (window.showToast) window.showToast(err.message, 'error');
+    }
+  }
+
+  async function toggleBlock(userId, isBlockedFromStreaming) {
+    try {
+      const res = await fetch('/api/users/toggle-block', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, isBlockedFromStreaming })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to toggle block status.');
+      if (window.showToast) window.showToast(data.message, 'success');
+      fetchUsers();
+    } catch (err) {
+      if (window.showToast) window.showToast(err.message, 'error');
+    }
+  }
+
+  async function resetQuota(userId) {
+    try {
+      const res = await fetch('/api/users/reset-quota', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to reset quota.');
+      if (window.showToast) window.showToast(data.message, 'success');
+      fetchUsers();
+    } catch (err) {
+      if (window.showToast) window.showToast(err.message, 'error');
     }
   }
 </script>
