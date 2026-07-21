@@ -30,6 +30,7 @@ jobs:
             echo "Current Working Directory: $(pwd)"
             git fetch --all
             git reset --hard origin/master
-            docker compose down --remove-orphans || true
-            docker compose build --no-cache
-            docker compose up -d --remove-orphans
+            docker compose down && docker compose up -d --build
+            # docker compose down --remove-orphans || true
+            # docker compose build --no-cache
+            # docker compose up -d --remove-orphans

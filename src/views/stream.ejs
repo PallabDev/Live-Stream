@@ -811,6 +811,7 @@
                     durationInterval = setInterval(updateDuration, 1000);
                 };
 
+
                 mediaSocket.onmessage = async (event) => {
                     try {
                         const msg = JSON.parse(event.data);
@@ -822,6 +823,73 @@
                             closePeerConnection(viewerId);
                         } else if (signalEvent === "answer") {
                             const pcInstance = peerConnections.get(viewerId);
+                            if (pcInstance) {
+                                await pcInstance.setRemoteDescription(new RTCSessionDescription(sdp));
+
+                                const queue = candidateQueues.get(viewerId) || [];
+                                while (queue.length > 0) {
+                                    const cand = queue.shift();
+                                    try {
+                                        await pcInstance.addIceCandidate(new RTCIceCandidate(cand));
+                                    } catch (e) {
+                                        console.warn(`[Studio WebRTC] Error adding queued candidate for viewer ${viewerId}:`, e);
+                                    }
+                                }
+                            }
+                        } else if (signalEvent === "candidate") {
+                            const pcInstance = peerConnections.get(viewerId);
+                            if (pcInstance && candidate) {
+                                if (!pcInstance.remoteDescription || !pcInstance.remoteDescription.type) {
+                                    let queue = candidateQueues.get(viewerId);
+                                    if (!queue) {
+                                        queue = [];
+                                        candidateQueues.set(viewerId, queue);
+                                    }
+                                    queue.push(candidate);
+                                } else {
+                                    try {
+                                        await pcInstance.addIceCandidate(new RTCIceCandidate(candidate));
+                                    } catch (e) {
+                                        console.warn(`[Studio WebRTC] Error adding candidate for viewer ${viewerId}:`, e);
+                                    }
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        console.error("[Studio WS Message Exception]:", err);
+                    }
+                };
+
+                mediaSocket.onclose = (event) => {
+                    console.log("[Studio] Signaling channel closed:", event);
+                    if (!isManuallyStopped) {
+                        showReconnectingStatus();
+                        scheduleBroadcasterReconnect();
+                    }
+                };
+
+                mediaSocket.onerror = (err) => {
+                    console.error("[Studio] Signaling WebSocket error:", err);
+                };
+            } catch (err) {
+                console.error("[Studio] Failed to initialize live stream signaling:", err);
+                if (window.showToast) window.showToast("Failed to start live stream session.", "error");
+            }
+        }
+
+        function updateDuration() {
+            if (!streamStartTime) return;
+            const totalSecs = Math.floor((Date.now() - streamStartTime) / 1000);
+            const hrs = Math.floor(totalSecs / 3600).toString().padStart(2, '0');
+            const mins = Math.floor((totalSecs % 3600) / 60).toString().padStart(2, '0');
+            const secs = (totalSecs % 60).toString().padStart(2, '0');
+            document.getElementById('duration-badge').textContent = `${hrs}:${mins}:${secs}`;
+        }
+
+        function copyViewerLink() {
+            const link = window.location.origin + "/live/" + streamKey;
+            navigator.clipboard.writeText(link).then(() => {
+                if (window.showToast) window.showToast("Viewer link copied to clipboard!", "success");
             }).catch(() => {
                 if (window.showToast) window.showToast("Failed to copy link.", "error");
             });
