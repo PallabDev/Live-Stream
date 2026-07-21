@@ -1,16 +1,19 @@
 <%- include('header') %>
 
 <div class="dashboard-grid">
-  <!-- Left Side: Streams and Management -->
+  <!-- Left Side: Streams and Management + SFU Console -->
   <div style="display: flex; flex-direction: column; gap: 2rem;">
     
     <!-- Streams List -->
     <div class="glass-panel">
-      <div class="card-header">
-        <h3 class="card-title">
+      <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 class="card-title" style="display: flex; align-items: center; gap: 0.5rem; margin: 0;">
           <i class="ti ti-broadcast" style="color: var(--primary);"></i> Your Stream Keys
         </h3>
-        <span class="badge badge-primary"><%= streams.length %> Total</span>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <span class="badge badge-success"><i class="ti ti-server-2"></i> SFU Implemented</span>
+          <span class="badge badge-primary"><%= streams.length %> Total</span>
+        </div>
       </div>
 
       <% if (streams.length === 0) { %>
@@ -67,7 +70,22 @@
       <% } %>
     </div>
 
+    <!-- SFU Telemetry Console Box -->
+    <div class="glass-panel">
+      <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 class="card-title" style="display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <i class="ti ti-terminal-2" style="color: var(--primary);"></i> SFU WebRTC Relay Diagnostics
+        </h3>
+        <span class="badge badge-success" style="font-family: monospace;">SFU Active &amp; Ready</span>
+      </div>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
+        Real-time server media relay logs showing WebSocket signaling, client SDP handshakes, and outbound bandwidth distribution.
+      </p>
 
+      <div style="background: #0c0e10; border: 1px solid var(--panel-border); border-radius: 10px; padding: 1rem; height: 220px; overflow-y: auto; font-family: 'Fira Code', monospace; font-size: 0.8rem; line-height: 1.5; color: #82A3A1;" id="dash-console">
+        <div style="color: #64748b;">Initializing SFU telemetry connection...</div>
+      </div>
+    </div>
 
   </div>
 
@@ -117,15 +135,15 @@
         </li>
         <li style="display: flex; gap: 0.5rem; align-items: flex-start;">
           <i class="ti ti-circle-number-2" style="color: var(--primary); font-size: 1.25rem;"></i>
-          <span>Click the **Broadcast** button to enter the streaming cockpit.</span>
+          <span>Click **Broadcast** to enter the studio streaming cockpit.</span>
         </li>
         <li style="display: flex; gap: 0.5rem; align-items: flex-start;">
           <i class="ti ti-circle-number-3" style="color: var(--primary); font-size: 1.25rem;"></i>
-          <span>Toggle resolutions/FPS, test bandwidth, and start streaming!</span>
+          <span>Toggle resolutions/FPS, select movie or screen share, and stream buffer-free via SFU.</span>
         </li>
         <li style="display: flex; gap: 0.5rem; align-items: flex-start;">
           <i class="ti ti-circle-number-4" style="color: var(--primary); font-size: 1.25rem;"></i>
-          <span>Share the **Watch** link with friends so they can view the live feed with ultra-low latency.</span>
+          <span>Share the **Watch** link with up to 5 viewers for high-quality synchronized playout.</span>
         </li>
       </ul>
     </div>
@@ -135,8 +153,11 @@
 
 <script>
   function copyToClipboard(text) {
-    navigator.clipboard.writeText(text);
-    alert('Stream key copied to clipboard!');
+    navigator.clipboard.writeText(text).then(() => {
+      if (window.showToast) window.showToast('Stream key copied to clipboard!', 'success');
+    }).catch(() => {
+      if (window.showToast) window.showToast('Failed to copy stream key.', 'error');
+    });
   }
 
   async function createStream(e) {
@@ -155,9 +176,10 @@
         throw new Error(data.error || 'Failed to create stream.');
       }
       
-      window.location.reload();
+      if (window.showToast) window.showToast('Stream key generated successfully!', 'success');
+      setTimeout(() => window.location.reload(), 500);
     } catch (err) {
-      alert(err.message);
+      if (window.showToast) window.showToast(err.message, 'error');
     }
   }
 
@@ -178,13 +200,54 @@
       
       const row = document.getElementById(`stream-row-${id}`);
       if (row) row.remove();
-      window.location.reload();
+      if (window.showToast) window.showToast('Stream key deleted.', 'success');
     } catch (err) {
-      alert(err.message);
+      if (window.showToast) window.showToast(err.message, 'error');
     }
   }
+
+  // Connect live SFU telemetry console on dashboard
+  (function() {
+    const consoleBody = document.getElementById('dash-console');
+    if (!consoleBody) return;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/monitor/ws`;
+    let socket = null;
+
+    function connect() {
+      socket = new WebSocket(wsUrl);
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.ffmpegLogs && data.ffmpegLogs.length > 0) {
+            consoleBody.innerHTML = data.ffmpegLogs.slice(-15).map(line => {
+              let color = '#82A3A1';
+              if (line.includes('warning') || line.includes('WARN')) color = '#f59e0b';
+              if (line.includes('error') || line.includes('ERR')) color = '#ef4444';
+              if (line.includes('[Signaling]')) color = '#9FC490';
+              return `<div style="color: ${color}; margin-bottom: 0.2rem;">${escapeHtml(line)}</div>`;
+            }).join('');
+            consoleBody.scrollTop = consoleBody.scrollHeight;
+          } else {
+            consoleBody.innerHTML = `<div style="color: #64748b;">[SFU Telemetry] Waiting for live stream events...</div>`;
+          }
+        } catch (_) {}
+      };
+      socket.onclose = () => setTimeout(connect, 4000);
+    }
+
+    function escapeHtml(unsafe) {
+      return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    connect();
+  })();
 </script>
-
-
 
 <%- include('footer') %>
