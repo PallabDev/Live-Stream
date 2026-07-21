@@ -834,23 +834,6 @@
                                         console.warn(`[Studio WebRTC] Error adding queued candidate for viewer ${viewerId}:`, e);
                                     }
                                 }
-                            }
-                        } else if (signalEvent === "candidate") {
-                            const pcInstance = peerConnections.get(viewerId);
-                            if (pcInstance && candidate) {
-                                if (!pcInstance.remoteDescription || !pcInstance.remoteDescription.type) {
-                                    let queue = candidateQueues.get(viewerId);
-                btnToggleLive.style.background = "var(--danger)";
-                btnToggleLive.style.borderColor = "var(--danger)";
-                toggleLiveIcon.className = "ti ti-player-stop";
-                toggleLiveText.textContent = "Stop Live";
-            } else {
-                statusBadge.className = "badge badge-danger";
-                statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> Offline';
-
-                btnToggleLive.className = "btn btn-primary";
-                btnToggleLive.style.background = "var(--primary)";
-                btnToggleLive.style.borderColor = "var(--primary)";
                 toggleLiveIcon.className = "ti ti-player-play";
                 toggleLiveText.textContent = "Go Live";
 
