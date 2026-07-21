@@ -375,8 +375,8 @@
                 if (line.startsWith('m=video')) {
                     inVideoSection = true;
                     modifiedLines.push(line);
-                    modifiedLines.push('b=AS:15000');
-                    modifiedLines.push('b=TIAS:15000000');
+                    modifiedLines.push('b=AS:8000');
+                    modifiedLines.push('b=TIAS:8000000');
                     continue;
                 } else if (line.startsWith('m=audio')) {
                     inVideoSection = false;
@@ -525,15 +525,15 @@
                                 parameters.encodings = [{}];
                             }
                             parameters.encodings[0].maxBitrate = 8000000;
-                            parameters.encodings[0].minBitrate = 1200000; // 1.2 Mbps min floor (prevents extreme blur)
+                            parameters.encodings[0].minBitrate = 300000; // 300 Kbps min floor (prevents blurriness while ensuring smooth play on 600 Kbps connections)
                             sender.setParameters(parameters).catch(err => {
                                 console.warn("[Studio WebRTC] Failed to set video encoding parameters:", err);
                             });
 
-                            // Adaptive degradation: scale resolution down during congestion, recover when stable
+                            // Maintain constant 30fps without frame drops, scaling resolution smoothly under network congestion
                             const transceiver = pcInstance.getTransceivers().find(t => t.sender === sender);
                             if (transceiver) {
-                                transceiver.degradationPreference = 'balanced';
+                                transceiver.degradationPreference = 'maintain-framerate';
                             }
                         } catch (err) {
                             console.warn("[Studio WebRTC] Failed to modify transceiver parameters:", err);
@@ -632,13 +632,13 @@
             let targetMaxBitrate;
             
             if (count === 1) {
-                targetMaxBitrate = 4500000; // 4.5 Mbps max for 1 viewer (Zero-lag 720p HD)
+                targetMaxBitrate = 8000000; // 8.0 Mbps max for 1 viewer (Ultra 1080p)
             } else if (count <= 3) {
-                targetMaxBitrate = 3500000; // 3.5 Mbps max per viewer
+                targetMaxBitrate = 6000000; // 6.0 Mbps max per viewer (Full 1080p HD)
             } else if (count <= 6) {
-                targetMaxBitrate = 2500000; // 2.5 Mbps max per viewer
+                targetMaxBitrate = 3500000; // 3.5 Mbps max per viewer
             } else {
-                targetMaxBitrate = 1800000; // 1.8 Mbps max per viewer
+                targetMaxBitrate = 2000000; // 2.0 Mbps max per viewer
             }
 
             console.log(`[Studio WebRTC] Balancing host upload bandwidth across ${count} connected viewer(s) (${Math.round(targetMaxBitrate / 1000)} Kbps per peer)`);
@@ -651,7 +651,7 @@
                             const parameters = sender.getParameters();
                             if (!parameters.encodings) parameters.encodings = [{}];
                             parameters.encodings[0].maxBitrate = targetMaxBitrate;
-                            parameters.encodings[0].minBitrate = 1200000; // 1.2 Mbps min floor (prevents extreme blur)
+                            parameters.encodings[0].minBitrate = 300000; // 300 Kbps min floor for poor network smooth streaming
                             sender.setParameters(parameters).catch(err => {
                                 console.warn(`[Studio WebRTC] Error setting bitrate for viewer ${viewerId}:`, err);
                             });
@@ -768,14 +768,14 @@
 
                 mediaStream.getVideoTracks().forEach(track => {
                     if ('contentHint' in track) {
-                        track.contentHint = 'detail';
-                        console.log("[WebRTC] Set video track contentHint to 'detail' for maximum quality");
+                        track.contentHint = 'motion';
+                        console.log("[WebRTC] Set video track contentHint to 'motion' for smooth 30 FPS playback");
                     }
                     if (typeof track.applyConstraints === 'function') {
                         track.applyConstraints({
                             width: { ideal: 1920 },
                             height: { ideal: 1080 },
-                            frameRate: { ideal: 60, max: 60 }
+                            frameRate: { ideal: 30, max: 30 }
                         }).catch(err => console.warn("Failed to apply 1080p constraints:", err));
                     }
                 });

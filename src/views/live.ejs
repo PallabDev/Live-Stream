@@ -615,14 +615,6 @@ html, body {
       progressBar.style.width = percent + '%';
       progressHandle.style.left = percent + '%';
     }
-
-    // Auto catch up if WebRTC playout buffer accumulates > 1.5s latency
-    if (video.buffered && video.buffered.length > 0) {
-      const liveEdge = video.buffered.end(video.buffered.length - 1);
-      if (liveEdge - ct > 1.5) {
-        video.currentTime = liveEdge - 0.1;
-      }
-    }
   });
 
   video.addEventListener('loadedmetadata', () => {
