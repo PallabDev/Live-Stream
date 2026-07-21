@@ -263,16 +263,9 @@
                 // Prompt screen capture with system audio request
                 const stream = await navigator.mediaDevices.getDisplayMedia({
                     video: {
-                        width: { ideal: 1280, max: 1280 },
-                        height: { ideal: 720, max: 720 },
                         frameRate: { ideal: 30, max: 30 }
                     },
-                    audio: {
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: false,
-                        channelCount: 2
-                    }
+                    audio: true
                 });
 
                 captureStream = stream;
@@ -306,6 +299,90 @@
                 captureStream.getTracks().forEach(track => track.stop());
                 captureStream = null;
             }
+        }
+
+        function updateUI() {
+            const btnToggleLive = document.getElementById("btn-toggle-live");
+            const toggleLiveIcon = document.getElementById("toggle-live-icon");
+            const toggleLiveText = document.getElementById("toggle-live-text");
+            const statusBadge = document.getElementById("status-badge");
+
+            if (currentSourceType === 'file' || currentSourceType === 'screen') {
+                if (btnToggleLive) {
+                    btnToggleLive.disabled = false;
+                    btnToggleLive.style.opacity = "1";
+                    btnToggleLive.style.cursor = "pointer";
+                }
+            } else {
+                if (btnToggleLive) {
+                    btnToggleLive.disabled = true;
+                    btnToggleLive.style.opacity = "0.5";
+                    btnToggleLive.style.cursor = "not-allowed";
+                }
+            }
+
+            if (isLive || isStreaming) {
+                if (btnToggleLive) {
+                    btnToggleLive.className = "btn btn-danger";
+                    btnToggleLive.style.background = "var(--danger)";
+                    btnToggleLive.style.borderColor = "var(--danger)";
+                }
+                if (toggleLiveIcon) toggleLiveIcon.className = "ti ti-player-stop-filled";
+                if (toggleLiveText) toggleLiveText.textContent = "End Stream";
+
+                if (statusBadge) {
+                    statusBadge.className = "badge badge-danger";
+                    statusBadge.style.background = "";
+                    statusBadge.style.borderColor = "";
+                    statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
+                }
+            } else {
+                if (btnToggleLive) {
+                    btnToggleLive.className = "btn btn-primary";
+                    btnToggleLive.style.background = "";
+                    btnToggleLive.style.borderColor = "";
+                }
+                if (toggleLiveIcon) toggleLiveIcon.className = "ti ti-player-play";
+                if (toggleLiveText) toggleLiveText.textContent = "Go Live";
+
+                if (statusBadge) {
+                    statusBadge.className = "badge badge-danger";
+                    statusBadge.style.background = "";
+                    statusBadge.style.borderColor = "";
+                    statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> Offline';
+                }
+            }
+        }
+
+        function triggerStopLive() {
+            isManuallyStopped = true;
+            isLive = false;
+            isStreaming = false;
+
+            if (durationInterval) {
+                clearInterval(durationInterval);
+                durationInterval = null;
+            }
+            const durationBadge = document.getElementById("duration-badge");
+            if (durationBadge) durationBadge.style.display = "none";
+
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+
+            if (mediaSocket) {
+                try { mediaSocket.close(); } catch (e) {}
+                mediaSocket = null;
+            }
+
+            for (const [viewerId, pcInstance] of peerConnections) {
+                try { pcInstance.close(); } catch (e) {}
+            }
+            peerConnections.clear();
+            candidateQueues.clear();
+
+            updateUI();
         }
 
         function reorderVideoCodecs(sdp) {
