@@ -260,13 +260,26 @@
                     audioPlayer.src = "";
                 }
 
-                // Prompt screen capture with system audio request
-                const stream = await navigator.mediaDevices.getDisplayMedia({
-                    video: {
-                        frameRate: { ideal: 30, max: 30 }
-                    },
-                    audio: true
-                });
+                // Prompt screen capture with high-fidelity system audio request
+                let stream;
+                try {
+                    stream = await navigator.mediaDevices.getDisplayMedia({
+                        video: {
+                            frameRate: { ideal: 30, max: 30 }
+                        },
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false,
+                            suppressLocalAudioPlayback: false
+                        }
+                    });
+                } catch (e) {
+                    stream = await navigator.mediaDevices.getDisplayMedia({
+                        video: { frameRate: { ideal: 30, max: 30 } },
+                        audio: true
+                    });
+                }
 
                 captureStream = stream;
                 previewPlayer.src = null;
@@ -440,31 +453,56 @@
 
         function preferHighFidelityAudioAndVideo(sdp) {
             let lines = sdp.split('\r\n');
+            let opusPt = null;
+
+            // Dynamically locate the payload type integer for Opus (e.g. 111)
+            for (let line of lines) {
+                if (line.toLowerCase().includes('opus/48000')) {
+                    const match = line.match(/a=rtpmap:(\d+)\s+opus\/48000/i);
+                    if (match) {
+                        opusPt = match[1];
+                        break;
+                    }
+                }
+            }
+
             let modifiedLines = [];
-            let inVideoSection = false;
+            let fmtpFound = false;
 
             for (let i = 0; i < lines.length; i++) {
                 let line = lines[i];
 
-                if (line.startsWith('a=fmtp:') && line.includes('opus')) {
-                    if (!line.includes('stereo=1')) {
-                        line = line + ';stereo=1;sprop-stereo=1;maxaveragebitrate=128000;useinbandfec=1';
-                    }
+                if (opusPt && line.startsWith(`a=fmtp:${opusPt}`)) {
+                    fmtpFound = true;
+                    let params = line;
+                    if (!params.includes('stereo=1')) params += ';stereo=1';
+                    if (!params.includes('sprop-stereo=1')) params += ';sprop-stereo=1';
+                    if (!params.includes('maxaveragebitrate')) params += ';maxaveragebitrate=510000';
+                    if (!params.includes('maxplaybackrate')) params += ';maxplaybackrate=48000';
+                    if (!params.includes('cbr=1')) params += ';cbr=1';
+                    if (!params.includes('usedtx=0')) params += ';usedtx=0';
+                    line = params;
                 }
 
                 if (line.startsWith('m=video')) {
-                    inVideoSection = true;
                     modifiedLines.push(line);
                     modifiedLines.push('b=AS:8000');
                     modifiedLines.push('b=TIAS:8000000');
                     continue;
-                } else if (line.startsWith('m=audio')) {
-                    inVideoSection = false;
                 }
 
                 modifiedLines.push(line);
             }
-            
+
+            if (opusPt && !fmtpFound) {
+                for (let i = 0; i < modifiedLines.length; i++) {
+                    if (modifiedLines[i].startsWith(`a=rtpmap:${opusPt}`)) {
+                        modifiedLines.splice(i + 1, 0, `a=fmtp:${opusPt} stereo=1;sprop-stereo=1;maxaveragebitrate=510000;maxplaybackrate=48000;cbr=1;usedtx=0`);
+                        break;
+                    }
+                }
+            }
+
             // Prioritize higher efficiency codecs for good/bad internet performance
             return reorderVideoCodecs(modifiedLines.join('\r\n'));
         }
@@ -792,7 +830,7 @@
 
                 try {
                     if (!audioCtx) {
-                        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
+                        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000, latencyHint: 'playback' });
                     }
                     if (audioCtx.state === 'suspended') {
                         await audioCtx.resume();
@@ -840,11 +878,16 @@
             // Optimize audio and video track configurations
             if (mediaStream) {
                 mediaStream.getAudioTracks().forEach(track => {
+                    if ('contentHint' in track) {
+                        track.contentHint = 'music';
+                        console.log("[WebRTC] Set audio track contentHint to 'music' for studio quality audio");
+                    }
                     if (typeof track.applyConstraints === 'function') {
                         track.applyConstraints({
                             echoCancellation: false,
                             noiseSuppression: false,
-                            autoGainControl: false
+                            autoGainControl: false,
+                            channelCount: 2
                         }).catch(err => console.warn("Failed to apply audio constraints:", err));
                     }
                 });
