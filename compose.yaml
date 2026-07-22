@@ -7,6 +7,7 @@ services:
       - .env
     volumes:
       - ./sqlite.db:/app/sqlite.db
+      - ./data:/app/data
     labels:
       caddy: watch.pallabdev.in
       caddy.reverse_proxy: "{{upstreams 5678}}"
