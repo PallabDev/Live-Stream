@@ -219,25 +219,9 @@ export class MonitorService {
       this.lastNetCheckTime = now;
     }
 
-    // Aggregate real-time WebRTC stream egress/ingress from Server perspective:
-    // 1. Host broadcast stream arriving at server = Server Ingress (Download)
-    // 2. Relayed stream output transmitted to all viewers = Server Egress (Upload)
-    let activeStreamServerIngressKbps = 0;
-    let activeStreamServerEgressKbps = 0;
-
-    if (activeSessions && activeSessions.size > 0) {
-      for (const session of activeSessions.values()) {
-        const streamKbps = session.reportedEgressKbps || 5500; // 5.5 Mbps per active stream
-        const viewerCount = session.viewers ? session.viewers.size : 0;
-        
-        activeStreamServerIngressKbps += streamKbps;
-        activeStreamServerEgressKbps += (streamKbps * Math.max(1, viewerCount));
-      }
-    }
-
     return {
-      egressKbps: Math.max(this.currentEgressKbps, activeStreamServerEgressKbps),
-      ingressKbps: Math.max(this.currentIngressKbps, activeStreamServerIngressKbps),
+      egressKbps: this.currentEgressKbps,
+      ingressKbps: this.currentIngressKbps,
     };
   }
 

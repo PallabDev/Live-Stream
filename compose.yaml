@@ -19,6 +19,7 @@ services:
     image: bluenviron/mediamtx:latest
     container_name: mediamtx
     restart: always
+    network_mode: host
     environment:
       - MTX_WEBRTC=yes
       - MTX_WEBRTCADDRESS=:8889
@@ -26,11 +27,6 @@ services:
       - MTX_WEBRTCSERVERSSTUN=["stun:stun.l.google.com:19302"]
       - MTX_WEBRTCALLOWORIGINS=["*"]
       - MTX_WEBRTCADDITIONALHOSTS=["watch.pallabdev.in"]
-    ports:
-      - "8889:8889"
-      - "8189:8189/udp"
-    networks:
-      - default
 
   coturn:
     image: coturn/coturn:latest
