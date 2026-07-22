@@ -665,7 +665,6 @@
                             }
                             parameters.encodings[0].maxBitrate = 10000000; // 10 Mbps max (server max)
                             parameters.encodings[0].minBitrate = 4000000;  // 4 Mbps min floor (strictly 4Mbps minimum)
-                            parameters.encodings[0].maxFramerate = 30;
                             parameters.encodings[0].scaleResolutionDownBy = 1.0; // 0 downscaling (100% native pixel density)
                             sender.setParameters(parameters).catch(err => {
                                 console.warn("[Studio WebRTC] Failed to set video encoding parameters:", err);
@@ -790,7 +789,6 @@
                             if (!parameters.encodings) parameters.encodings = [{}];
                             parameters.encodings[0].maxBitrate = targetMaxBitrate;
                             parameters.encodings[0].minBitrate = minFloorBitrate;
-                            parameters.encodings[0].maxFramerate = 30;
                             parameters.encodings[0].scaleResolutionDownBy = 1.0; // Force 100% native resolution (0 downscaling)
                             sender.setParameters(parameters).catch(err => {
                                 console.warn(`[Studio WebRTC] Error setting bitrate for viewer ${viewerId}:`, err);

@@ -546,10 +546,10 @@ html, body {
       if (event.receiver) {
         try {
           if ('playoutDelayHint' in event.receiver) {
-            event.receiver.playoutDelayHint = 0.15; // 150ms buffer for seamless lip-sync
+            event.receiver.playoutDelayHint = 0; // Zero playout delay for immediate smooth 30 FPS playback
           }
           if ('jitterBufferTarget' in event.receiver) {
-            event.receiver.jitterBufferTarget = 150;
+            event.receiver.jitterBufferTarget = 0;
           }
         } catch (e) {
           console.warn('[Viewer WebRTC] Receiver delay hint error:', e);
