@@ -777,20 +777,11 @@
             const viewersCountEl = document.getElementById("viewers-count");
             if (viewersCountEl) viewersCountEl.textContent = peerConnections.size;
 
-            let targetMaxBitrate = 6000000;
-            let minFloorBitrate = 2500000;
-            if (count === 1) {
-                targetMaxBitrate = 6000000; // 6 Mbps max for 1 viewer (fits in 10 Mbps upload pipe without bufferbloat)
-                minFloorBitrate = 3500000;
-            } else if (count <= 3) {
-                targetMaxBitrate = 4000000; // 4 Mbps per viewer for 2-3 viewers (8.0 Mbps total upload out of 10 Mbps)
-                minFloorBitrate = 2500000;
-            } else {
-                targetMaxBitrate = 2000000; // 2 Mbps per viewer for 4-5 viewers
-                minFloorBitrate = 1500000;
-            }
+            // Always offer max 10.0 Mbps capability with a 4.0 Mbps floor, letting WebRTC dynamically adapt per-viewer
+            const targetMaxBitrate = 10000000; // 10.0 Mbps max ceiling
+            const minFloorBitrate = 4000000;   // 4.0 Mbps min floor
 
-            console.log(`[Studio WebRTC] Allocating host upload bandwidth across ${count} connected viewer(s) (${Math.round(targetMaxBitrate / 1000)} Kbps per peer)`);
+            console.log(`[Studio WebRTC] Configuring WebRTC 10Mbps-4Mbps adaptive range for ${peerConnections.size} connected viewer(s)`);
 
             for (const [viewerId, pcInstance] of peerConnections) {
                 try {
