@@ -628,13 +628,15 @@
             }
         }
 
-        async function createPeerConnection(viewerId) {
-            if (peerConnections.has(viewerId)) {
-                closePeerConnection(viewerId);
-            }
-            candidateQueues.set(viewerId, []);
+        let sfuPeerConnection = null;
 
-            console.log(`[Studio WebRTC] Initializing connection for viewer: ${viewerId}`);
+        async function publishToMediaMTXSFU() {
+            if (sfuPeerConnection) {
+                try { sfuPeerConnection.close(); } catch (_) {}
+                sfuPeerConnection = null;
+            }
+
+            console.log(`[Studio SFU] Initializing WHIP MediaMTX publisher for stream key: ${streamKey}`);
             const turnHost = window.location.hostname;
             const config = {
                 iceServers: [
@@ -648,100 +650,68 @@
                 ]
             };
 
-            const pcInstance = new RTCPeerConnection(config);
-            peerConnections.set(viewerId, pcInstance);
+            sfuPeerConnection = new RTCPeerConnection(config);
 
-            // Add local stream tracks to WebRTC and optimize video settings
             if (mediaStream) {
                 mediaStream.getTracks().forEach(track => {
-                    const sender = pcInstance.addTrack(track, mediaStream);
+                    const sender = sfuPeerConnection.addTrack(track, mediaStream);
                     if (track.kind === 'video') {
                         try {
                             const parameters = sender.getParameters();
-                            if (!parameters.encodings) {
-                                parameters.encodings = [{}];
-                            }
-                            parameters.encodings[0].maxBitrate = 6000000; // 6 Mbps max (optimal 1080p fit for 9Mbps upload)
-                            parameters.encodings[0].minBitrate = 2000000; // 2 Mbps min floor
-                            parameters.encodings[0].scaleResolutionDownBy = 1.0; // 0 downscaling (100% native pixel density)
-                            sender.setParameters(parameters).catch(err => {
-                                console.warn("[Studio WebRTC] Failed to set video encoding parameters:", err);
-                            });
+                            if (!parameters.encodings) parameters.encodings = [{}];
+                            parameters.encodings[0].maxBitrate = 6000000;
+                            parameters.encodings[0].minBitrate = 2000000;
+                            parameters.encodings[0].scaleResolutionDownBy = 1.0;
+                            sender.setParameters(parameters).catch(() => {});
 
-                            // Strictly prevent any framerate or resolution degradation
-                            const transceiver = pcInstance.getTransceivers().find(t => t.sender === sender);
+                            const transceiver = sfuPeerConnection.getTransceivers().find(t => t.sender === sender);
                             if (transceiver) {
-                                try {
-                                    transceiver.degradationPreference = 'maintain-framerate';
-                                } catch (_) {}
+                                try { transceiver.degradationPreference = 'maintain-framerate'; } catch (_) {}
                             }
                         } catch (err) {
-                            console.warn("[Studio WebRTC] Failed to modify transceiver parameters:", err);
+                            console.warn("[Studio SFU] Transceiver setup error:", err);
                         }
                     }
                 });
             }
 
-            // Recalculate host upload bandwidth allocation across all viewers
-            updateAdaptiveBitrates();
-
-            // Handle candidate negotiation
-            pcInstance.onicecandidate = (e) => {
-                if (e.candidate && mediaSocket && mediaSocket.readyState === WebSocket.OPEN) {
-                    mediaSocket.send(JSON.stringify({
-                        event: "candidate",
-                        viewerId: viewerId,
-                        candidate: e.candidate
-                    }));
+            sfuPeerConnection.onconnectionstatechange = () => {
+                console.log(`[Studio SFU] Connection state: ${sfuPeerConnection.connectionState}`);
+                if (sfuPeerConnection.connectionState === 'connected') {
+                    console.log("[Studio SFU] Broadcaster connected to MediaMTX SFU server successfully!");
                 }
             };
 
-            let disconnectTimer = null;
-            pcInstance.onconnectionstatechange = () => {
-                const state = pcInstance.connectionState;
-                console.log(`[Studio WebRTC] Connection state for viewer ${viewerId}: ${state}`);
-                if (state === "connected") {
-                    if (disconnectTimer) {
-                        clearTimeout(disconnectTimer);
-                        disconnectTimer = null;
-                    }
-                } else if (state === "disconnected") {
-                    if (!disconnectTimer) {
-                        disconnectTimer = setTimeout(() => {
-                            if (pcInstance.connectionState === "disconnected") {
-                                closePeerConnection(viewerId);
-                            }
-                        }, 5000);
-                    }
-                } else if (state === "failed" || state === "closed") {
-                    if (disconnectTimer) {
-                        clearTimeout(disconnectTimer);
-                        disconnectTimer = null;
-                    }
-                    closePeerConnection(viewerId);
-                }
-            };
-
-            // Create Offer SDP
             try {
-                let offer = await pcInstance.createOffer();
-                
-                // Optimize SDP for high-fidelity stereo audio and video quality
+                let offer = await sfuPeerConnection.createOffer();
                 const modifiedSdp = preferHighFidelityAudioAndVideo(offer.sdp);
                 offer = new RTCSessionDescription({
                     type: offer.type,
                     sdp: modifiedSdp
                 });
+                await sfuPeerConnection.setLocalDescription(offer);
 
-                await pcInstance.setLocalDescription(offer);
+                console.log("[Studio SFU] Sending WHIP offer to MediaMTX SFU proxy...");
+                const res = await fetch(`/api/sfu/whip/${streamKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/sdp' },
+                    body: offer.sdp
+                });
 
-                mediaSocket.send(JSON.stringify({
-                    event: "offer",
-                    viewerId: viewerId,
-                    sdp: offer
+                if (!res.ok) {
+                    throw new Error(`MediaMTX SFU WHIP HTTP error ${res.status}`);
+                }
+
+                const answerSdp = await res.text();
+                await sfuPeerConnection.setRemoteDescription(new RTCSessionDescription({
+                    type: 'answer',
+                    sdp: answerSdp
                 }));
+
+                console.log("[Studio SFU] Successfully established 6.0 Mbps WHIP stream to MediaMTX SFU!");
             } catch (err) {
-                console.error(`[Studio WebRTC] Failed to create offer for viewer ${viewerId}:`, err);
+                console.error("[Studio SFU] MediaMTX WHIP publish error:", err);
+                if (window.showToast) window.showToast("Failed to connect to SFU server.", "error");
             }
         }
 
@@ -943,16 +913,18 @@
                 console.log("[Studio] Connecting signaling WebSocket to:", wsUrl);
                 mediaSocket = new WebSocket(wsUrl);
 
-                mediaSocket.onopen = () => {
-                    console.log("[Studio] Signaling channel established.");
+                mediaSocket.onopen = async () => {
+                    console.log("[Studio] Signaling channel established. Publishing WHIP stream to MediaMTX SFU...");
                     isLive = true;
-                    isStreaming = true; // WebRTC mesh stands ready
+                    isStreaming = true;
                     updateUI();
 
                     streamStartTime = Date.now();
                     document.getElementById("duration-badge").style.display = "inline-flex";
                     if (durationInterval) clearInterval(durationInterval);
                     durationInterval = setInterval(updateDuration, 1000);
+
+                    await publishToMediaMTXSFU();
                 };
 
 

@@ -13,6 +13,7 @@ import authRoutes from "./app/module/auth/auth.routes.js";
 import streamRoutes from "./app/module/stream/stream.routes.js";
 import dashboardRoutes from "./app/module/dashboard/dashboard.routes.js";
 import liveRoutes from "./app/module/live/live.routes.js";
+import { SFUController } from "./app/module/stream/sfu.controller.js";
 
 dotenv.config();
 
@@ -74,12 +75,24 @@ setInterval(() => {
 }, 1000);
 
 // Middlewares
+app.use(express.text({ type: "application/sdp", limit: "10mb" }));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 
 // Serve static directories
 app.use(express.static(path.join(process.cwd(), "public")));
+
+// Setup routes
+app.use(authRoutes);
+app.use(streamRoutes);
+app.use(dashboardRoutes);
+app.use(liveRoutes);
+
+// MediaMTX SFU WebRTC WHIP / WHEP Endpoints
+app.post("/api/sfu/whip/:streamKey", SFUController.handleWhipPublish);
+app.delete("/api/sfu/whip/:streamKey", SFUController.handleSessionDelete);
+app.post("/api/sfu/whep/:streamKey", SFUController.handleWhepSubscribe);
 
 // Serve live streams media chunks
 // etag:false + lastModified:false prevents browsers from sending If-None-Match / If-Modified-Since

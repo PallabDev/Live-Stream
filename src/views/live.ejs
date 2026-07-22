@@ -519,11 +519,11 @@ html, body {
     }
 
     if (pcInstance) {
-      pcInstance.close();
+      try { pcInstance.close(); } catch (_) {}
+      pcInstance = null;
     }
-    iceCandidateQueue = [];
 
-    console.log('[Viewer WebRTC] Initializing RTCPeerConnection');
+    console.log('[Viewer SFU] Initializing WHEP MediaMTX subscriber for key:', streamKey);
     const turnHost = window.location.hostname;
     const config = {
       iceServers: [
@@ -539,10 +539,13 @@ html, body {
 
     pcInstance = new RTCPeerConnection(config);
 
-    pcInstance.ontrack = (event) => {
-      console.log('[Viewer WebRTC] Remote track received:', event.track.kind);
+    // Request audio and video transceivers from MediaMTX SFU
+    pcInstance.addTransceiver('video', { direction: 'recvonly' });
+    pcInstance.addTransceiver('audio', { direction: 'recvonly' });
 
-      // Apply unified playout delay hint to both audio and video receivers to maintain lip-sync
+    pcInstance.ontrack = (event) => {
+      console.log('[Viewer SFU] MediaMTX track received:', event.track.kind);
+
       if (event.receiver) {
         try {
           if ('playoutDelayHint' in event.receiver) {
@@ -552,72 +555,63 @@ html, body {
             event.receiver.jitterBufferTarget = 0;
           }
         } catch (e) {
-          console.warn('[Viewer WebRTC] Receiver delay hint error:', e);
+          console.warn('[Viewer SFU] Receiver delay hint error:', e);
         }
       }
 
-      if (video.srcObject !== event.streams[0]) {
-        video.srcObject = event.streams[0];
-        console.log('[Viewer WebRTC] Attached media stream to video element');
-        
-        video.play().then(() => {
-          hideLoading();
-          hideOffline();
-          playbackStarted = true;
-          updatePlayIcon();
-        }).catch(err => {
-          console.warn('[Viewer WebRTC] Autoplay prevented by browser policy:', err);
-          hideLoading();
-          hideOffline();
-          updatePlayIcon();
-        });
-      }
-    };
-
-    pcInstance.onicecandidate = (e) => {
-      if (e.candidate && statusSocket && statusSocket.readyState === WebSocket.OPEN) {
-        statusSocket.send(JSON.stringify({
-          event: "candidate",
-          candidate: e.candidate
-        }));
-      }
-    };
-
-    let disconnectTimer = null;
-    pcInstance.onconnectionstatechange = () => {
-      const state = pcInstance.connectionState;
-      console.log(`[Viewer WebRTC] Connection state: ${state}`);
-      
-      if (state === "connected") {
-        if (disconnectTimer) {
-          clearTimeout(disconnectTimer);
-          disconnectTimer = null;
+      if (event.streams && event.streams[0]) {
+        if (video.srcObject !== event.streams[0]) {
+          video.srcObject = event.streams[0];
+          console.log('[Viewer SFU] Attached MediaMTX stream to video player');
         }
-        hideOffline();
+      } else {
+        if (!video.srcObject) {
+          const newStream = new MediaStream();
+          newStream.addTrack(event.track);
+          video.srcObject = newStream;
+        } else {
+          video.srcObject.addTrack(event.track);
+        }
+      }
+
+      video.play().then(() => {
         hideLoading();
-      } else if (state === "disconnected") {
-        console.warn("[Viewer WebRTC] Connection temporarily lost. Waiting up to 5s to auto-recover...");
-        showLoading();
-        if (!disconnectTimer) {
-          disconnectTimer = setTimeout(() => {
-            if (pcInstance && pcInstance.connectionState === "disconnected") {
-              console.error("[Viewer WebRTC] Failed to recover within 5s. Showing offline screen.");
-              showOffline();
-            }
-          }, 5000);
-        }
-      } else if (state === "failed" || state === "closed") {
-        if (disconnectTimer) {
-          clearTimeout(disconnectTimer);
-          disconnectTimer = null;
-        }
-        showOffline();
-      }
+        hideOffline();
+        playbackStarted = true;
+        updatePlayIcon();
+      }).catch(err => {
+        console.warn('[Viewer SFU] Autoplay prevented by browser policy:', err);
+        hideLoading();
+        hideOffline();
+        updatePlayIcon();
+      });
     };
 
-    // Send viewer-ready signal to tell the broadcaster we are fully initialized and listening
-    if (statusSocket && statusSocket.readyState === WebSocket.OPEN) {
-      statusSocket.send(JSON.stringify({ event: "viewer-ready" }));
+    try {
+      let offer = await pcInstance.createOffer();
+      await pcInstance.setLocalDescription(offer);
+
+      console.log('[Viewer SFU] Sending WHEP offer to MediaMTX SFU proxy...');
+      const res = await fetch(`/api/sfu/whep/${streamKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: offer.sdp
+      });
+
+      if (!res.ok) {
+        throw new Error(`MediaMTX WHEP HTTP error ${res.status}`);
+      }
+
+      const answerSdp = await res.text();
+      await pcInstance.setRemoteDescription(new RTCSessionDescription({
+        type: 'answer',
+        sdp: answerSdp
+      }));
+
+      console.log('[Viewer SFU] Successfully connected to MediaMTX SFU WHEP stream!');
+    } catch (err) {
+      console.error('[Viewer SFU] WHEP connection error:', err);
+      showOffline();
     }
   }
 
