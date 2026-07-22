@@ -783,6 +783,36 @@
                     sdp: answerSdp
                 }));
 
+                // Re-apply 5.0 Mbps forced minimum bitrate floor AFTER setRemoteDescription (prevents Chrome reset bug)
+                async function applyForcedBitrateParameters() {
+                    if (!sfuPeerConnection) return;
+                    const senders = sfuPeerConnection.getSenders();
+                    for (const sender of senders) {
+                        if (sender.track && sender.track.kind === 'video') {
+                            try {
+                                const parameters = sender.getParameters();
+                                if (!parameters.encodings || parameters.encodings.length === 0) {
+                                    parameters.encodings = [{}];
+                                }
+                                parameters.encodings[0].priority = 'high';
+                                parameters.encodings[0].networkPriority = 'high';
+                                parameters.encodings[0].maxBitrate = 8000000;   // 8.0 Mbps Ceiling
+                                parameters.encodings[0].minBitrate = 5000000;   // 5.0 Mbps FORCED MINIMUM FLOOR
+                                parameters.encodings[0].scaleResolutionDownBy = 1.0;
+                                await sender.setParameters(parameters);
+                                console.log("[Studio SFU] Enforced 5.0 Mbps minimum bitrate floor on active video sender!");
+                            } catch (e) {
+                                console.warn("[Studio SFU] Failed to enforce video sender parameters:", e);
+                            }
+                        }
+                    }
+                }
+
+                await applyForcedBitrateParameters();
+                // Periodically re-enforce every 5 seconds during active stream
+                if (window.bitrateFloorInterval) clearInterval(window.bitrateFloorInterval);
+                window.bitrateFloorInterval = setInterval(applyForcedBitrateParameters, 5000);
+
                 console.log("[Studio SFU] Successfully established 6.0 Mbps WHIP stream to MediaMTX SFU!");
                 startStatsMonitoring();
             } catch (err) {
