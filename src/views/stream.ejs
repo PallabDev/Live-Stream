@@ -505,6 +505,12 @@
                     line = `a=fmtp:${opusPt} stereo=1;sprop-stereo=1;maxaveragebitrate=256000;maxplaybackrate=48000;usedtx=0`;
                 }
 
+                if (line.startsWith('a=fmtp:')) {
+                    if (!line.includes('x-google-start-bitrate') && !line.includes('opus')) {
+                        line = line + ';x-google-start-bitrate=6000;x-google-min-bitrate=4000;x-google-max-bitrate=10000';
+                    }
+                }
+
                 if (line.startsWith('m=video')) {
                     modifiedLines.push(line);
                     modifiedLines.push('b=AS:10000');
