@@ -1095,7 +1095,6 @@
                     if (durationInterval) clearInterval(durationInterval);
                     durationInterval = setInterval(updateDuration, 1000);
 
-                    await startWebCodecsStream();
                     await publishToMediaMTXSFU();
                 };
 
