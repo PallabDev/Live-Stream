@@ -342,6 +342,7 @@ html, body {
   const controls = document.getElementById('sh-controls');
   const offlineScreen = document.getElementById('offline-screen');
 
+  const streamKey = "<%= stream.streamKey %>";
   let viewerId = null;
   let pcInstance = null;
   let statusSocket = null;
@@ -368,7 +369,7 @@ html, body {
 
   function connectViewerSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const viewerWsUrl = `${protocol}//${window.location.host}/api/stream/<%= stream.streamKey %>/viewer`;
+    const viewerWsUrl = `${protocol}//${window.location.host}/api/stream/${streamKey}/viewer`;
     
     console.log('[Viewer] Connecting signaling WebSocket to:', viewerWsUrl);
     statusSocket = new WebSocket(viewerWsUrl);
