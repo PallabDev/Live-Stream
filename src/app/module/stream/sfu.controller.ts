@@ -10,6 +10,41 @@ export class SFUController {
     return parseInt(process.env.MEDIAMTX_PORT || "8889", 10);
   }
 
+  private static optimizeSdp(sdp: string): string {
+    if (!sdp) return sdp;
+    let lines = sdp.split("\r\n");
+    let modifiedLines: string[] = [];
+    let hasBandwidth = false;
+
+    for (let line of lines) {
+      let currentLine = line;
+
+      if (currentLine.startsWith("a=fmtp:")) {
+        if (!currentLine.includes("x-google-min-bitrate")) {
+          currentLine = currentLine + ";x-google-min-bitrate=8000;x-google-start-bitrate=12000;x-google-max-bitrate=25000";
+        }
+      }
+
+      if (currentLine.startsWith("b=AS:")) {
+        currentLine = "b=AS:25000";
+        hasBandwidth = true;
+      } else if (currentLine.startsWith("b=TIAS:")) {
+        currentLine = "b=TIAS:25000000";
+        hasBandwidth = true;
+      }
+
+      modifiedLines.push(currentLine);
+
+      if (currentLine.startsWith("m=video") && !hasBandwidth) {
+        modifiedLines.push("b=AS:25000");
+        modifiedLines.push("b=TIAS:25000000");
+        hasBandwidth = true;
+      }
+    }
+
+    return modifiedLines.join("\r\n");
+  }
+
   // Broadcaster WHIP Publisher proxy endpoint
   static async handleWhipPublish(req: Request, res: Response): Promise<void> {
     const { streamKey } = req.params;
@@ -18,7 +53,8 @@ export class SFUController {
       return;
     }
 
-    const sdpOffer = typeof req.body === "string" ? req.body : req.body.toString("utf8");
+    const rawSdp = typeof req.body === "string" ? req.body : req.body.toString("utf8");
+    const sdpOffer = SFUController.optimizeSdp(rawSdp);
     const mtxHost = SFUController.getMediaMTXHost();
     const mtxPort = SFUController.getMediaMTXPort();
 
@@ -42,7 +78,8 @@ export class SFUController {
           res.setHeader("Location", proxyRes.headers.location);
         }
         res.setHeader("Content-Type", "application/sdp");
-        res.status(statusCode).send(data);
+        const optimizedAnswer = SFUController.optimizeSdp(data);
+        res.status(statusCode).send(optimizedAnswer);
       });
     });
 
@@ -63,7 +100,8 @@ export class SFUController {
       return;
     }
 
-    const sdpOffer = typeof req.body === "string" ? req.body : req.body.toString("utf8");
+    const rawSdp = typeof req.body === "string" ? req.body : req.body.toString("utf8");
+    const sdpOffer = SFUController.optimizeSdp(rawSdp);
     const mtxHost = SFUController.getMediaMTXHost();
     const mtxPort = SFUController.getMediaMTXPort();
 
@@ -87,7 +125,8 @@ export class SFUController {
           res.setHeader("Location", proxyRes.headers.location);
         }
         res.setHeader("Content-Type", "application/sdp");
-        res.status(statusCode).send(data);
+        const optimizedAnswer = SFUController.optimizeSdp(data);
+        res.status(statusCode).send(optimizedAnswer);
       });
     });
 
