@@ -675,10 +675,8 @@
                             const transceiver = pcInstance.getTransceivers().find(t => t.sender === sender);
                             if (transceiver) {
                                 try {
-                                    transceiver.degradationPreference = 'disabled';
-                                } catch (_) {
                                     transceiver.degradationPreference = 'maintain-framerate';
-                                }
+                                } catch (_) {}
                             }
                         } catch (err) {
                             console.warn("[Studio WebRTC] Failed to modify transceiver parameters:", err);
@@ -800,9 +798,9 @@
 
                             const transceiver = pcInstance.getTransceivers().find(t => t.sender === sender);
                             if (transceiver) {
-                                try { transceiver.degradationPreference = 'disabled'; } catch (_) {
-                                    transceiver.degradationPreference = 'maintain-resolution';
-                                }
+                                try {
+                                    transceiver.degradationPreference = 'maintain-framerate';
+                                } catch (_) {}
                             }
                         }
                     }
