@@ -155,7 +155,37 @@
                 </div>
             </div>
 
+            <!-- Stream Telemetry & Network Quality Panel -->
+            <div class="glass-panel" id="telemetry-panel" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+                <div class="card-header"
+                    style="padding-bottom: 0.5rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <h4 style="font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: #fff;">
+                        <i class="ti ti-activity" style="color: var(--primary); font-size: 1.2rem;"></i> Stream Telemetry
+                    </h4>
+                </div>
 
+                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <!-- Upload Speed Stat Row -->
+                    <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.6); padding: 0.85rem 1rem; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05);">
+                        <span style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="ti ti-arrow-up-circle" style="color: #10b981; font-size: 1.2rem;"></i> Host Upload Speed
+                        </span>
+                        <strong style="font-size: 1.05rem; color: #10b981; font-family: monospace;">
+                            <span id="upload-speed-val">0.00</span> Mbps
+                        </strong>
+                    </div>
+
+                    <!-- Network Quality Indicator Row -->
+                    <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.6); padding: 0.85rem 1rem; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05);">
+                        <span style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="ti ti-wifi" id="network-quality-icon" style="color: #10b981; font-size: 1.2rem;"></i> Network Quality
+                        </span>
+                        <span id="network-quality-badge" style="font-size: 0.85rem; font-weight: 600; padding: 0.2rem 0.6rem; border-radius: 6px; background: rgba(70, 83, 98, 0.2); border: 1px solid rgba(130, 163, 161, 0.3); color: #94a3b8;">
+                            <span id="network-quality-text">Standby</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -709,10 +739,75 @@
                 }));
 
                 console.log("[Studio SFU] Successfully established 6.0 Mbps WHIP stream to MediaMTX SFU!");
+                startStatsMonitoring();
             } catch (err) {
                 console.error("[Studio SFU] MediaMTX WHIP publish error:", err);
                 if (window.showToast) window.showToast("Failed to connect to SFU server.", "error");
             }
+        }
+
+        let statsInterval = null;
+
+        function startStatsMonitoring() {
+            if (statsInterval) clearInterval(statsInterval);
+            let lastBytesSent = 0;
+            let lastTime = Date.now();
+
+            const qualityBadge = document.getElementById("network-quality-badge");
+
+            statsInterval = setInterval(async () => {
+                if (!sfuPeerConnection) return;
+                try {
+                    const stats = await sfuPeerConnection.getStats();
+                    let bytesSent = 0;
+                    stats.forEach(report => {
+                        if (report.type === 'outbound-rtp' && report.kind === 'video') {
+                            bytesSent += (report.bytesSent || 0);
+                        }
+                    });
+
+                    const now = Date.now();
+                    const elapsedSec = (now - lastTime) / 1000;
+                    if (elapsedSec > 0 && lastBytesSent > 0 && bytesSent >= lastBytesSent) {
+                        const txDelta = bytesSent - lastBytesSent;
+                        const uploadMbps = (((txDelta * 8) / 1024 / 1024) / elapsedSec).toFixed(2);
+                        
+                        const speedVal = document.getElementById("upload-speed-val");
+                        if (speedVal) speedVal.textContent = uploadMbps;
+
+                        // Network Quality Indicator
+                        const speedNum = parseFloat(uploadMbps);
+                        const qualityText = document.getElementById("network-quality-text");
+                        const qualityIcon = document.getElementById("network-quality-icon");
+
+                        if (qualityBadge) {
+                            if (speedNum >= 3.5) {
+                                qualityBadge.style.background = "rgba(16, 185, 129, 0.15)";
+                                qualityBadge.style.borderColor = "rgba(16, 185, 129, 0.35)";
+                                qualityBadge.style.color = "#10b981";
+                                if (qualityIcon) qualityIcon.className = "ti ti-wifi";
+                                if (qualityText) qualityText.textContent = "Excellent (1080p 30fps)";
+                            } else if (speedNum >= 1.5) {
+                                qualityBadge.style.background = "rgba(245, 158, 11, 0.15)";
+                                qualityBadge.style.borderColor = "rgba(245, 158, 11, 0.35)";
+                                qualityBadge.style.color = "#f59e0b";
+                                if (qualityIcon) qualityIcon.className = "ti ti-wifi-2";
+                                if (qualityText) qualityText.textContent = "Good Quality";
+                            } else {
+                                qualityBadge.style.background = "rgba(239, 68, 68, 0.15)";
+                                qualityBadge.style.borderColor = "rgba(239, 68, 68, 0.35)";
+                                qualityBadge.style.color = "#ef4444";
+                                if (qualityIcon) qualityIcon.className = "ti ti-wifi-0";
+                                if (qualityText) qualityText.textContent = "Poor Connection";
+                            }
+                        }
+                    }
+                    lastBytesSent = bytesSent;
+                    lastTime = now;
+                } catch (e) {
+                    console.warn("[Studio Stats Error]:", e);
+                }
+            }, 1500);
         }
 
         function toggleLiveState() {
