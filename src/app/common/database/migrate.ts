@@ -7,9 +7,15 @@ dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+import fs from "fs";
+
 const projectRoot = path.resolve(__dirname, "../../../../");
-const rawDbPath = process.env.DATABASE_URL || "sqlite.db";
+const rawDbPath = process.env.DATABASE_URL || "data/sqlite.db";
 const dbPath = path.isAbsolute(rawDbPath) ? rawDbPath : path.resolve(projectRoot, rawDbPath);
+
+try {
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+} catch (_) {}
 
 console.log("[Migration] Running migration on SQLite database:", dbPath);
 const sqlite = new Database(dbPath);

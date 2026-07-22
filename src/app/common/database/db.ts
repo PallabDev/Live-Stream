@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 import fs from "fs";
 
 const projectRoot = path.resolve(__dirname, "../../../../");
-const rawDbPath = process.env.DATABASE_URL || "sqlite.db";
+const rawDbPath = process.env.DATABASE_URL || "data/sqlite.db";
 const dbPath = path.isAbsolute(rawDbPath) ? rawDbPath : path.resolve(projectRoot, rawDbPath);
 
 // Ensure parent directory exists for SQLite database persistence
