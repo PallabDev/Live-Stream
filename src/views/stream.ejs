@@ -520,7 +520,6 @@
             let lines = sdp.split('\r\n');
             let opusPt = null;
 
-            // Dynamically locate the payload type integer for Opus (e.g. 111)
             for (let line of lines) {
                 if (line.toLowerCase().includes('opus/48000')) {
                     const match = line.match(/a=rtpmap:(\d+)\s+opus\/48000/i);
@@ -544,22 +543,16 @@
 
                 if (line.startsWith('a=fmtp:')) {
                     if (!line.includes('x-google-start-bitrate') && !line.includes('opus')) {
-                        line = line + ';x-google-start-bitrate=12000;x-google-min-bitrate=8000;x-google-max-bitrate=25000';
+                        line = line + ';x-google-start-bitrate=6000;x-google-min-bitrate=2000;x-google-max-bitrate=12000';
                     }
                 }
 
-                if (line.startsWith('m=video')) {
-                    modifiedLines.push(line);
-                    modifiedLines.push('b=AS:25000');
-                    modifiedLines.push('b=TIAS:25000000');
-                    modifiedLines.push('a=rtcp-fb:* nack pli');
-                    modifiedLines.push('a=rtcp-fb:* nack fir');
-                    modifiedLines.push('a=rtcp-fb:* goog-remb');
-                    modifiedLines.push('a=rtcp-fb:* transport-cc');
-                    continue;
-                }
-
                 modifiedLines.push(line);
+
+                if (line.startsWith('c=IN ')) {
+                    modifiedLines.push('b=AS:12000');
+                    modifiedLines.push('b=TIAS:12000000');
+                }
             }
 
             if (opusPt && !fmtpFound) {
@@ -673,8 +666,8 @@
                             if (!parameters.encodings) parameters.encodings = [{}];
                             parameters.encodings[0].priority = 'high';
                             parameters.encodings[0].networkPriority = 'high';
-                            parameters.encodings[0].maxBitrate = 25000000;
-                            parameters.encodings[0].minBitrate = 8000000;
+                            parameters.encodings[0].maxBitrate = 10000000;
+                            parameters.encodings[0].minBitrate = 2000000;
                             parameters.encodings[0].scaleResolutionDownBy = 1.0;
                             sender.setParameters(parameters).catch(() => { });
 
@@ -732,15 +725,12 @@
 
                 let answerSdp = await res.text();
                 
-                // Override MediaMTX answer SDP bottleneck to 25,000 Kbps (25 Mbps)
+                // Ensure MediaMTX answer SDP uses 10 Mbps bandwidth cap
                 if (answerSdp.includes('b=AS:')) {
-                    answerSdp = answerSdp.replace(/b=AS:\d+/g, 'b=AS:25000');
+                    answerSdp = answerSdp.replace(/b=AS:\d+/g, 'b=AS:10000');
                 }
                 if (answerSdp.includes('b=TIAS:')) {
-                    answerSdp = answerSdp.replace(/b=TIAS:\d+/g, 'b=TIAS:25000000');
-                }
-                if (!answerSdp.includes('b=AS:')) {
-                    answerSdp = answerSdp.replace(/(m=video [^\r\n]+)/, '$1\r\nb=AS:25000\r\nb=TIAS:25000000');
+                    answerSdp = answerSdp.replace(/b=TIAS:\d+/g, 'b=TIAS:10000000');
                 }
 
                 await sfuPeerConnection.setRemoteDescription(new RTCSessionDescription({
@@ -748,7 +738,7 @@
                     sdp: answerSdp
                 }));
 
-                // Re-apply 8.0 Mbps forced minimum bitrate floor AFTER setRemoteDescription (prevents Chrome reset bug)
+                // Apply forced bitrate parameters AFTER setRemoteDescription
                 async function applyForcedBitrateParameters() {
                     if (!sfuPeerConnection) return;
                     const senders = sfuPeerConnection.getSenders();
@@ -761,11 +751,11 @@
                                 }
                                 parameters.encodings[0].priority = 'high';
                                 parameters.encodings[0].networkPriority = 'high';
-                                parameters.encodings[0].maxBitrate = 25000000;  // 25.0 Mbps Ceiling
-                                parameters.encodings[0].minBitrate = 8000000;   // 8.0 Mbps FORCED MINIMUM FLOOR
+                                parameters.encodings[0].maxBitrate = 10000000;  // 10.0 Mbps Ceiling
+                                parameters.encodings[0].minBitrate = 2500000;   // 2.5 Mbps Floor
                                 parameters.encodings[0].scaleResolutionDownBy = 1.0;
                                 await sender.setParameters(parameters);
-                                console.log("[Studio SFU] Enforced 8.0 Mbps minimum bitrate floor on active video sender!");
+                                console.log("[Studio SFU] Enforced 2.5 Mbps - 10 Mbps bitrate parameter range!");
                             } catch (e) {
                                 console.warn("[Studio SFU] Failed to enforce video sender parameters:", e);
                             }
@@ -774,17 +764,18 @@
                 }
 
                 await applyForcedBitrateParameters();
-                // Periodically re-enforce every 3 seconds during active stream
+                // Periodically re-enforce every 5 seconds during active stream
                 if (window.bitrateFloorInterval) clearInterval(window.bitrateFloorInterval);
-                window.bitrateFloorInterval = setInterval(applyForcedBitrateParameters, 3000);
+                window.bitrateFloorInterval = setInterval(applyForcedBitrateParameters, 5000);
 
-                console.log("[Studio SFU] Successfully established 8-25 Mbps WHIP stream to MediaMTX SFU!");
+                console.log("[Studio SFU] Successfully established WebRTC WHIP stream to MediaMTX SFU!");
                 startStatsMonitoring();
             } catch (err) {
                 console.error("[Studio SFU] MediaMTX WHIP publish error:", err);
                 if (window.showToast) window.showToast("Failed to connect to SFU server.", "error");
             }
         }
+
 
 
         let totalWebCodecsBytesSent = 0;

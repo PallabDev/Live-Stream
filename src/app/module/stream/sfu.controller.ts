@@ -14,36 +14,22 @@ export class SFUController {
     if (!sdp) return sdp;
     let lines = sdp.split("\r\n");
     let modifiedLines: string[] = [];
-    let hasBandwidth = false;
 
     for (let line of lines) {
       let currentLine = line;
 
-      if (currentLine.startsWith("a=fmtp:")) {
-        if (!currentLine.includes("x-google-min-bitrate")) {
-          currentLine = currentLine + ";x-google-min-bitrate=8000;x-google-start-bitrate=12000;x-google-max-bitrate=25000";
-        }
-      }
-
       if (currentLine.startsWith("b=AS:")) {
-        currentLine = "b=AS:25000";
-        hasBandwidth = true;
+        currentLine = "b=AS:12000";
       } else if (currentLine.startsWith("b=TIAS:")) {
-        currentLine = "b=TIAS:25000000";
-        hasBandwidth = true;
+        currentLine = "b=TIAS:12000000";
       }
 
       modifiedLines.push(currentLine);
-
-      if (currentLine.startsWith("m=video") && !hasBandwidth) {
-        modifiedLines.push("b=AS:25000");
-        modifiedLines.push("b=TIAS:25000000");
-        hasBandwidth = true;
-      }
     }
 
     return modifiedLines.join("\r\n");
   }
+
 
   // Broadcaster WHIP Publisher proxy endpoint
   static async handleWhipPublish(req: Request, res: Response): Promise<void> {
