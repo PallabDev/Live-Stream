@@ -328,7 +328,7 @@
                         video: {
                             width: { ideal: 1920 },
                             height: { ideal: 1080 },
-                            frameRate: { ideal: 30, max: 30 }
+                            frameRate: { ideal: 60, max: 60 }
                         },
                         audio: true
                     });
@@ -343,7 +343,7 @@
                         screenVideoTrack.applyConstraints({
                             width: { ideal: 1920 },
                             height: { ideal: 1080 },
-                            frameRate: { ideal: 30, max: 30 }
+                            frameRate: { ideal: 60, max: 60 }
                         }).catch(err => console.warn("[Studio Screen] applyConstraints error:", err));
                     }
                     // Re-enforce 1080p and unscaled parameters when track unmutes or resizes during YouTube video switches
@@ -353,10 +353,9 @@
                             screenVideoTrack.applyConstraints({
                                 width: { ideal: 1920 },
                                 height: { ideal: 1080 },
-                                frameRate: { ideal: 30, max: 30 }
+                                frameRate: { ideal: 60, max: 60 }
                             }).catch(() => { });
                         }
-                        updateAdaptiveBitrates();
                     };
                     screenVideoTrack.onended = () => {
                         console.log("Screen share track ended by browser controls.");
@@ -370,7 +369,7 @@
                 previewPlayer.play().catch(e => console.log("Local preview play error:", e));
 
                 currentSourceType = 'screen';
-                document.getElementById("active-source-text").textContent = "Screen Sharing (1080p @ 30 FPS)";
+                document.getElementById("active-source-text").textContent = "Screen Sharing (1080p @ 60 FPS)";
 
                 previewPlayer.style.display = "block";
                 previewPlaceholder.style.display = "none";
@@ -553,6 +552,9 @@
                     modifiedLines.push(line);
                     modifiedLines.push('b=AS:8000');
                     modifiedLines.push('b=TIAS:8000000');
+                    modifiedLines.push('a=rtcp-fb:* nack pli');
+                    modifiedLines.push('a=rtcp-fb:* nack fir');
+                    modifiedLines.push('a=rtcp-fb:* goog-remb');
                     continue;
                 }
 
@@ -894,7 +896,7 @@
                                     bytesSent += (report.bytesSent || 0);
                                 }
                             });
-                        } catch (_) {}
+                        } catch (_) { }
                     }
 
                     const now = Date.now();
@@ -1108,7 +1110,7 @@
                         } else if (msg.event === "error") {
                             if (window.showToast) window.showToast(msg.error || "Streaming error occurred", "error");
                         }
-                    } catch (_) {}
+                    } catch (_) { }
                 };
 
                 mediaSocket.onclose = (event) => {
