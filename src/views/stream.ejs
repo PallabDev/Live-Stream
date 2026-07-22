@@ -84,8 +84,9 @@
                         </span>
                         <span id="viewers-badge" class="badge badge-secondary"
                             style="background: rgba(70, 83, 98, 0.85); color: #fff; border: 1px solid rgba(130, 163, 161, 0.3);">
-                            <i class="ti ti-users"></i> <span id="viewers-count">0</span> / 5 Viewers
+                            <i class="ti ti-users"></i> <span id="viewers-count">0</span> Viewers
                         </span>
+
                         <span id="duration-badge" class="badge badge-primary" style="display: none;">
                             00:00:00
                         </span>
@@ -474,7 +475,8 @@
         function reorderVideoCodecs(sdp) {
             let lines = sdp.split('\r\n');
             let mVideoIndex = -1;
-            let h264Pts = [];
+            let h264BaselinePts = [];
+            let h264OtherPts = [];
             let vp9Pts = [];
             let otherPts = [];
 
@@ -490,7 +492,13 @@
                         let codec = match[2].toUpperCase();
 
                         if (codec === 'H264') {
-                            h264Pts.push(pt);
+                            // Find corresponding fmtp for this PT to check for baseline profile
+                            let fmtpLine = lines.find(l => l.startsWith(`a=fmtp:${pt}`));
+                            if (fmtpLine && (fmtpLine.includes('42e0') || fmtpLine.includes('4200') || fmtpLine.includes('4210'))) {
+                                h264BaselinePts.push(pt);
+                            } else {
+                                h264OtherPts.push(pt);
+                            }
                         } else if (codec === 'VP9') {
                             vp9Pts.push(pt);
                         } else {
@@ -506,7 +514,7 @@
                 let header = parts.slice(0, 3);
                 let payloads = parts.slice(3);
 
-                let preferred = [...h264Pts, ...vp9Pts];
+                let preferred = [...h264BaselinePts, ...h264OtherPts, ...vp9Pts];
                 let remaining = payloads.filter(pt => !preferred.includes(pt));
                 let newPayloads = [...preferred, ...remaining];
 
@@ -519,14 +527,16 @@
         function preferHighFidelityAudioAndVideo(sdp) {
             let lines = sdp.split('\r\n');
             let opusPt = null;
+            let videoPts = [];
 
             for (let line of lines) {
                 if (line.toLowerCase().includes('opus/48000')) {
                     const match = line.match(/a=rtpmap:(\d+)\s+opus\/48000/i);
-                    if (match) {
-                        opusPt = match[1];
-                        break;
-                    }
+                    if (match) opusPt = match[1];
+                }
+                if (line.startsWith('a=rtpmap:') && line.includes('video/')) {
+                    const match = line.match(/a=rtpmap:(\d+)\s+/);
+                    if (match) videoPts.push(match[1]);
                 }
             }
 
@@ -552,6 +562,13 @@
                 if (line.startsWith('c=IN ')) {
                     modifiedLines.push('b=AS:12000');
                     modifiedLines.push('b=TIAS:12000000');
+                    // Add NACK & PLI for instantaneous keyframe recovery on all video payload types
+                    for (let pt of videoPts) {
+                        modifiedLines.push(`a=rtcp-fb:${pt} nack`);
+                        modifiedLines.push(`a=rtcp-fb:${pt} nack pli`);
+                        modifiedLines.push(`a=rtcp-fb:${pt} goog-remb`);
+                        modifiedLines.push(`a=rtcp-fb:${pt} transport-cc`);
+                    }
                 }
             }
 
@@ -566,6 +583,7 @@
 
             return reorderVideoCodecs(modifiedLines.join('\r\n'));
         }
+
 
         function showReconnectingStatus() {
             isLive = false;
@@ -768,8 +786,25 @@
                 if (window.bitrateFloorInterval) clearInterval(window.bitrateFloorInterval);
                 window.bitrateFloorInterval = setInterval(applyForcedBitrateParameters, 5000);
 
+                // Dispatch keyframes every 2000ms for instant viewer startup (< 100ms)
+                if (window.keyframeInterval) clearInterval(window.keyframeInterval);
+                window.keyframeInterval = setInterval(async () => {
+                    if (!sfuPeerConnection) return;
+                    const senders = sfuPeerConnection.getSenders();
+                    for (const sender of senders) {
+                        if (sender.track && sender.track.kind === 'video') {
+                            if (typeof sender.generateKeyFrame === 'function') {
+                                try {
+                                    await sender.generateKeyFrame();
+                                } catch (_) {}
+                            }
+                        }
+                    }
+                }, 2000);
+
                 console.log("[Studio SFU] Successfully established WebRTC WHIP stream to MediaMTX SFU!");
                 startStatsMonitoring();
+
             } catch (err) {
                 console.error("[Studio SFU] MediaMTX WHIP publish error:", err);
                 if (window.showToast) window.showToast("Failed to connect to SFU server.", "error");

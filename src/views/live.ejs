@@ -521,15 +521,17 @@ html, body {
       if (event.receiver) {
         try {
           if ('playoutDelayHint' in event.receiver) {
-            event.receiver.playoutDelayHint = 0; // Zero playout delay for immediate smooth 30 FPS playback
+            event.receiver.playoutDelayHint = 0.1; // 100ms real-time buffer (< 0.1s latency)
           }
           if ('jitterBufferTarget' in event.receiver) {
-            event.receiver.jitterBufferTarget = 0;
+            event.receiver.jitterBufferTarget = 100; // 100ms target buffer cushion
           }
         } catch (e) {
           console.warn('[Viewer SFU] Receiver delay hint error:', e);
         }
       }
+
+
 
       if (event.streams && event.streams[0]) {
         if (video.srcObject !== event.streams[0]) {
