@@ -821,46 +821,7 @@
             }
         }, 3000);
 
-        // Periodically measure real-time WebRTC bitrate (getStats) and send live telemetry to server
-        setInterval(async () => {
-            if (!mediaSocket || mediaSocket.readyState !== WebSocket.OPEN) return;
-            let totalBytesSent = 0;
-            let totalBytesReceived = 0;
 
-            for (const [_, pc] of peerConnections) {
-                try {
-                    const stats = await pc.getStats();
-                    stats.forEach(report => {
-                        if (report.type === 'outbound-rtp') {
-                            totalBytesSent += (report.bytesSent || 0);
-                        }
-                        if (report.type === 'inbound-rtp') {
-                            totalBytesReceived += (report.bytesReceived || 0);
-                        }
-                    });
-                } catch (_) {}
-            }
-
-            const now = Date.now();
-            if (window._lastPeerStatTime) {
-                const elapsedSec = (now - window._lastPeerStatTime) / 1000;
-                if (elapsedSec > 0) {
-                    const txDelta = Math.max(0, totalBytesSent - (window._lastBytesSent || 0));
-                    const rxDelta = Math.max(0, totalBytesReceived - (window._lastBytesReceived || 0));
-                    const egressKbps = Math.round(((txDelta * 8) / 1024) / elapsedSec);
-                    const ingressKbps = Math.round(((rxDelta * 8) / 1024) / elapsedSec);
-
-                    mediaSocket.send(JSON.stringify({
-                        event: 'rtc_telemetry',
-                        egressKbps: egressKbps,
-                        ingressKbps: ingressKbps
-                    }));
-                }
-            }
-            window._lastPeerStatTime = now;
-            window._lastBytesSent = totalBytesSent;
-            window._lastBytesReceived = totalBytesReceived;
-        }, 1500);
 
         async function triggerGoLive() {
             if (isStreaming) return;
