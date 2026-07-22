@@ -778,6 +778,7 @@
             }
         }
 
+        let totalWebCodecsBytesSent = 0;
         let webCodecsEncoder = null;
         let trackProcessorReader = null;
 
@@ -811,6 +812,7 @@
                         payload.set(chunkData, 16);
 
                         mediaSocket.send(payload.buffer);
+                        totalWebCodecsBytesSent += payload.byteLength;
                     },
                     error: (err) => console.error("[WebCodecs Encoder Error]:", err)
                 });
@@ -881,15 +883,19 @@
             const qualityBadge = document.getElementById("network-quality-badge");
 
             statsInterval = setInterval(async () => {
-                if (!sfuPeerConnection) return;
                 try {
-                    const stats = await sfuPeerConnection.getStats();
-                    let bytesSent = 0;
-                    stats.forEach(report => {
-                        if (report.type === 'outbound-rtp' && report.kind === 'video') {
-                            bytesSent += (report.bytesSent || 0);
-                        }
-                    });
+                    let bytesSent = totalWebCodecsBytesSent;
+
+                    if (sfuPeerConnection) {
+                        try {
+                            const stats = await sfuPeerConnection.getStats();
+                            stats.forEach(report => {
+                                if (report.type === 'outbound-rtp') {
+                                    bytesSent += (report.bytesSent || 0);
+                                }
+                            });
+                        } catch (_) {}
+                    }
 
                     const now = Date.now();
                     const elapsedSec = (now - lastTime) / 1000;
