@@ -14,16 +14,19 @@
             #preview-placeholder {
                 padding: 1rem !important;
             }
+
             #placeholder-icon {
                 width: 50px !important;
                 height: 50px !important;
                 font-size: 1.5rem !important;
                 margin-bottom: 0.75rem !important;
             }
+
             #placeholder-title {
                 font-size: 1.1rem !important;
                 margin-bottom: 0.25rem !important;
             }
+
             #placeholder-text {
                 font-size: 0.8rem !important;
                 line-height: 1.4 !important;
@@ -55,7 +58,7 @@
                     <!-- Video Element for local preview and movie playback -->
                     <video id="preview-player" class="video-element" playsinline controls muted
                         style="display: none; width: 100%; height: 100%; object-fit: contain; image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;"></video>
-                        
+
                     <!-- Hidden Audio Element for Chrome bug workaround -->
                     <audio id="audio-player" style="display: none;"></audio>
 
@@ -69,7 +72,8 @@
                         <h3 id="placeholder-title" style="margin-bottom: 0.5rem; font-size: 1.5rem; color: #fff;">No
                             Media Selected</h3>
                         <p id="placeholder-text" style="max-width: 450px; font-size: 0.95rem; line-height: 1.6;">
-                            Select a local movie file using the media source panel, then click <strong>Go Live</strong> to start.
+                            Select a local movie file using the media source panel, then click <strong>Go Live</strong>
+                            to start.
                         </p>
                     </div>
 
@@ -78,7 +82,8 @@
                         <span id="status-badge" class="badge badge-danger">
                             <i class="ti ti-point-filled"></i> Offline
                         </span>
-                        <span id="viewers-badge" class="badge badge-secondary" style="background: rgba(70, 83, 98, 0.85); color: #fff; border: 1px solid rgba(130, 163, 161, 0.3);">
+                        <span id="viewers-badge" class="badge badge-secondary"
+                            style="background: rgba(70, 83, 98, 0.85); color: #fff; border: 1px solid rgba(130, 163, 161, 0.3);">
                             <i class="ti ti-users"></i> <span id="viewers-count">0</span> / 5 Viewers
                         </span>
                         <span id="duration-badge" class="badge badge-primary" style="display: none;">
@@ -94,7 +99,8 @@
                     style="display: flex; gap: 1rem; background: rgba(30, 41, 59, 0.6); border: 1px solid var(--panel-border); padding: 0.75rem 1.5rem; border-radius: 50px; backdrop-filter: blur(10px); align-items: center;">
                     <button id="btn-toggle-live" class="btn btn-primary" onclick="toggleLiveState()" disabled
                         style="border-radius: 30px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 600; opacity: 0.5; transition: all 0.2s ease;">
-                        <i class="ti ti-player-play" id="toggle-live-icon"></i> <span id="toggle-live-text">Go Live</span>
+                        <i class="ti ti-player-play" id="toggle-live-icon"></i> <span id="toggle-live-text">Go
+                            Live</span>
                     </button>
 
                     <button id="btn-share" class="btn btn-secondary" onclick="copyViewerLink()" title="Copy Viewer Link"
@@ -118,7 +124,9 @@
                 </div>
 
                 <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-                    <input type="file" id="movie-file-input" accept="video/*,video/mp4,video/mkv,video/webm,video/x-matroska,video/quicktime" style="display: none;">
+                    <input type="file" id="movie-file-input"
+                        accept="video/*,video/mp4,video/mkv,video/webm,video/x-matroska,video/quicktime"
+                        style="display: none;">
 
                     <!-- Select Movie File Button -->
                     <button id="btn-select-file" class="btn btn-secondary"
@@ -145,7 +153,8 @@
                         <strong id="active-source-text" style="font-size: 0.9rem; color: #fff;">None Selected</strong>
                     </div>
 
-                    <div class="screen-share-tip" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem;">
+                    <div class="screen-share-tip"
+                        style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem;">
                         <p style="color: var(--text-muted); font-size: 0.8rem; line-height: 1.5; margin: 0;">
                             <i class="ti ti-info-circle" style="color: var(--primary);"></i>
                             <strong>Pro Tip:</strong> When sharing your screen, make sure to check the <strong>"Share
@@ -156,19 +165,25 @@
             </div>
 
             <!-- Stream Telemetry & Network Quality Panel -->
-            <div class="glass-panel" id="telemetry-panel" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+            <div class="glass-panel" id="telemetry-panel"
+                style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
                 <div class="card-header"
                     style="padding-bottom: 0.5rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                    <h4 style="font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: #fff;">
-                        <i class="ti ti-activity" style="color: var(--primary); font-size: 1.2rem;"></i> Stream Telemetry
+                    <h4
+                        style="font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: #fff;">
+                        <i class="ti ti-activity" style="color: var(--primary); font-size: 1.2rem;"></i> Stream
+                        Telemetry
                     </h4>
                 </div>
 
                 <div style="display: flex; flex-direction: column; gap: 0.75rem;">
                     <!-- Upload Speed Stat Row -->
-                    <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.6); padding: 0.85rem 1rem; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05);">
-                        <span style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.5rem;">
-                            <i class="ti ti-arrow-up-circle" style="color: #10b981; font-size: 1.2rem;"></i> Host Upload Speed
+                    <div
+                        style="display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.6); padding: 0.85rem 1rem; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05);">
+                        <span
+                            style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="ti ti-arrow-up-circle" style="color: #10b981; font-size: 1.2rem;"></i> Host Upload
+                            Speed
                         </span>
                         <strong style="font-size: 1.05rem; color: #10b981; font-family: monospace;">
                             <span id="upload-speed-val">0.00</span> Mbps
@@ -176,11 +191,15 @@
                     </div>
 
                     <!-- Network Quality Indicator Row -->
-                    <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.6); padding: 0.85rem 1rem; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05);">
-                        <span style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.5rem;">
-                            <i class="ti ti-wifi" id="network-quality-icon" style="color: #10b981; font-size: 1.2rem;"></i> Network Quality
+                    <div
+                        style="display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.6); padding: 0.85rem 1rem; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05);">
+                        <span
+                            style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="ti ti-wifi" id="network-quality-icon"
+                                style="color: #10b981; font-size: 1.2rem;"></i> Network Quality
                         </span>
-                        <span id="network-quality-badge" style="font-size: 0.85rem; font-weight: 600; padding: 0.2rem 0.6rem; border-radius: 6px; background: rgba(70, 83, 98, 0.2); border: 1px solid rgba(130, 163, 161, 0.3); color: #94a3b8;">
+                        <span id="network-quality-badge"
+                            style="font-size: 0.85rem; font-weight: 600; padding: 0.2rem 0.6rem; border-radius: 6px; background: rgba(70, 83, 98, 0.2); border: 1px solid rgba(130, 163, 161, 0.3); color: #94a3b8;">
                             <span id="network-quality-text">Standby</span>
                         </span>
                     </div>
@@ -338,7 +357,7 @@
                                 width: { ideal: 1920 },
                                 height: { ideal: 1080 },
                                 frameRate: { ideal: 30, max: 30 }
-                            }).catch(() => {});
+                            }).catch(() => { });
                         }
                         updateAdaptiveBitrates();
                     };
@@ -443,12 +462,12 @@
             }
 
             if (mediaSocket) {
-                try { mediaSocket.close(); } catch (e) {}
+                try { mediaSocket.close(); } catch (e) { }
                 mediaSocket = null;
             }
 
             for (const [viewerId, pcInstance] of peerConnections) {
-                try { pcInstance.close(); } catch (e) {}
+                try { pcInstance.close(); } catch (e) { }
             }
             peerConnections.clear();
             candidateQueues.clear();
@@ -529,14 +548,14 @@
 
                 if (line.startsWith('a=fmtp:')) {
                     if (!line.includes('x-google-start-bitrate') && !line.includes('opus')) {
-                        line = line + ';x-google-start-bitrate=4500;x-google-min-bitrate=2000;x-google-max-bitrate=6000';
+                        line = line + ';x-google-start-bitrate=6000;x-google-min-bitrate=4000;x-google-max-bitrate=8000';
                     }
                 }
 
                 if (line.startsWith('m=video')) {
                     modifiedLines.push(line);
-                    modifiedLines.push('b=AS:6000');
-                    modifiedLines.push('b=TIAS:6000000');
+                    modifiedLines.push('b=AS:8000');
+                    modifiedLines.push('b=TIAS:8000000');
                     continue;
                 }
 
@@ -662,7 +681,7 @@
 
         async function publishToMediaMTXSFU() {
             if (sfuPeerConnection) {
-                try { sfuPeerConnection.close(); } catch (_) {}
+                try { sfuPeerConnection.close(); } catch (_) { }
                 sfuPeerConnection = null;
             }
 
@@ -672,10 +691,10 @@
                 iceServers: [
                     { urls: "stun:stun.l.google.com:19302" },
                     { urls: "stun:stun1.l.google.com:19302" },
-                    { 
-                        urls: [`turn:${turnHost}:3478`, `turn:${turnHost}:3478?transport=tcp`], 
-                        username: "guest", 
-                        credential: "somepassword" 
+                    {
+                        urls: [`turn:${turnHost}:3478`, `turn:${turnHost}:3478?transport=tcp`],
+                        username: "guest",
+                        credential: "somepassword"
                     }
                 ]
             };
@@ -691,14 +710,14 @@
                             if (!parameters.encodings) parameters.encodings = [{}];
                             parameters.encodings[0].priority = 'high';
                             parameters.encodings[0].networkPriority = 'high';
-                            parameters.encodings[0].maxBitrate = 6000000;
-                            parameters.encodings[0].minBitrate = 2000000;
+                            parameters.encodings[0].maxBitrate = 8000000;
+                            parameters.encodings[0].minBitrate = 4000000;
                             parameters.encodings[0].scaleResolutionDownBy = 1.0;
-                            sender.setParameters(parameters).catch(() => {});
+                            sender.setParameters(parameters).catch(() => { });
 
                             const transceiver = sfuPeerConnection.getTransceivers().find(t => t.sender === sender);
                             if (transceiver) {
-                                try { transceiver.degradationPreference = 'maintain-framerate'; } catch (_) {}
+                                try { transceiver.degradationPreference = 'maintain-framerate'; } catch (_) { }
                             }
                         } catch (err) {
                             console.warn("[Studio SFU] Transceiver setup error:", err);
@@ -787,7 +806,7 @@
                     if (elapsedSec > 0 && lastBytesSent > 0 && bytesSent >= lastBytesSent) {
                         const txDelta = bytesSent - lastBytesSent;
                         const uploadMbps = (((txDelta * 8) / 1024 / 1024) / elapsedSec).toFixed(2);
-                        
+
                         const speedVal = document.getElementById("upload-speed-val");
                         if (speedVal) speedVal.textContent = uploadMbps;
 
@@ -797,13 +816,13 @@
                         const qualityIcon = document.getElementById("network-quality-icon");
 
                         if (qualityBadge) {
-                            if (speedNum >= 3.5) {
+                            if (speedNum >= 5.0) {
                                 qualityBadge.style.background = "rgba(16, 185, 129, 0.15)";
                                 qualityBadge.style.borderColor = "rgba(16, 185, 129, 0.35)";
                                 qualityBadge.style.color = "#10b981";
                                 if (qualityIcon) qualityIcon.className = "ti ti-wifi";
-                                if (qualityText) qualityText.textContent = "Excellent (1080p 30fps)";
-                            } else if (speedNum >= 1.5) {
+                                if (qualityText) qualityText.textContent = "Excellent (8Mbps 1080p)";
+                            } else if (speedNum >= 2.5) {
                                 qualityBadge.style.background = "rgba(245, 158, 11, 0.15)";
                                 qualityBadge.style.borderColor = "rgba(245, 158, 11, 0.35)";
                                 qualityBadge.style.color = "#f59e0b";
@@ -877,7 +896,7 @@
                             if (transceiver) {
                                 try {
                                     transceiver.degradationPreference = 'maintain-framerate';
-                                } catch (_) {}
+                                } catch (_) { }
                             }
                         }
                     }
@@ -921,7 +940,7 @@
                     canvas.width = previewPlayer.videoWidth || 1280;
                     canvas.height = previewPlayer.videoHeight || 720;
                     const ctx = canvas.getContext("2d");
-                    
+
                     function renderCanvasFrame() {
                         if (isManuallyStopped || currentSourceType !== 'file') return;
                         if (!previewPlayer.paused && !previewPlayer.ended) {
@@ -1020,7 +1039,7 @@
             try {
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const wsUrl = `${protocol}//${window.location.host}/api/stream/${streamKey}/ws`;
-                
+
                 console.log("[Studio] Connecting signaling WebSocket to:", wsUrl);
                 mediaSocket = new WebSocket(wsUrl);
 

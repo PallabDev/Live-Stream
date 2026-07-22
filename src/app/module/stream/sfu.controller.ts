@@ -3,7 +3,7 @@ import http from "http";
 
 export class SFUController {
   private static getMediaMTXHost(): string {
-    return process.env.MEDIAMTX_HOST || "127.0.0.1";
+    return process.env.MEDIAMTX_HOST || "host.docker.internal";
   }
 
   private static getMediaMTXPort(): number {
