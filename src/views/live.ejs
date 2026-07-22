@@ -521,17 +521,15 @@ html, body {
       if (event.receiver) {
         try {
           if ('playoutDelayHint' in event.receiver) {
-            event.receiver.playoutDelayHint = 0.2; // 200ms smooth jitter buffer
+            event.receiver.playoutDelayHint = 0.05; // 50ms real-time playout for instant video start
           }
           if ('jitterBufferTarget' in event.receiver) {
-            event.receiver.jitterBufferTarget = 200; // 200ms target buffer cushion
+            event.receiver.jitterBufferTarget = 50; // 50ms target buffer
           }
         } catch (e) {
           console.warn('[Viewer SFU] Receiver delay hint error:', e);
         }
       }
-
-
 
       if (event.streams && event.streams[0]) {
         if (video.srcObject !== event.streams[0]) {
@@ -565,17 +563,31 @@ html, body {
       let offer = await pcInstance.createOffer();
       await pcInstance.setLocalDescription(offer);
 
-      // Wait for STUN/TURN ICE candidate gathering to complete (max 2500ms)
+      // Fast ICE candidate gathering wait (resolves as soon as STUN srflx candidate is found or max 300ms)
       if (pcInstance.iceGatheringState !== 'complete') {
         await new Promise(resolve => {
-          const checkState = () => {
-            if (pcInstance && pcInstance.iceGatheringState === 'complete') {
-              pcInstance.removeEventListener('icegatheringstatechange', checkState);
+          let done = false;
+          const finish = () => {
+            if (!done) {
+              done = true;
+              if (pcInstance) {
+                pcInstance.removeEventListener('icecandidate', onCand);
+                pcInstance.removeEventListener('icegatheringstatechange', onState);
+              }
               resolve();
             }
           };
-          pcInstance.addEventListener('icegatheringstatechange', checkState);
-          setTimeout(resolve, 2500);
+          const onCand = (e) => {
+            if (!e.candidate || (e.candidate.candidate && e.candidate.candidate.includes('typ srflx'))) {
+              setTimeout(finish, 50);
+            }
+          };
+          const onState = () => {
+            if (pcInstance && pcInstance.iceGatheringState === 'complete') finish();
+          };
+          pcInstance.addEventListener('icecandidate', onCand);
+          pcInstance.addEventListener('icegatheringstatechange', onState);
+          setTimeout(finish, 300);
         });
       }
 

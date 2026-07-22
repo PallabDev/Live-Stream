@@ -553,15 +553,15 @@
 
                 if (line.startsWith('a=fmtp:')) {
                     if (!line.includes('x-google-start-bitrate') && !line.includes('opus')) {
-                        line = line + ';x-google-start-bitrate=2500;x-google-min-bitrate=300;x-google-max-bitrate=4000';
+                        line = line + ';x-google-start-bitrate=3500;x-google-min-bitrate=1800;x-google-max-bitrate=5000';
                     }
                 }
 
                 modifiedLines.push(line);
 
                 if (line.startsWith('c=IN ')) {
-                    modifiedLines.push('b=AS:4000');
-                    modifiedLines.push('b=TIAS:4000000');
+                    modifiedLines.push('b=AS:4500');
+                    modifiedLines.push('b=TIAS:4500000');
                     // Add NACK & PLI for instantaneous keyframe recovery on all video payload types
                     for (let pt of videoPts) {
                         modifiedLines.push(`a=rtcp-fb:${pt} nack`);
@@ -684,14 +684,14 @@
                             if (!parameters.encodings) parameters.encodings = [{}];
                             parameters.encodings[0].priority = 'high';
                             parameters.encodings[0].networkPriority = 'high';
-                            parameters.encodings[0].maxBitrate = 4000000;
-                            parameters.encodings[0].minBitrate = 300000;
+                            parameters.encodings[0].maxBitrate = 4500000;
+                            parameters.encodings[0].minBitrate = 1800000;
                             parameters.encodings[0].scaleResolutionDownBy = 1.0;
                             sender.setParameters(parameters).catch(() => { });
 
                             const transceiver = sfuPeerConnection.getTransceivers().find(t => t.sender === sender);
                             if (transceiver) {
-                                try { transceiver.degradationPreference = 'balanced'; } catch (_) { }
+                                try { transceiver.degradationPreference = 'maintain-framerate'; } catch (_) { }
                             }
                         } catch (err) {
                             console.warn("[Studio SFU] Transceiver setup error:", err);
@@ -716,17 +716,31 @@
                 });
                 await sfuPeerConnection.setLocalDescription(offer);
 
-                // Wait for STUN/TURN ICE candidate gathering to complete (max 2500ms)
+                // Fast ICE candidate gathering wait (resolves as soon as STUN srflx candidate is found or max 400ms)
                 if (sfuPeerConnection.iceGatheringState !== 'complete') {
                     await new Promise(resolve => {
-                        const checkState = () => {
-                            if (sfuPeerConnection && sfuPeerConnection.iceGatheringState === 'complete') {
-                                sfuPeerConnection.removeEventListener('icegatheringstatechange', checkState);
+                        let done = false;
+                        const finish = () => {
+                            if (!done) {
+                                done = true;
+                                if (sfuPeerConnection) {
+                                    sfuPeerConnection.removeEventListener('icecandidate', onCand);
+                                    sfuPeerConnection.removeEventListener('icegatheringstatechange', onState);
+                                }
                                 resolve();
                             }
                         };
-                        sfuPeerConnection.addEventListener('icegatheringstatechange', checkState);
-                        setTimeout(resolve, 2500);
+                        const onCand = (e) => {
+                            if (!e.candidate || (e.candidate.candidate && e.candidate.candidate.includes('typ srflx'))) {
+                                setTimeout(finish, 50);
+                            }
+                        };
+                        const onState = () => {
+                            if (sfuPeerConnection && sfuPeerConnection.iceGatheringState === 'complete') finish();
+                        };
+                        sfuPeerConnection.addEventListener('icecandidate', onCand);
+                        sfuPeerConnection.addEventListener('icegatheringstatechange', onState);
+                        setTimeout(finish, 400);
                     });
                 }
 
@@ -743,12 +757,12 @@
 
                 let answerSdp = await res.text();
                 
-                // Ensure MediaMTX answer SDP uses 4 Mbps bandwidth cap
+                // Ensure MediaMTX answer SDP uses 4.5 Mbps bandwidth cap
                 if (answerSdp.includes('b=AS:')) {
-                    answerSdp = answerSdp.replace(/b=AS:\d+/g, 'b=AS:4000');
+                    answerSdp = answerSdp.replace(/b=AS:\d+/g, 'b=AS:4500');
                 }
                 if (answerSdp.includes('b=TIAS:')) {
-                    answerSdp = answerSdp.replace(/b=TIAS:\d+/g, 'b=TIAS:4000000');
+                    answerSdp = answerSdp.replace(/b=TIAS:\d+/g, 'b=TIAS:4500000');
                 }
 
                 await sfuPeerConnection.setRemoteDescription(new RTCSessionDescription({
@@ -756,7 +770,7 @@
                     sdp: answerSdp
                 }));
 
-                // Apply dynamic bitrate parameters AFTER setRemoteDescription
+                // Apply stable bitrate parameters AFTER setRemoteDescription
                 async function applyForcedBitrateParameters() {
                     if (!sfuPeerConnection) return;
                     const senders = sfuPeerConnection.getSenders();
@@ -769,11 +783,11 @@
                                 }
                                 parameters.encodings[0].priority = 'high';
                                 parameters.encodings[0].networkPriority = 'high';
-                                parameters.encodings[0].maxBitrate = 4000000;  // 4.0 Mbps Ceiling
-                                parameters.encodings[0].minBitrate = 300000;   // 300 kbps Floor (adaptive)
+                                parameters.encodings[0].maxBitrate = 4500000;  // 4.5 Mbps Ceiling
+                                parameters.encodings[0].minBitrate = 1800000;  // 1.8 Mbps Floor (guarantees high quality)
                                 parameters.encodings[0].scaleResolutionDownBy = 1.0;
                                 await sender.setParameters(parameters);
-                                console.log("[Studio SFU] Enforced 300 kbps - 4 Mbps adaptive bitrate parameter range!");
+                                console.log("[Studio SFU] Enforced 1.8 Mbps - 4.5 Mbps stable bitrate range!");
                             } catch (e) {
                                 console.warn("[Studio SFU] Failed to enforce video sender parameters:", e);
                             }
@@ -782,25 +796,25 @@
                 }
 
                 await applyForcedBitrateParameters();
-                // Periodically re-enforce every 5 seconds during active stream
                 if (window.bitrateFloorInterval) clearInterval(window.bitrateFloorInterval);
                 window.bitrateFloorInterval = setInterval(applyForcedBitrateParameters, 5000);
 
-                // Dispatch keyframes every 2000ms for instant viewer startup (< 100ms)
-                if (window.keyframeInterval) clearInterval(window.keyframeInterval);
-                window.keyframeInterval = setInterval(async () => {
+                // Dispatch keyframes immediately and every 1000ms for instant viewer startup (< 100ms)
+                async function dispatchKeyframe() {
                     if (!sfuPeerConnection) return;
                     const senders = sfuPeerConnection.getSenders();
                     for (const sender of senders) {
                         if (sender.track && sender.track.kind === 'video') {
                             if (typeof sender.generateKeyFrame === 'function') {
-                                try {
-                                    await sender.generateKeyFrame();
-                                } catch (_) {}
+                                try { await sender.generateKeyFrame(); } catch (_) {}
                             }
                         }
                     }
-                }, 2000);
+                }
+                await dispatchKeyframe();
+
+                if (window.keyframeInterval) clearInterval(window.keyframeInterval);
+                window.keyframeInterval = setInterval(dispatchKeyframe, 1000);
 
                 console.log("[Studio SFU] Successfully established WebRTC WHIP stream to MediaMTX SFU!");
                 startStatsMonitoring();

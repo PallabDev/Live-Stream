@@ -175,8 +175,9 @@ export class MonitorService {
     if (elapsedSec >= 0.5) {
       let rxBytes = 0;
       let txBytes = 0;
-      let readFromProc = false;
+      let hasNetStats = false;
 
+      // 1. Try reading Linux /proc/net/dev or /host_proc/net/dev
       try {
         const procPath = fs.existsSync("/host_proc/net/dev") ? "/host_proc/net/dev" : (fs.existsSync("/proc/net/dev") ? "/proc/net/dev" : null);
         if (procPath) {
@@ -184,19 +185,51 @@ export class MonitorService {
           const lines = content.split("\n");
           for (const line of lines) {
             const trimmed = line.trim();
-            if (trimmed.includes(":") && !trimmed.startsWith("lo:")) {
-              const parts = trimmed.split(":")[1].trim().split(/\s+/);
-              if (parts.length >= 9) {
-                rxBytes += parseInt(parts[0], 10) || 0;
-                txBytes += parseInt(parts[8], 10) || 0;
+            if (trimmed.includes(":")) {
+              const [iface, dataStr] = trimmed.split(":");
+              const ifaceName = iface.trim();
+              // Ignore loopback, docker virtual bridges, and veth container interfaces
+              if (
+                !ifaceName.startsWith("lo") &&
+                !ifaceName.startsWith("docker") &&
+                !ifaceName.startsWith("veth") &&
+                !ifaceName.startsWith("br-")
+              ) {
+                const parts = dataStr.trim().split(/\s+/);
+                if (parts.length >= 9) {
+                  rxBytes += parseInt(parts[0], 10) || 0;
+                  txBytes += parseInt(parts[8], 10) || 0;
+                }
               }
             }
           }
-          readFromProc = true;
+          if (rxBytes > 0 || txBytes > 0) {
+            hasNetStats = true;
+          }
         }
       } catch (_) {}
 
-      if (readFromProc) {
+      // 2. If Windows host or /proc/net/dev not available, use Windows netstat -e
+      if (!hasNetStats && process.platform === "win32") {
+        try {
+          const { execSync } = await import("child_process");
+          const output = execSync("netstat -e", { timeout: 1000, encoding: "utf8" });
+          const lines = output.split("\n");
+          for (const line of lines) {
+            if (line.toLowerCase().includes("bytes")) {
+              const parts = line.trim().split(/\s+/);
+              if (parts.length >= 3) {
+                rxBytes = parseInt(parts[1], 10) || 0;
+                txBytes = parseInt(parts[2], 10) || 0;
+                hasNetStats = true;
+                break;
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (hasNetStats) {
         if (this.lastRxBytes > 0 && rxBytes >= this.lastRxBytes) {
           const rxDelta = rxBytes - this.lastRxBytes;
           this.currentIngressKbps = Math.round(((rxDelta * 8) / 1024) / elapsedSec);
@@ -208,7 +241,6 @@ export class MonitorService {
         this.lastRxBytes = rxBytes;
         this.lastTxBytes = txBytes;
       } else {
-        // Fallback for non-Linux OS (Windows dev environment): calculate based on tracked app sockets
         if (this.socketTxBytes > 0 || this.socketRxBytes > 0) {
           this.currentEgressKbps = Math.round(((this.socketTxBytes * 8) / 1024) / elapsedSec);
           this.currentIngressKbps = Math.round(((this.socketRxBytes * 8) / 1024) / elapsedSec);
