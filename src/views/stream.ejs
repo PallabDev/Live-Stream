@@ -816,13 +816,13 @@
                         const qualityIcon = document.getElementById("network-quality-icon");
 
                         if (qualityBadge) {
-                            if (speedNum >= 5.0) {
+                            if (speedNum >= 2.0) {
                                 qualityBadge.style.background = "rgba(16, 185, 129, 0.15)";
                                 qualityBadge.style.borderColor = "rgba(16, 185, 129, 0.35)";
                                 qualityBadge.style.color = "#10b981";
                                 if (qualityIcon) qualityIcon.className = "ti ti-wifi";
-                                if (qualityText) qualityText.textContent = "Excellent (8Mbps 1080p)";
-                            } else if (speedNum >= 2.5) {
+                                if (qualityText) qualityText.textContent = "Excellent (1080p 30fps)";
+                            } else if (speedNum >= 1.0) {
                                 qualityBadge.style.background = "rgba(245, 158, 11, 0.15)";
                                 qualityBadge.style.borderColor = "rgba(245, 158, 11, 0.35)";
                                 qualityBadge.style.color = "#f59e0b";
