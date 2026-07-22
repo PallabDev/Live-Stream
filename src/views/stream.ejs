@@ -963,8 +963,8 @@
 
                 mediaStream.getVideoTracks().forEach(track => {
                     if ('contentHint' in track) {
-                        track.contentHint = 'motion';
-                        console.log("[WebRTC] Set video track contentHint to 'motion' for smooth 30 FPS playback");
+                        track.contentHint = 'detail';
+                        console.log("[WebRTC] Set video track contentHint to 'detail' for maximum 1080p sharpness");
                     }
                     if (typeof track.applyConstraints === 'function') {
                         track.applyConstraints({
