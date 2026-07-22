@@ -19,9 +19,9 @@ export class SFUController {
       let currentLine = line;
 
       if (currentLine.startsWith("b=AS:")) {
-        currentLine = "b=AS:12000";
+        currentLine = "b=AS:4000";
       } else if (currentLine.startsWith("b=TIAS:")) {
-        currentLine = "b=TIAS:12000000";
+        currentLine = "b=TIAS:4000000";
       }
 
       modifiedLines.push(currentLine);

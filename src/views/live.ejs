@@ -521,10 +521,10 @@ html, body {
       if (event.receiver) {
         try {
           if ('playoutDelayHint' in event.receiver) {
-            event.receiver.playoutDelayHint = 0.1; // 100ms real-time buffer (< 0.1s latency)
+            event.receiver.playoutDelayHint = 0.2; // 200ms smooth jitter buffer
           }
           if ('jitterBufferTarget' in event.receiver) {
-            event.receiver.jitterBufferTarget = 100; // 100ms target buffer cushion
+            event.receiver.jitterBufferTarget = 200; // 200ms target buffer cushion
           }
         } catch (e) {
           console.warn('[Viewer SFU] Receiver delay hint error:', e);
@@ -565,7 +565,7 @@ html, body {
       let offer = await pcInstance.createOffer();
       await pcInstance.setLocalDescription(offer);
 
-      // Wait for STUN/TURN ICE candidate gathering to complete (max 800ms)
+      // Wait for STUN/TURN ICE candidate gathering to complete (max 2500ms)
       if (pcInstance.iceGatheringState !== 'complete') {
         await new Promise(resolve => {
           const checkState = () => {
@@ -575,7 +575,7 @@ html, body {
             }
           };
           pcInstance.addEventListener('icegatheringstatechange', checkState);
-          setTimeout(resolve, 800);
+          setTimeout(resolve, 2500);
         });
       }
 
@@ -600,6 +600,12 @@ html, body {
     } catch (err) {
       console.error('[Viewer SFU] WHEP connection error:', err);
       showOffline();
+      // Retry subscription after 2.5s if stream is still marked live
+      setTimeout(() => {
+        if (!playbackStarted && statusSocket && statusSocket.readyState === WebSocket.OPEN) {
+          window.checkStreamStatus();
+        }
+      }, 2500);
     }
   }
 

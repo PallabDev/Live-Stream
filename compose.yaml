@@ -25,6 +25,7 @@ services:
     environment:
       - MTX_WEBRTC=yes
       - MTX_WEBRTCADDRESS=:8889
+      - MTX_WEBRTCLOCALUDPADDRESS=:8889
       - MTX_WEBRTCENCRYPTION=no
       - MTX_WEBRTCSERVERSSTUN=["stun:stun.l.google.com:19302"]
       - MTX_WEBRTCALLOWORIGINS=["*"]
@@ -34,7 +35,7 @@ services:
     image: coturn/coturn:latest
     container_name: coturn
     restart: always
-    command: turnserver -a -v -n -u guest:somepassword -p 3478 -L 0.0.0.0 -r cowatch.local --no-tls --no-dtls --min-port 50000 --max-port 50050
+    command: turnserver -a -v -n -u guest:somepassword -p 3478 -L 0.0.0.0 -r watch.pallabdev.in -X watch.pallabdev.in --no-tls --no-dtls --min-port 50000 --max-port 50050
     ports:
       - "3478:3478"
       - "3478:3478/udp"

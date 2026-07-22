@@ -553,15 +553,15 @@
 
                 if (line.startsWith('a=fmtp:')) {
                     if (!line.includes('x-google-start-bitrate') && !line.includes('opus')) {
-                        line = line + ';x-google-start-bitrate=6000;x-google-min-bitrate=2000;x-google-max-bitrate=12000';
+                        line = line + ';x-google-start-bitrate=2500;x-google-min-bitrate=300;x-google-max-bitrate=4000';
                     }
                 }
 
                 modifiedLines.push(line);
 
                 if (line.startsWith('c=IN ')) {
-                    modifiedLines.push('b=AS:12000');
-                    modifiedLines.push('b=TIAS:12000000');
+                    modifiedLines.push('b=AS:4000');
+                    modifiedLines.push('b=TIAS:4000000');
                     // Add NACK & PLI for instantaneous keyframe recovery on all video payload types
                     for (let pt of videoPts) {
                         modifiedLines.push(`a=rtcp-fb:${pt} nack`);
@@ -684,14 +684,14 @@
                             if (!parameters.encodings) parameters.encodings = [{}];
                             parameters.encodings[0].priority = 'high';
                             parameters.encodings[0].networkPriority = 'high';
-                            parameters.encodings[0].maxBitrate = 10000000;
-                            parameters.encodings[0].minBitrate = 2000000;
+                            parameters.encodings[0].maxBitrate = 4000000;
+                            parameters.encodings[0].minBitrate = 300000;
                             parameters.encodings[0].scaleResolutionDownBy = 1.0;
                             sender.setParameters(parameters).catch(() => { });
 
                             const transceiver = sfuPeerConnection.getTransceivers().find(t => t.sender === sender);
                             if (transceiver) {
-                                try { transceiver.degradationPreference = 'maintain-resolution'; } catch (_) { }
+                                try { transceiver.degradationPreference = 'balanced'; } catch (_) { }
                             }
                         } catch (err) {
                             console.warn("[Studio SFU] Transceiver setup error:", err);
@@ -716,7 +716,7 @@
                 });
                 await sfuPeerConnection.setLocalDescription(offer);
 
-                // Wait for STUN/TURN ICE candidate gathering to complete (max 800ms)
+                // Wait for STUN/TURN ICE candidate gathering to complete (max 2500ms)
                 if (sfuPeerConnection.iceGatheringState !== 'complete') {
                     await new Promise(resolve => {
                         const checkState = () => {
@@ -726,7 +726,7 @@
                             }
                         };
                         sfuPeerConnection.addEventListener('icegatheringstatechange', checkState);
-                        setTimeout(resolve, 800);
+                        setTimeout(resolve, 2500);
                     });
                 }
 
@@ -743,12 +743,12 @@
 
                 let answerSdp = await res.text();
                 
-                // Ensure MediaMTX answer SDP uses 10 Mbps bandwidth cap
+                // Ensure MediaMTX answer SDP uses 4 Mbps bandwidth cap
                 if (answerSdp.includes('b=AS:')) {
-                    answerSdp = answerSdp.replace(/b=AS:\d+/g, 'b=AS:10000');
+                    answerSdp = answerSdp.replace(/b=AS:\d+/g, 'b=AS:4000');
                 }
                 if (answerSdp.includes('b=TIAS:')) {
-                    answerSdp = answerSdp.replace(/b=TIAS:\d+/g, 'b=TIAS:10000000');
+                    answerSdp = answerSdp.replace(/b=TIAS:\d+/g, 'b=TIAS:4000000');
                 }
 
                 await sfuPeerConnection.setRemoteDescription(new RTCSessionDescription({
@@ -756,7 +756,7 @@
                     sdp: answerSdp
                 }));
 
-                // Apply forced bitrate parameters AFTER setRemoteDescription
+                // Apply dynamic bitrate parameters AFTER setRemoteDescription
                 async function applyForcedBitrateParameters() {
                     if (!sfuPeerConnection) return;
                     const senders = sfuPeerConnection.getSenders();
@@ -769,11 +769,11 @@
                                 }
                                 parameters.encodings[0].priority = 'high';
                                 parameters.encodings[0].networkPriority = 'high';
-                                parameters.encodings[0].maxBitrate = 10000000;  // 10.0 Mbps Ceiling
-                                parameters.encodings[0].minBitrate = 2500000;   // 2.5 Mbps Floor
+                                parameters.encodings[0].maxBitrate = 4000000;  // 4.0 Mbps Ceiling
+                                parameters.encodings[0].minBitrate = 300000;   // 300 kbps Floor (adaptive)
                                 parameters.encodings[0].scaleResolutionDownBy = 1.0;
                                 await sender.setParameters(parameters);
-                                console.log("[Studio SFU] Enforced 2.5 Mbps - 10 Mbps bitrate parameter range!");
+                                console.log("[Studio SFU] Enforced 300 kbps - 4 Mbps adaptive bitrate parameter range!");
                             } catch (e) {
                                 console.warn("[Studio SFU] Failed to enforce video sender parameters:", e);
                             }
