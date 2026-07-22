@@ -592,11 +592,25 @@ html, body {
       let offer = await pcInstance.createOffer();
       await pcInstance.setLocalDescription(offer);
 
+      // Wait for STUN/TURN ICE candidate gathering to complete (max 800ms)
+      if (pcInstance.iceGatheringState !== 'complete') {
+        await new Promise(resolve => {
+          const checkState = () => {
+            if (pcInstance && pcInstance.iceGatheringState === 'complete') {
+              pcInstance.removeEventListener('icegatheringstatechange', checkState);
+              resolve();
+            }
+          };
+          pcInstance.addEventListener('icegatheringstatechange', checkState);
+          setTimeout(resolve, 800);
+        });
+      }
+
       console.log('[Viewer SFU] Sending WHEP offer to MediaMTX SFU proxy...');
       const res = await fetch(`/api/sfu/whep/${streamKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/sdp' },
-        body: offer.sdp
+        body: pcInstance.localDescription ? pcInstance.localDescription.sdp : offer.sdp
       });
 
       if (!res.ok) {

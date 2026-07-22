@@ -721,11 +721,25 @@
                 });
                 await sfuPeerConnection.setLocalDescription(offer);
 
+                // Wait for STUN/TURN ICE candidate gathering to complete (max 800ms)
+                if (sfuPeerConnection.iceGatheringState !== 'complete') {
+                    await new Promise(resolve => {
+                        const checkState = () => {
+                            if (sfuPeerConnection && sfuPeerConnection.iceGatheringState === 'complete') {
+                                sfuPeerConnection.removeEventListener('icegatheringstatechange', checkState);
+                                resolve();
+                            }
+                        };
+                        sfuPeerConnection.addEventListener('icegatheringstatechange', checkState);
+                        setTimeout(resolve, 800);
+                    });
+                }
+
                 console.log("[Studio SFU] Sending WHIP offer to MediaMTX SFU proxy...");
                 const res = await fetch(`/api/sfu/whip/${streamKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/sdp' },
-                    body: offer.sdp
+                    body: sfuPeerConnection.localDescription ? sfuPeerConnection.localDescription.sdp : offer.sdp
                 });
 
                 if (!res.ok) {

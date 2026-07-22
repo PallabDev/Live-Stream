@@ -25,6 +25,7 @@ services:
       - MTX_WEBRTCENCRYPTION=no
       - MTX_WEBRTCSERVERSSTUN=["stun:stun.l.google.com:19302"]
       - MTX_WEBRTCALLOWORIGINS=["*"]
+      - MTX_WEBRTCADDITIONALHOSTS=["watch.pallabdev.in"]
     ports:
       - "8889:8889"
       - "8189:8189/udp"
