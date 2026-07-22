@@ -197,15 +197,15 @@
       </div>
     </div>
 
-    <!-- Live Egress Bandwidth -->
+    <!-- Live Real-Time Network Traffic -->
     <div class="stat-card">
       <div class="stat-icon icon-net">
         <i class="ti ti-network"></i>
       </div>
       <div class="stat-info">
-        <span class="stat-label">Live Egress Speed</span>
-        <span class="stat-value" id="val-net">0.00 Mbps</span>
-        <span class="stat-sub">Real-time outbound</span>
+        <span class="stat-label">Live Server Traffic</span>
+        <span class="stat-value" id="val-net" style="font-size: 1.25rem;">&uarr; 0.00 / &darr; 0.00 Mbps</span>
+        <span class="stat-sub">Upload (Egress) &amp; Download (Ingress)</span>
       </div>
     </div>
 
@@ -338,9 +338,10 @@
             monthlySessionsEl.textContent = `${data.monthlyStats.countedSessionsThisMonth} Counted / ${data.monthlyStats.totalSessionsThisMonth} Total`;
           }
 
-          // Update Egress network bandwidth
+          // Update Egress & Ingress network bandwidth
           const egressMbps = ((data.egressKbps || 0) / 1024).toFixed(2);
-          netEl.textContent = `${egressMbps} Mbps`;
+          const ingressMbps = ((data.ingressKbps || 0) / 1024).toFixed(2);
+          netEl.textContent = `\u2191 ${egressMbps} / \u2193 ${ingressMbps} Mbps`;
 
           // Update Active Streams table
           if (data.activeStreams && data.activeStreams.length > 0) {

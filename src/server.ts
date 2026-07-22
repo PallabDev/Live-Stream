@@ -54,6 +54,7 @@ app.use((req, res, next) => {
       }
     }
     activeEgressBytes += bytesSent;
+    MonitorService.trackSocketTraffic(bytesSent);
     return oldEnd.apply(res, arguments as any);
   };
 
@@ -191,7 +192,7 @@ monitorWss.on("connection", (ws: any) => {
       const cpu = await MonitorService.getCpuUsage();
       const sysMetrics = MonitorService.getSystemMetrics();
       const monthlyStats = await MonitorService.getMonthlyStats();
-      const realEgressKbps = MonitorService.getRealEgressKbps(StreamController.activeSessions);
+      const netStats = await MonitorService.getNetworkStats();
       const data = {
         cpu,
         memory: {
@@ -202,7 +203,8 @@ monitorWss.on("connection", (ws: any) => {
         loadAvg: sysMetrics.loadAvg,
         uptimeFormatted: sysMetrics.uptimeFormatted,
         monthlyStats,
-        egressKbps: realEgressKbps,
+        egressKbps: netStats.egressKbps,
+        ingressKbps: netStats.ingressKbps,
         mediaFiles: MonitorService.getMediaFiles(),
         ffmpegLogs: MonitorService.getLogs(),
         activeStreams: Array.from(StreamController.activeSessions.values()).map(session => ({

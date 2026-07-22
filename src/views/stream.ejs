@@ -260,12 +260,15 @@
                     audioPlayer.src = "";
                 }
 
-                // Prompt screen capture with high-fidelity system audio request
+                // Prompt screen capture with native high-resolution video & system audio request
                 let stream;
                 try {
                     stream = await navigator.mediaDevices.getDisplayMedia({
                         video: {
-                            frameRate: { ideal: 30, max: 30 }
+                            width: { ideal: 1920 },
+                            height: { ideal: 1080 },
+                            frameRate: { min: 30, ideal: 30, max: 30 },
+                            displaySurface: "monitor"
                         },
                         audio: {
                             echoCancellation: false,
@@ -276,9 +279,30 @@
                     });
                 } catch (e) {
                     stream = await navigator.mediaDevices.getDisplayMedia({
-                        video: { frameRate: { ideal: 30, max: 30 } },
+                        video: {
+                            width: { ideal: 1920 },
+                            height: { ideal: 1080 },
+                            frameRate: { min: 30, ideal: 30, max: 30 }
+                        },
                         audio: true
                     });
+                }
+
+                // Set detail hint for crisp, uncompressed pixel-for-pixel screen capture
+                const screenVideoTrack = stream.getVideoTracks()[0];
+                if (screenVideoTrack) {
+                    if ('contentHint' in screenVideoTrack) {
+                        screenVideoTrack.contentHint = 'detail';
+                    }
+                    if (typeof screenVideoTrack.applyConstraints === 'function') {
+                        screenVideoTrack.applyConstraints({
+                            frameRate: { min: 30, ideal: 30, max: 30 }
+                        }).catch(err => console.warn("[Studio Screen] applyConstraints error:", err));
+                    }
+                    screenVideoTrack.onended = () => {
+                        console.log("Screen share track ended by browser controls.");
+                        triggerStopLive();
+                    };
                 }
 
                 captureStream = stream;
@@ -287,19 +311,10 @@
                 previewPlayer.play().catch(e => console.log("Local preview play error:", e));
 
                 currentSourceType = 'screen';
-                document.getElementById("active-source-text").textContent = "Screen Sharing (with system audio)";
+                document.getElementById("active-source-text").textContent = "Screen Sharing (1080p @ 30 FPS)";
 
                 previewPlayer.style.display = "block";
                 previewPlaceholder.style.display = "none";
-
-                // Listen for the browser's native "Stop Sharing" button click
-                const videoTrack = stream.getVideoTracks()[0];
-                if (videoTrack) {
-                    videoTrack.onended = () => {
-                        console.log("Screen share track ended by browser controls.");
-                        triggerStopLive();
-                    };
-                }
 
                 updateUI();
             } catch (err) {
@@ -486,8 +501,8 @@
 
                 if (line.startsWith('m=video')) {
                     modifiedLines.push(line);
-                    modifiedLines.push('b=AS:8000');
-                    modifiedLines.push('b=TIAS:8000000');
+                    modifiedLines.push('b=AS:10000');
+                    modifiedLines.push('b=TIAS:10000000');
                     continue;
                 }
 
@@ -642,16 +657,22 @@
                             if (!parameters.encodings) {
                                 parameters.encodings = [{}];
                             }
-                            parameters.encodings[0].maxBitrate = 8000000;
-                            parameters.encodings[0].minBitrate = 300000; // 300 Kbps min floor (prevents blurriness while ensuring smooth play on 600 Kbps connections)
+                            parameters.encodings[0].maxBitrate = 10000000; // 10 Mbps max (server max)
+                            parameters.encodings[0].minBitrate = 4000000;  // 4 Mbps min floor (strictly 4Mbps minimum)
+                            parameters.encodings[0].maxFramerate = 30;
+                            parameters.encodings[0].scaleResolutionDownBy = 1.0; // 0 downscaling (100% native pixel density)
                             sender.setParameters(parameters).catch(err => {
                                 console.warn("[Studio WebRTC] Failed to set video encoding parameters:", err);
                             });
 
-                            // Maintain constant 30fps without frame drops, scaling resolution smoothly under network congestion
+                            // Strictly prevent any framerate or resolution degradation
                             const transceiver = pcInstance.getTransceivers().find(t => t.sender === sender);
                             if (transceiver) {
-                                transceiver.degradationPreference = 'maintain-framerate';
+                                try {
+                                    transceiver.degradationPreference = 'disabled';
+                                } catch (_) {
+                                    transceiver.degradationPreference = 'maintain-framerate';
+                                }
                             }
                         } catch (err) {
                             console.warn("[Studio WebRTC] Failed to modify transceiver parameters:", err);
@@ -750,19 +771,9 @@
             const viewersCountEl = document.getElementById("viewers-count");
             if (viewersCountEl) viewersCountEl.textContent = peerConnections.size;
 
-            let targetMaxBitrate;
-            
-            if (count === 1) {
-                targetMaxBitrate = 8000000; // 8.0 Mbps max for 1 viewer (Ultra 1080p)
-            } else if (count <= 3) {
-                targetMaxBitrate = 6000000; // 6.0 Mbps max per viewer (Full 1080p HD)
-            } else if (count <= 5) {
-                targetMaxBitrate = 3500000; // 3.5 Mbps max per viewer (5 Viewers Max Cap)
-            } else {
-                targetMaxBitrate = 2000000;
-            }
+            let targetMaxBitrate = 10000000; // 10 Mbps max per viewer (Server Max)
 
-            console.log(`[Studio WebRTC] Balancing host upload bandwidth across ${count} connected viewer(s) (${Math.round(targetMaxBitrate / 1000)} Kbps per peer)`);
+            console.log(`[Studio WebRTC] Allocating host upload bandwidth across ${count} connected viewer(s) (${Math.round(targetMaxBitrate / 1000)} Kbps per peer)`);
 
             for (const [viewerId, pcInstance] of peerConnections) {
                 try {
@@ -772,7 +783,9 @@
                             const parameters = sender.getParameters();
                             if (!parameters.encodings) parameters.encodings = [{}];
                             parameters.encodings[0].maxBitrate = targetMaxBitrate;
-                            parameters.encodings[0].minBitrate = 300000; // 300 Kbps min floor for poor network smooth streaming
+                            parameters.encodings[0].minBitrate = 4000000; // 4 Mbps floor strictly prevents quality drops
+                            parameters.encodings[0].maxFramerate = 30;
+                            parameters.encodings[0].scaleResolutionDownBy = 1.0; // 0 downscaling (100% native pixel density)
                             sender.setParameters(parameters).catch(err => {
                                 console.warn(`[Studio WebRTC] Error setting bitrate for viewer ${viewerId}:`, err);
                             });
@@ -901,7 +914,7 @@
                         track.applyConstraints({
                             width: { ideal: 1920 },
                             height: { ideal: 1080 },
-                            frameRate: { ideal: 30, max: 30 }
+                            frameRate: { min: 30, ideal: 30, max: 30 }
                         }).catch(err => console.warn("Failed to apply 1080p constraints:", err));
                     }
                 });

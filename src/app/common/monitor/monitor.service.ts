@@ -155,20 +155,77 @@ export class MonitorService {
     }
   }
 
-  static getRealEgressKbps(activeSessions: Map<string, any>): number {
-    let totalBps = 0;
-    for (const session of activeSessions.values()) {
-      const count = session.viewers ? session.viewers.size : 0;
-      if (count > 0) {
-        let bpsPerViewer = 6000000;
-        if (count === 1) bpsPerViewer = 8000000;
-        else if (count <= 3) bpsPerViewer = 6000000;
-        else if (count <= 5) bpsPerViewer = 3500000;
-        else bpsPerViewer = 2000000;
-        totalBps += (count * bpsPerViewer);
+  private static lastNetCheckTime = Date.now();
+  private static lastRxBytes = 0;
+  private static lastTxBytes = 0;
+  private static currentEgressKbps = 0;
+  private static currentIngressKbps = 0;
+  private static socketTxBytes = 0;
+  private static socketRxBytes = 0;
+
+  static trackSocketTraffic(bytesSent: number, bytesReceived: number = 0) {
+    this.socketTxBytes += bytesSent;
+    this.socketRxBytes += bytesReceived;
+  }
+
+  static async getNetworkStats(): Promise<{ egressKbps: number; ingressKbps: number }> {
+    const now = Date.now();
+    const elapsedSec = (now - this.lastNetCheckTime) / 1000;
+
+    if (elapsedSec >= 0.5) {
+      let rxBytes = 0;
+      let txBytes = 0;
+      let readFromProc = false;
+
+      try {
+        if (fs.existsSync("/proc/net/dev")) {
+          const content = fs.readFileSync("/proc/net/dev", "utf8");
+          const lines = content.split("\n");
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.includes(":") && !trimmed.startsWith("lo:")) {
+              const parts = trimmed.split(":")[1].trim().split(/\s+/);
+              if (parts.length >= 9) {
+                rxBytes += parseInt(parts[0], 10) || 0;
+                txBytes += parseInt(parts[8], 10) || 0;
+              }
+            }
+          }
+          readFromProc = true;
+        }
+      } catch (_) {}
+
+      if (readFromProc) {
+        if (this.lastRxBytes > 0 && rxBytes >= this.lastRxBytes) {
+          const rxDelta = rxBytes - this.lastRxBytes;
+          this.currentIngressKbps = Math.round(((rxDelta * 8) / 1024) / elapsedSec);
+        }
+        if (this.lastTxBytes > 0 && txBytes >= this.lastTxBytes) {
+          const txDelta = txBytes - this.lastTxBytes;
+          this.currentEgressKbps = Math.round(((txDelta * 8) / 1024) / elapsedSec);
+        }
+        this.lastRxBytes = rxBytes;
+        this.lastTxBytes = txBytes;
+      } else {
+        // Fallback for non-Linux OS (Windows dev environment): calculate based on tracked app sockets
+        if (this.socketTxBytes > 0 || this.socketRxBytes > 0) {
+          this.currentEgressKbps = Math.round(((this.socketTxBytes * 8) / 1024) / elapsedSec);
+          this.currentIngressKbps = Math.round(((this.socketRxBytes * 8) / 1024) / elapsedSec);
+          this.socketTxBytes = 0;
+          this.socketRxBytes = 0;
+        }
       }
+      this.lastNetCheckTime = now;
     }
-    return Math.round(totalBps / 1024);
+
+    return {
+      egressKbps: this.currentEgressKbps,
+      ingressKbps: this.currentIngressKbps,
+    };
+  }
+
+  static getRealEgressKbps(): number {
+    return this.currentEgressKbps;
   }
 
   static getMediaFiles() {
