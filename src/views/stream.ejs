@@ -544,7 +544,7 @@
 
                 if (line.startsWith('a=fmtp:')) {
                     if (!line.includes('x-google-start-bitrate') && !line.includes('opus')) {
-                        line = line + ';x-google-start-bitrate=8000;x-google-min-bitrate=7000;x-google-max-bitrate=8500';
+                        line = line + ';x-google-start-bitrate=8000;x-google-min-bitrate=4000;x-google-max-bitrate=8500';
                     }
                 }
 
@@ -710,7 +710,7 @@
                             parameters.encodings[0].priority = 'high';
                             parameters.encodings[0].networkPriority = 'high';
                             parameters.encodings[0].maxBitrate = 8500000;
-                            parameters.encodings[0].minBitrate = 7000000;
+                            parameters.encodings[0].minBitrate = 4000000;
                             parameters.encodings[0].scaleResolutionDownBy = 1.0;
                             sender.setParameters(parameters).catch(() => { });
 
@@ -914,13 +914,13 @@
                         const qualityIcon = document.getElementById("network-quality-icon");
 
                         if (qualityBadge) {
-                            if (speedNum >= 2.0) {
+                            if (speedNum >= 6.0) {
                                 qualityBadge.style.background = "rgba(16, 185, 129, 0.15)";
                                 qualityBadge.style.borderColor = "rgba(16, 185, 129, 0.35)";
                                 qualityBadge.style.color = "#10b981";
                                 if (qualityIcon) qualityIcon.className = "ti ti-wifi";
-                                if (qualityText) qualityText.textContent = "Excellent (1080p 30fps)";
-                            } else if (speedNum >= 1.0) {
+                                if (qualityText) qualityText.textContent = "Excellent (1080p 60fps)";
+                            } else if (speedNum >= 4.0) {
                                 qualityBadge.style.background = "rgba(245, 158, 11, 0.15)";
                                 qualityBadge.style.borderColor = "rgba(245, 158, 11, 0.35)";
                                 qualityBadge.style.color = "#f59e0b";
