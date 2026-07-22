@@ -765,7 +765,19 @@
                     throw new Error(`MediaMTX SFU WHIP HTTP error ${res.status}`);
                 }
 
-                const answerSdp = await res.text();
+                let answerSdp = await res.text();
+                
+                // Override MediaMTX answer SDP 1400 Kbps bottleneck to 10,000 Kbps (10 Mbps)
+                if (answerSdp.includes('b=AS:')) {
+                    answerSdp = answerSdp.replace(/b=AS:\d+/g, 'b=AS:10000');
+                }
+                if (answerSdp.includes('b=TIAS:')) {
+                    answerSdp = answerSdp.replace(/b=TIAS:\d+/g, 'b=TIAS:10000000');
+                }
+                if (!answerSdp.includes('b=AS:')) {
+                    answerSdp = answerSdp.replace(/(m=video [^\r\n]+)/, '$1\r\nb=AS:10000\r\nb=TIAS:10000000');
+                }
+
                 await sfuPeerConnection.setRemoteDescription(new RTCSessionDescription({
                     type: 'answer',
                     sdp: answerSdp
