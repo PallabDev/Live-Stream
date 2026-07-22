@@ -530,15 +530,13 @@ html, body {
           if (status === 'live') {
             viewerId = id;
             hideOffline();
-            if (!pcInstance || pcInstance.connectionState !== 'connected') {
-              showLoading();
-              await initWebRTC();
-            } else {
-              // We are already connected. Let the broadcaster know we are ready just in case
-              if (statusSocket && statusSocket.readyState === WebSocket.OPEN) {
-                statusSocket.send(JSON.stringify({ event: "viewer-ready" }));
-              }
+            playbackStarted = false;
+            if (pcInstance) {
+              try { pcInstance.close(); } catch (_) {}
+              pcInstance = null;
             }
+            showLoading();
+            await initWebRTC();
           } else if (status === 'capacity_reached') {
             const subtitle = document.querySelector('#offline-screen p');
             if (subtitle) subtitle.textContent = msg.message || 'Stream has reached maximum capacity.';
@@ -575,6 +573,13 @@ html, body {
       statusSocket.send(JSON.stringify({ event: "viewer-ready" }));
     }
   };
+
+  // Automatic offline poll: when broadcaster restarts, viewer automatically wakes up and replays!
+  setInterval(() => {
+    if (!pcInstance || pcInstance.connectionState !== 'connected') {
+      window.checkStreamStatus();
+    }
+  }, 3000);
 
   function preferHighFidelityAudioAndVideo(sdp) {
     let lines = sdp.split('\r\n');
