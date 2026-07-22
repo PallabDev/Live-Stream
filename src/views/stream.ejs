@@ -781,6 +781,87 @@
             }
         }
 
+        let webCodecsEncoder = null;
+        let trackProcessorReader = null;
+
+        async function startWebCodecsStream() {
+            if (!('VideoEncoder' in window) || !('MediaStreamTrackProcessor' in window)) {
+                console.log("[WebCodecs] WebCodecs GPU encoding not supported in this browser, using WHIP fallback.");
+                return false;
+            }
+
+            const track = mediaStream ? mediaStream.getVideoTracks()[0] : null;
+            if (!track) return false;
+
+            console.log("[WebCodecs] Initializing 8.0 Mbps GPU VideoEncoder...");
+
+            try {
+                webCodecsEncoder = new VideoEncoder({
+                    output: (chunk, metadata) => {
+                        if (!mediaSocket || mediaSocket.readyState !== WebSocket.OPEN) return;
+
+                        const chunkData = new Uint8Array(chunk.byteLength);
+                        chunk.copyTo(chunkData);
+
+                        const header = new ArrayBuffer(16);
+                        const view = new DataView(header);
+                        view.setUint32(0, 0x57434F44); // "WCOD"
+                        view.setUint8(4, chunk.type === 'key' ? 1 : 0);
+                        view.setBigInt64(5, BigInt(chunk.timestamp), false);
+
+                        const payload = new Uint8Array(16 + chunkData.byteLength);
+                        payload.set(new Uint8Array(header), 0);
+                        payload.set(chunkData, 16);
+
+                        mediaSocket.send(payload.buffer);
+                    },
+                    error: (err) => console.error("[WebCodecs Encoder Error]:", err)
+                });
+
+                const settings = track.getSettings();
+                const width = settings.width || 1920;
+                const height = settings.height || 1080;
+
+                await webCodecsEncoder.configure({
+                    codec: 'avc1.42E01E',
+                    width: width,
+                    height: height,
+                    bitrate: 8000000, // Forced 8.0 Mbps CBR
+                    framerate: 30,
+                    hardwareAcceleration: 'prefer-hardware',
+                    latencyMode: 'realtime'
+                });
+
+                const processor = new MediaStreamTrackProcessor({ track });
+                trackProcessorReader = processor.readable.getReader();
+
+                let frameCounter = 0;
+                (async () => {
+                    while (isStreaming && webCodecsEncoder && webCodecsEncoder.state === 'configured') {
+                        try {
+                            const { value: frame, done } = await trackProcessorReader.read();
+                            if (done) break;
+                            if (frame) {
+                                const insertKeyframe = (frameCounter % 30 === 0);
+                                webCodecsEncoder.encode(frame, { keyFrame: insertKeyframe });
+                                frame.close();
+                                frameCounter++;
+                            }
+                        } catch (e) {
+                            console.warn("[WebCodecs Frame Read Exception]:", e);
+                            break;
+                        }
+                    }
+                })();
+
+                console.log("[WebCodecs] Active forced 8.0 Mbps GPU stream running!");
+                return true;
+            } catch (err) {
+                console.warn("[WebCodecs Init Error]:", err);
+                return false;
+            }
+        }
+
         let statsInterval = null;
 
         function startStatsMonitoring() {
@@ -1044,7 +1125,7 @@
                 mediaSocket = new WebSocket(wsUrl);
 
                 mediaSocket.onopen = async () => {
-                    console.log("[Studio] Signaling channel established. Publishing WHIP stream to MediaMTX SFU...");
+                    console.log("[Studio] Channel established. Initializing 8.0 Mbps GPU stream...");
                     isLive = true;
                     isStreaming = true;
                     updateUI();
@@ -1054,6 +1135,7 @@
                     if (durationInterval) clearInterval(durationInterval);
                     durationInterval = setInterval(updateDuration, 1000);
 
+                    await startWebCodecsStream();
                     await publishToMediaMTXSFU();
                 };
 

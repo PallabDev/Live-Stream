@@ -367,14 +367,98 @@ html, body {
     offlineScreen.style.display = 'none';
   }
 
+  let webCodecsDecoder = null;
+  let liveCanvas = null;
+  let canvasCtx = null;
+
+  function initWebCodecsDecoder() {
+    if (!('VideoDecoder' in window)) return false;
+
+    liveCanvas = document.getElementById('live-canvas');
+    const container = document.getElementById('sh-video-container') || document.body;
+
+    if (!liveCanvas) {
+      liveCanvas = document.createElement('canvas');
+      liveCanvas.id = 'live-canvas';
+      liveCanvas.style.position = 'absolute';
+      liveCanvas.style.top = '0';
+      liveCanvas.style.left = '0';
+      liveCanvas.style.width = '100%';
+      liveCanvas.style.height = '100%';
+      liveCanvas.style.objectFit = 'contain';
+      liveCanvas.style.zIndex = '1';
+      container.insertBefore(liveCanvas, container.firstChild);
+    }
+    canvasCtx = liveCanvas.getContext('2d');
+
+    console.log('[Viewer WebCodecs] Initializing GPU VideoDecoder...');
+
+    try {
+      webCodecsDecoder = new VideoDecoder({
+        output: (frame) => {
+          if (liveCanvas.width !== frame.displayWidth || liveCanvas.height !== frame.displayHeight) {
+            liveCanvas.width = frame.displayWidth;
+            liveCanvas.height = frame.displayHeight;
+          }
+          canvasCtx.drawImage(frame, 0, 0, liveCanvas.width, liveCanvas.height);
+          frame.close();
+
+          if (!playbackStarted) {
+            playbackStarted = true;
+            hideLoading();
+            hideOffline();
+            updatePlayIcon();
+          }
+        },
+        error: (e) => console.error('[Viewer WebCodecs Decoder Error]:', e)
+      });
+
+      webCodecsDecoder.configure({
+        codec: 'avc1.42E01E',
+        optimizeForLatency: true,
+        hardwareAcceleration: 'prefer-hardware'
+      });
+
+      return true;
+    } catch (e) {
+      console.warn('[Viewer WebCodecs Init Exception]:', e);
+      return false;
+    }
+  }
+
   function connectViewerSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const viewerWsUrl = `${protocol}//${window.location.host}/api/stream/${streamKey}/viewer`;
     
-    console.log('[Viewer] Connecting signaling WebSocket to:', viewerWsUrl);
+    console.log('[Viewer] Connecting signaling & WebCodecs WebSocket to:', viewerWsUrl);
     statusSocket = new WebSocket(viewerWsUrl);
+    statusSocket.binaryType = 'arraybuffer';
+
+    initWebCodecsDecoder();
 
     statusSocket.onmessage = async (event) => {
+      if (event.data instanceof ArrayBuffer) {
+        const view = new DataView(event.data);
+        if (view.byteLength >= 16) {
+          const magic = view.getUint32(0);
+          if (magic === 0x57434F44) { // "WCOD" Magic Header
+            const isKey = view.getUint8(4) === 1;
+            const timestamp = Number(view.getBigInt64(5, false));
+            const chunkData = new Uint8Array(event.data, 16);
+
+            if (webCodecsDecoder && webCodecsDecoder.state === 'configured') {
+              const chunk = new EncodedVideoChunk({
+                type: isKey ? 'key' : 'delta',
+                timestamp: timestamp,
+                data: chunkData
+              });
+              webCodecsDecoder.decode(chunk);
+            }
+          }
+        }
+        return;
+      }
+
       try {
         const msg = JSON.parse(event.data);
         const { event: signalEvent, viewerId: id, sdp, candidate, status } = msg;

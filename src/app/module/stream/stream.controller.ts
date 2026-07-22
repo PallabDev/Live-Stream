@@ -67,9 +67,21 @@ export class StreamController {
         StreamController.activeSessions.set(key, session);
       }
 
-      // Listen for broadcaster signaling messages
-      ws.on("message", (message: string) => {
+      // Listen for broadcaster signaling & binary WebCodecs frame chunks
+      ws.on("message", (data: any, isBinary: boolean) => {
+        if (isBinary) {
+          if (session && session.viewers && session.viewers.size > 0) {
+            for (const viewerWs of session.viewers.values()) {
+              if (viewerWs.readyState === 1) { // OPEN
+                viewerWs.send(data, { binary: true });
+              }
+            }
+          }
+          return;
+        }
+
         try {
+          const message = data.toString("utf8");
           const msg = JSON.parse(message);
           const { event, viewerId } = msg;
           
