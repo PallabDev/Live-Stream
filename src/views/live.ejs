@@ -536,7 +536,10 @@ html, body {
               pcInstance = null;
             }
             showLoading();
-            await initWebRTC();
+            const isWebCodecsActive = initUnifiedWebCodecsDecoder();
+            if (!isWebCodecsActive) {
+              await initWebRTC();
+            }
           } else if (status === 'capacity_reached') {
             const subtitle = document.querySelector('#offline-screen p');
             if (subtitle) subtitle.textContent = msg.message || 'Stream has reached maximum capacity.';
