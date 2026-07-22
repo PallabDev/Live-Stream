@@ -817,7 +817,7 @@
 
         // Periodically measure real-time WebRTC bitrate (getStats) and send live telemetry to server
         setInterval(async () => {
-            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            if (!mediaSocket || mediaSocket.readyState !== WebSocket.OPEN) return;
             let totalBytesSent = 0;
             let totalBytesReceived = 0;
 
@@ -844,7 +844,7 @@
                     const egressKbps = Math.round(((txDelta * 8) / 1024) / elapsedSec);
                     const ingressKbps = Math.round(((rxDelta * 8) / 1024) / elapsedSec);
 
-                    ws.send(JSON.stringify({
+                    mediaSocket.send(JSON.stringify({
                         event: 'rtc_telemetry',
                         egressKbps: egressKbps,
                         ingressKbps: ingressKbps
