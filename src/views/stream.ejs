@@ -528,13 +528,21 @@
             let lines = sdp.split('\r\n');
             let opusPt = null;
             let videoPts = [];
+            let inVideoSection = false;
 
             for (let line of lines) {
-                if (line.toLowerCase().includes('opus/48000')) {
+                if (line.startsWith('m=video')) {
+                    inVideoSection = true;
+                } else if (line.startsWith('m=audio') || line.startsWith('m=application')) {
+                    inVideoSection = false;
+                }
+
+                if (!inVideoSection && line.toLowerCase().includes('opus/48000')) {
                     const match = line.match(/a=rtpmap:(\d+)\s+opus\/48000/i);
                     if (match) opusPt = match[1];
                 }
-                if (line.startsWith('a=rtpmap:') && line.includes('video/')) {
+
+                if (inVideoSection && line.startsWith('a=rtpmap:')) {
                     const match = line.match(/a=rtpmap:(\d+)\s+/);
                     if (match) videoPts.push(match[1]);
                 }
@@ -542,6 +550,7 @@
 
             let modifiedLines = [];
             let fmtpFound = false;
+            let videoFmtpSeen = {};
 
             for (let i = 0; i < lines.length; i++) {
                 let line = lines[i];
@@ -552,18 +561,36 @@
                 }
 
                 if (line.startsWith('a=fmtp:')) {
-                    if (!line.includes('x-google-start-bitrate') && !line.includes('opus')) {
-                        line = line + ';x-google-start-bitrate=5000;x-google-min-bitrate=2500;x-google-max-bitrate=8000';
+                    for (let pt of videoPts) {
+                        if (line.startsWith(`a=fmtp:${pt}`)) {
+                            videoFmtpSeen[pt] = true;
+                            if (!line.includes('x-google-min-bitrate')) {
+                                line = line + ';x-google-start-bitrate=5000;x-google-min-bitrate=2500;x-google-max-bitrate=8000';
+                            }
+                        }
                     }
                 }
 
                 modifiedLines.push(line);
 
+                // Inject missing video fmtp parameters right after rtpmap if not already present
+                if (line.startsWith('a=rtpmap:')) {
+                    for (let pt of videoPts) {
+                        if (line.startsWith(`a=rtpmap:${pt}`)) {
+                            // Delay check until end if fmtp isn't already in lines
+                        }
+                    }
+                }
+
                 if (line.startsWith('c=IN ')) {
                     modifiedLines.push('b=AS:8000');
                     modifiedLines.push('b=TIAS:8000000');
-                    // Add NACK & PLI for instantaneous keyframe recovery on all video payload types
+                    // Add NACK, PLI, REMB & Transport-CC for all video payload types to guarantee stable GCC bandwidth
                     for (let pt of videoPts) {
+                        if (!videoFmtpSeen[pt]) {
+                            modifiedLines.push(`a=fmtp:${pt} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f;x-google-start-bitrate=5000;x-google-min-bitrate=2500;x-google-max-bitrate=8000`);
+                            videoFmtpSeen[pt] = true;
+                        }
                         modifiedLines.push(`a=rtcp-fb:${pt} nack`);
                         modifiedLines.push(`a=rtcp-fb:${pt} nack pli`);
                         modifiedLines.push(`a=rtcp-fb:${pt} goog-remb`);
@@ -756,6 +783,7 @@
                 }
 
                 let answerSdp = await res.text();
+                answerSdp = preferHighFidelityAudioAndVideo(answerSdp);
                 
                 // Ensure MediaMTX answer SDP uses 8.0 Mbps bandwidth cap
                 if (answerSdp.includes('b=AS:')) {
