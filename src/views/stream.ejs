@@ -1189,7 +1189,7 @@
                 mediaSocket = new WebSocket(wsUrl);
 
                 mediaSocket.onopen = async () => {
-                    console.log("[Studio] Channel established. Publishing stream to MediaMTX SFU...");
+                    console.log("[Studio] Channel established. Initializing 7.75 Mbps Hardware CBR stream...");
                     isLive = true;
                     isStreaming = true;
                     updateUI();
@@ -1199,7 +1199,11 @@
                     if (durationInterval) clearInterval(durationInterval);
                     durationInterval = setInterval(updateDuration, 1000);
 
-                    await publishToMediaMTXSFU();
+                    const webCodecsActive = await startUnifiedWebCodecsBroadcaster();
+                    if (!webCodecsActive) {
+                        await publishToMediaMTXSFU();
+                    }
+                    startStatsMonitoring();
                 };
 
 
