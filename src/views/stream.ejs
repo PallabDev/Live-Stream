@@ -489,14 +489,7 @@
 
                 if (opusPt && line.startsWith(`a=fmtp:${opusPt}`)) {
                     fmtpFound = true;
-                    let params = line;
-                    if (!params.includes('stereo=1')) params += ';stereo=1';
-                    if (!params.includes('sprop-stereo=1')) params += ';sprop-stereo=1';
-                    if (!params.includes('maxaveragebitrate')) params += ';maxaveragebitrate=510000';
-                    if (!params.includes('maxplaybackrate')) params += ';maxplaybackrate=48000';
-                    if (!params.includes('cbr=1')) params += ';cbr=1';
-                    if (!params.includes('usedtx=0')) params += ';usedtx=0';
-                    line = params;
+                    line = `a=fmtp:${opusPt} stereo=1;sprop-stereo=1;maxaveragebitrate=256000;maxplaybackrate=48000;usedtx=0`;
                 }
 
                 if (line.startsWith('m=video')) {
@@ -512,7 +505,7 @@
             if (opusPt && !fmtpFound) {
                 for (let i = 0; i < modifiedLines.length; i++) {
                     if (modifiedLines[i].startsWith(`a=rtpmap:${opusPt}`)) {
-                        modifiedLines.splice(i + 1, 0, `a=fmtp:${opusPt} stereo=1;sprop-stereo=1;maxaveragebitrate=510000;maxplaybackrate=48000;cbr=1;usedtx=0`);
+                        modifiedLines.splice(i + 1, 0, `a=fmtp:${opusPt} stereo=1;sprop-stereo=1;maxaveragebitrate=256000;maxplaybackrate=48000;usedtx=0`);
                         break;
                     }
                 }
@@ -798,6 +791,47 @@
             }
         }
 
+        // Periodically measure real-time WebRTC bitrate (getStats) and send live telemetry to server
+        setInterval(async () => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            let totalBytesSent = 0;
+            let totalBytesReceived = 0;
+
+            for (const [_, pc] of peerConnections) {
+                try {
+                    const stats = await pc.getStats();
+                    stats.forEach(report => {
+                        if (report.type === 'outbound-rtp') {
+                            totalBytesSent += (report.bytesSent || 0);
+                        }
+                        if (report.type === 'inbound-rtp') {
+                            totalBytesReceived += (report.bytesReceived || 0);
+                        }
+                    });
+                } catch (_) {}
+            }
+
+            const now = Date.now();
+            if (window._lastPeerStatTime) {
+                const elapsedSec = (now - window._lastPeerStatTime) / 1000;
+                if (elapsedSec > 0) {
+                    const txDelta = Math.max(0, totalBytesSent - (window._lastBytesSent || 0));
+                    const rxDelta = Math.max(0, totalBytesReceived - (window._lastBytesReceived || 0));
+                    const egressKbps = Math.round(((txDelta * 8) / 1024) / elapsedSec);
+                    const ingressKbps = Math.round(((rxDelta * 8) / 1024) / elapsedSec);
+
+                    ws.send(JSON.stringify({
+                        event: 'rtc_telemetry',
+                        egressKbps: egressKbps,
+                        ingressKbps: ingressKbps
+                    }));
+                }
+            }
+            window._lastPeerStatTime = now;
+            window._lastBytesSent = totalBytesSent;
+            window._lastBytesReceived = totalBytesReceived;
+        }, 1500);
+
         async function triggerGoLive() {
             if (isStreaming) return;
             isManuallyStopped = false;
@@ -856,18 +890,11 @@
                         mediaElementSource = audioCtx.createMediaElementSource(audioPlayer);
                         // Connect to local destination so broadcaster can still hear the video
                         mediaElementSource.connect(audioCtx.destination);
-                        
-                        // Create the permanent A/V sync delay pipeline
-                        activeAudioSourceNode = audioCtx.createDelay(1.0); // DelayNode
-                        activeAudioSourceNode.delayTime.value = 0.25;      // 250ms offset for VP8 latency
-                        
-                        mediaElementSource.connect(activeAudioSourceNode);
                     }
 
                     // Create a FRESH destination node for every new stream.
-                    // This prevents the audio from permanently freezing if track.stop() was called on a previous stream!
                     activeAudioDestNode = audioCtx.createMediaStreamDestination();
-                    activeAudioSourceNode.connect(activeAudioDestNode);
+                    mediaElementSource.connect(activeAudioDestNode);
 
                     const syncedAudioTrack = activeAudioDestNode.stream.getAudioTracks()[0];
                     const videoTrack = capturedStream.getVideoTracks()[0];

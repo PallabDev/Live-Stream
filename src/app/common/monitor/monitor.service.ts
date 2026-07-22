@@ -218,27 +218,18 @@ export class MonitorService {
       this.lastNetCheckTime = now;
     }
 
-    // Calculate active live stream WebRTC egress bandwidth across all connected viewers
+    // Aggregate real-time WebRTC stream egress/ingress reported dynamically by live peers
     let activeStreamEgressKbps = 0;
     let activeStreamIngressKbps = 0;
-    if (activeSessions) {
-      let totalBps = 0;
+    if (activeSessions && activeSessions.size > 0) {
+      let totalReportedEgressKbps = 0;
+      let totalReportedIngressKbps = 0;
       for (const session of activeSessions.values()) {
-        const count = session.viewers ? session.viewers.size : 0;
-        if (count > 0) {
-          let bpsPerViewer = 3800000;
-          if (count === 1) bpsPerViewer = 5500000;
-          else if (count <= 3) bpsPerViewer = 3800000;
-          else if (count <= 5) bpsPerViewer = 2200000;
-          else bpsPerViewer = 1800000;
-          totalBps += (count * bpsPerViewer);
-        }
+        totalReportedEgressKbps += (session.reportedEgressKbps || 0);
+        totalReportedIngressKbps += (session.reportedIngressKbps || 0);
       }
-      activeStreamEgressKbps = Math.round(totalBps / 1024);
-      // Ingress: broadcaster uploading stream
-      if (activeSessions.size > 0) {
-        activeStreamIngressKbps = Math.round(5500000 / 1024);
-      }
+      activeStreamEgressKbps = totalReportedEgressKbps;
+      activeStreamIngressKbps = totalReportedIngressKbps;
     }
 
     return {

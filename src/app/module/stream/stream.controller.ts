@@ -14,6 +14,8 @@ interface StreamSession {
   telemetryId?: string;
   ws: WebSocket; // Broadcaster
   viewers: Map<string, WebSocket>; // viewerId -> WebSocket
+  reportedEgressKbps?: number;
+  reportedIngressKbps?: number;
 }
 
 export class StreamController {
@@ -59,6 +61,8 @@ export class StreamController {
           telemetryId,
           ws,
           viewers: new Map(),
+          reportedEgressKbps: 0,
+          reportedIngressKbps: 0,
         };
         StreamController.activeSessions.set(key, session);
       }
@@ -69,6 +73,14 @@ export class StreamController {
           const msg = JSON.parse(message);
           const { event, viewerId } = msg;
           
+          if (event === "rtc_telemetry") {
+            if (session) {
+              session.reportedEgressKbps = msg.egressKbps || 0;
+              session.reportedIngressKbps = msg.ingressKbps || 0;
+            }
+            return;
+          }
+
           if (viewerId) {
             const viewerWs = session!.viewers.get(viewerId);
             if (viewerWs && viewerWs.readyState === 1) { // OPEN

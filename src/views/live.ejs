@@ -492,14 +492,7 @@ html, body {
 
       if (opusPt && line.startsWith(`a=fmtp:${opusPt}`)) {
         fmtpFound = true;
-        let params = line;
-        if (!params.includes('stereo=1')) params += ';stereo=1';
-        if (!params.includes('sprop-stereo=1')) params += ';sprop-stereo=1';
-        if (!params.includes('maxaveragebitrate')) params += ';maxaveragebitrate=510000';
-        if (!params.includes('maxplaybackrate')) params += ';maxplaybackrate=48000';
-        if (!params.includes('cbr=1')) params += ';cbr=1';
-        if (!params.includes('usedtx=0')) params += ';usedtx=0';
-        line = params;
+        line = `a=fmtp:${opusPt} stereo=1;sprop-stereo=1;maxaveragebitrate=256000;maxplaybackrate=48000;usedtx=0`;
       }
 
       modifiedLines.push(line);
@@ -508,7 +501,7 @@ html, body {
     if (opusPt && !fmtpFound) {
       for (let i = 0; i < modifiedLines.length; i++) {
         if (modifiedLines[i].startsWith(`a=rtpmap:${opusPt}`)) {
-          modifiedLines.splice(i + 1, 0, `a=fmtp:${opusPt} stereo=1;sprop-stereo=1;maxaveragebitrate=510000;maxplaybackrate=48000;cbr=1;usedtx=0`);
+          modifiedLines.splice(i + 1, 0, `a=fmtp:${opusPt} stereo=1;sprop-stereo=1;maxaveragebitrate=256000;maxplaybackrate=48000;usedtx=0`);
           break;
         }
       }
