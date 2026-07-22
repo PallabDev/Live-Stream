@@ -428,6 +428,25 @@ html, body {
     };
   }
 
+  window.getWebRTCStats = async function () {
+    if (!pcInstance) {
+      console.log('[Viewer SFU] No active PeerConnection.');
+      return;
+    }
+    const stats = await pcInstance.getStats();
+    stats.forEach(report => {
+      if (report.type === 'inbound-rtp' && report.kind === 'video') {
+        console.log('[Viewer WebRTC Inbound Video]', {
+          fps: report.framesPerSecond,
+          jitterMs: Math.round((report.jitter || 0) * 1000),
+          packetsLost: report.packetsLost,
+          framesDropped: report.framesDropped,
+          jitterBufferDelayMs: Math.round((report.jitterBufferDelay || 0) * 1000)
+        });
+      }
+    });
+  };
+
   window.checkStreamStatus = function () {
     if (!statusSocket || statusSocket.readyState !== WebSocket.OPEN) {
       connectViewerSocket();
@@ -521,10 +540,10 @@ html, body {
       if (event.receiver) {
         try {
           if ('playoutDelayHint' in event.receiver) {
-            event.receiver.playoutDelayHint = 0.2; // 200ms buffer to absorb network jitter
+            event.receiver.playoutDelayHint = 0.3; // 300ms buffer to absorb loaded network jitter
           }
           if ('jitterBufferTarget' in event.receiver) {
-            event.receiver.jitterBufferTarget = 200; // 200ms target buffer
+            event.receiver.jitterBufferTarget = 300; // 300ms target buffer
           }
         } catch (e) {
           console.warn('[Viewer SFU] Receiver delay hint error:', e);
@@ -542,7 +561,11 @@ html, body {
           newStream.addTrack(event.track);
           video.srcObject = newStream;
         } else {
-          video.srcObject.addTrack(event.track);
+          // Avoid re-triggering srcObject setter if track already exists
+          const existingTracks = video.srcObject.getTracks();
+          if (!existingTracks.some(t => t.id === event.track.id)) {
+            video.srcObject.addTrack(event.track);
+          }
         }
       }
 

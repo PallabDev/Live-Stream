@@ -553,15 +553,15 @@
 
                 if (line.startsWith('a=fmtp:')) {
                     if (!line.includes('x-google-start-bitrate') && !line.includes('opus')) {
-                        line = line + ';x-google-start-bitrate=3500;x-google-min-bitrate=1800;x-google-max-bitrate=5000';
+                        line = line + ';x-google-start-bitrate=5000;x-google-min-bitrate=2500;x-google-max-bitrate=8000';
                     }
                 }
 
                 modifiedLines.push(line);
 
                 if (line.startsWith('c=IN ')) {
-                    modifiedLines.push('b=AS:4500');
-                    modifiedLines.push('b=TIAS:4500000');
+                    modifiedLines.push('b=AS:8000');
+                    modifiedLines.push('b=TIAS:8000000');
                     // Add NACK & PLI for instantaneous keyframe recovery on all video payload types
                     for (let pt of videoPts) {
                         modifiedLines.push(`a=rtcp-fb:${pt} nack`);
@@ -684,8 +684,8 @@
                             if (!parameters.encodings) parameters.encodings = [{}];
                             parameters.encodings[0].priority = 'high';
                             parameters.encodings[0].networkPriority = 'high';
-                            parameters.encodings[0].maxBitrate = 4500000;
-                            parameters.encodings[0].minBitrate = 1800000;
+                            parameters.encodings[0].maxBitrate = 8000000;
+                            parameters.encodings[0].minBitrate = 2500000;
                             parameters.encodings[0].scaleResolutionDownBy = 1.0;
                             sender.setParameters(parameters).catch(() => { });
 
@@ -757,12 +757,12 @@
 
                 let answerSdp = await res.text();
                 
-                // Ensure MediaMTX answer SDP uses 4.5 Mbps bandwidth cap
+                // Ensure MediaMTX answer SDP uses 8.0 Mbps bandwidth cap
                 if (answerSdp.includes('b=AS:')) {
-                    answerSdp = answerSdp.replace(/b=AS:\d+/g, 'b=AS:4500');
+                    answerSdp = answerSdp.replace(/b=AS:\d+/g, 'b=AS:8000');
                 }
                 if (answerSdp.includes('b=TIAS:')) {
-                    answerSdp = answerSdp.replace(/b=TIAS:\d+/g, 'b=TIAS:4500000');
+                    answerSdp = answerSdp.replace(/b=TIAS:\d+/g, 'b=TIAS:8000000');
                 }
 
                 await sfuPeerConnection.setRemoteDescription(new RTCSessionDescription({
@@ -770,7 +770,7 @@
                     sdp: answerSdp
                 }));
 
-                // Apply stable bitrate parameters AFTER setRemoteDescription
+                // Apply high quality bitrate parameters AFTER setRemoteDescription
                 async function applyForcedBitrateParameters() {
                     if (!sfuPeerConnection) return;
                     const senders = sfuPeerConnection.getSenders();
@@ -783,11 +783,11 @@
                                 }
                                 parameters.encodings[0].priority = 'high';
                                 parameters.encodings[0].networkPriority = 'high';
-                                parameters.encodings[0].maxBitrate = 4500000;  // 4.5 Mbps Ceiling
-                                parameters.encodings[0].minBitrate = 1800000;  // 1.8 Mbps Floor (guarantees high quality)
+                                parameters.encodings[0].maxBitrate = 8000000;  // 8.0 Mbps Ceiling (full BluRay 1080p quality)
+                                parameters.encodings[0].minBitrate = 2500000;  // 2.5 Mbps Floor
                                 parameters.encodings[0].scaleResolutionDownBy = 1.0;
                                 await sender.setParameters(parameters);
-                                console.log("[Studio SFU] Enforced 1.8 Mbps - 4.5 Mbps stable bitrate range!");
+                                console.log("[Studio SFU] Enforced 2.5 Mbps - 8 Mbps high-quality bitrate range!");
                             } catch (e) {
                                 console.warn("[Studio SFU] Failed to enforce video sender parameters:", e);
                             }
@@ -983,6 +983,26 @@
 
         let statsInterval = null;
 
+        window.getWebRTCStats = async function() {
+            if (!sfuPeerConnection) {
+                console.log("[Studio SFU] No active PeerConnection.");
+                return;
+            }
+            const stats = await sfuPeerConnection.getStats();
+            stats.forEach(report => {
+                if (report.type === 'outbound-rtp' && report.kind === 'video') {
+                    console.log(`[Studio WebRTC Outbound Video]`, {
+                        fps: report.framesPerSecond,
+                        bytesSent: report.bytesSent,
+                        qualityLimitationReason: report.qualityLimitationReason,
+                        firCount: report.firCount,
+                        pliCount: report.pliCount,
+                        nackCount: report.nackCount
+                    });
+                }
+            });
+        };
+
         function startStatsMonitoring() {
             if (statsInterval) clearInterval(statsInterval);
             let lastBytesSent = 0;
@@ -1151,9 +1171,9 @@
 
                 let capturedStream;
                 if (previewPlayer.captureStream) {
-                    capturedStream = previewPlayer.captureStream(30);
+                    capturedStream = previewPlayer.captureStream();
                 } else if (previewPlayer.mozCaptureStream) {
-                    capturedStream = previewPlayer.mozCaptureStream(30);
+                    capturedStream = previewPlayer.mozCaptureStream();
                 } else {
                     console.warn("[Mobile Studio] captureStream not available on video element, using Canvas capture fallback.");
                     const canvas = document.createElement("canvas");
