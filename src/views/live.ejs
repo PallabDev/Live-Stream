@@ -521,10 +521,10 @@ html, body {
       if (event.receiver) {
         try {
           if ('playoutDelayHint' in event.receiver) {
-            event.receiver.playoutDelayHint = 0.05; // 50ms real-time playout for instant video start
+            event.receiver.playoutDelayHint = 0.2; // 200ms buffer to absorb network jitter
           }
           if ('jitterBufferTarget' in event.receiver) {
-            event.receiver.jitterBufferTarget = 50; // 50ms target buffer
+            event.receiver.jitterBufferTarget = 200; // 200ms target buffer
           }
         } catch (e) {
           console.warn('[Viewer SFU] Receiver delay hint error:', e);

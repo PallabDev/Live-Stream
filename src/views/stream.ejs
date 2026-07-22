@@ -338,7 +338,7 @@
                 const screenVideoTrack = stream.getVideoTracks()[0];
                 if (screenVideoTrack) {
                     if ('contentHint' in screenVideoTrack) {
-                        screenVideoTrack.contentHint = 'detail';
+                        screenVideoTrack.contentHint = 'motion';
                     }
                     if (typeof screenVideoTrack.applyConstraints === 'function') {
                         screenVideoTrack.applyConstraints({
@@ -799,8 +799,8 @@
                 if (window.bitrateFloorInterval) clearInterval(window.bitrateFloorInterval);
                 window.bitrateFloorInterval = setInterval(applyForcedBitrateParameters, 5000);
 
-                // Dispatch keyframes immediately and every 1000ms for instant viewer startup (< 100ms)
-                async function dispatchKeyframe() {
+                // Dispatch keyframe on connection for instant viewer startup
+                window.dispatchKeyframe = async function() {
                     if (!sfuPeerConnection) return;
                     const senders = sfuPeerConnection.getSenders();
                     for (const sender of senders) {
@@ -810,11 +810,8 @@
                             }
                         }
                     }
-                }
-                await dispatchKeyframe();
-
-                if (window.keyframeInterval) clearInterval(window.keyframeInterval);
-                window.keyframeInterval = setInterval(dispatchKeyframe, 1000);
+                };
+                await window.dispatchKeyframe();
 
                 console.log("[Studio SFU] Successfully established WebRTC WHIP stream to MediaMTX SFU!");
                 startStatsMonitoring();
@@ -1241,14 +1238,14 @@
 
                 mediaStream.getVideoTracks().forEach(track => {
                     if ('contentHint' in track) {
-                        track.contentHint = 'detail';
-                        console.log("[WebRTC] Set video track contentHint to 'detail' for maximum 1080p sharpness");
+                        track.contentHint = 'motion';
+                        console.log("[WebRTC] Set video track contentHint to 'motion' for high FPS smooth streaming");
                     }
                     if (typeof track.applyConstraints === 'function') {
                         track.applyConstraints({
                             width: { ideal: 1920 },
                             height: { ideal: 1080 },
-                            frameRate: { min: 30, ideal: 30, max: 30 }
+                            frameRate: { ideal: 60, max: 60 }
                         }).catch(err => console.warn("Failed to apply 1080p constraints:", err));
                     }
                 });
@@ -1287,7 +1284,7 @@
                     try {
                         const msg = JSON.parse(event.data);
                         if (msg.event === "viewer-count" || msg.event === "viewer-ready") {
-                            window.forceNextKeyframe = true;
+                            if (window.dispatchKeyframe) window.dispatchKeyframe();
                             const countEl = document.getElementById("viewers-count");
                             if (countEl && msg.count !== undefined) countEl.textContent = msg.count;
                         } else if (msg.event === "error") {

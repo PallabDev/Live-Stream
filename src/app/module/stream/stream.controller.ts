@@ -134,11 +134,12 @@ export class StreamController {
       } else {
         // Notify and connect any waiting viewers
         const waiting = StreamController.waitingViewers.get(key);
-        if (waiting) {
+        if (waiting && waiting.size > 0) {
           console.log(`[WS Signaling] Upgrading ${waiting.size} waiting viewers for key: ${key}`);
-          for (const viewerWs of waiting) {
+          const waitingList = Array.from(waiting);
+          for (const viewerWs of waitingList) {
             if (viewerWs.readyState === 1) { // OPEN
-              if (session.viewers.size >= 5) break; // Enforce 5 viewers max
+              if (session.viewers.size >= 50) break; // Enforce 50 viewers max
               const viewerId = Math.random().toString(36).substring(2, 15);
               session.viewers.set(viewerId, viewerWs);
 
@@ -191,7 +192,6 @@ export class StreamController {
         session.viewers.set(viewerId, ws);
         StreamController.setupViewerSocket(ws, viewerId, key);
 
-
         // Notify client
         ws.send(JSON.stringify({ event: "status", status: "live", viewerId }));
       } else {
@@ -201,21 +201,7 @@ export class StreamController {
           StreamController.waitingViewers.set(key, new Set());
         }
         StreamController.waitingViewers.get(key)!.add(ws);
-
-        ws.on("close", () => {
-          console.log(`[WS Signaling] Waiting viewer ${viewerId} disconnected`);
-          const waiting = StreamController.waitingViewers.get(key);
-          if (waiting) {
-            waiting.delete(ws);
-            if (waiting.size === 0) {
-              StreamController.waitingViewers.delete(key);
-            }
-          }
-        });
-
-        ws.on("error", () => {
-          ws.close();
-        });
+        StreamController.setupWaitingViewerSocket(ws, key);
       }
     } catch (err) {
       console.error("[WS Viewer Upgrade Error]:", err);
@@ -232,16 +218,72 @@ export class StreamController {
     }
   }
 
+  private static setupWaitingViewerSocket(viewerWs: WebSocket, streamKey: string) {
+    viewerWs.removeAllListeners("message");
+    viewerWs.removeAllListeners("close");
+    viewerWs.removeAllListeners("error");
+
+    viewerWs.on("message", (data: any) => {
+      try {
+        const message = data.toString("utf8");
+        const msg = JSON.parse(message);
+        if (msg.event === "viewer-ready" || msg.event === "check_status") {
+          const session = StreamController.activeSessions.get(streamKey);
+          if (session) {
+            const waiting = StreamController.waitingViewers.get(streamKey);
+            if (waiting) waiting.delete(viewerWs);
+
+            if (session.viewers.size < 50) {
+              const viewerId = Math.random().toString(36).substring(2, 15);
+              session.viewers.set(viewerId, viewerWs);
+              StreamController.setupViewerSocket(viewerWs, viewerId, streamKey);
+              viewerWs.send(JSON.stringify({ event: "status", status: "live", viewerId }));
+            } else {
+              viewerWs.send(JSON.stringify({ event: "status", status: "capacity_reached" }));
+            }
+          } else {
+            viewerWs.send(JSON.stringify({ event: "status", status: "offline" }));
+          }
+        }
+      } catch (_) {}
+    });
+
+    viewerWs.on("close", () => {
+      const waiting = StreamController.waitingViewers.get(streamKey);
+      if (waiting) {
+        waiting.delete(viewerWs);
+        if (waiting.size === 0) {
+          StreamController.waitingViewers.delete(streamKey);
+        }
+      }
+    });
+
+    viewerWs.on("error", () => {
+      viewerWs.close();
+    });
+  }
+
   private static setupViewerSocket(viewerWs: WebSocket, viewerId: string, streamKey: string) {
     const session = StreamController.activeSessions.get(streamKey);
     if (session) {
       StreamController.notifyBroadcasterViewerCount(session);
     }
 
-    viewerWs.on("message", (message: string) => {
+    viewerWs.removeAllListeners("message");
+    viewerWs.on("message", (data: any) => {
       try {
+        const message = data.toString("utf8");
         const msg = JSON.parse(message);
         const currentSession = StreamController.activeSessions.get(streamKey);
+        if (msg.event === "viewer-ready" || msg.event === "check_status") {
+          if (currentSession) {
+            viewerWs.send(JSON.stringify({ event: "status", status: "live", viewerId }));
+          } else {
+            viewerWs.send(JSON.stringify({ event: "status", status: "offline" }));
+          }
+          return;
+        }
+
         if (currentSession) {
           msg.viewerId = viewerId; // Attach viewer identification
           if (currentSession.ws && currentSession.ws.readyState === 1) { // OPEN
@@ -307,19 +349,7 @@ export class StreamController {
               StreamController.waitingViewers.set(streamKey, new Set());
             }
             StreamController.waitingViewers.get(streamKey)!.add(viewerWs);
-
-            viewerWs.removeAllListeners("message");
-            viewerWs.removeAllListeners("close");
-            
-            viewerWs.on("close", () => {
-              const waiting = StreamController.waitingViewers.get(streamKey);
-              if (waiting) {
-                waiting.delete(viewerWs);
-              }
-            });
-            viewerWs.on("error", () => {
-              viewerWs.close();
-            });
+            StreamController.setupWaitingViewerSocket(viewerWs, streamKey);
           } catch (_) {}
         }
       }
