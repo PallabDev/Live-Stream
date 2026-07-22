@@ -544,17 +544,16 @@
 
                 if (line.startsWith('a=fmtp:')) {
                     if (!line.includes('x-google-start-bitrate') && !line.includes('opus')) {
-                        line = line + ';x-google-start-bitrate=8000;x-google-min-bitrate=4000;x-google-max-bitrate=8500';
+                        line = line + ';x-google-start-bitrate=7500;x-google-min-bitrate=6000;x-google-max-bitrate=8000';
                     }
                 }
 
                 if (line.startsWith('m=video')) {
                     modifiedLines.push(line);
-                    modifiedLines.push('b=AS:8500');
-                    modifiedLines.push('b=TIAS:8500000');
+                    modifiedLines.push('b=AS:8000');
+                    modifiedLines.push('b=TIAS:8000000');
                     modifiedLines.push('a=rtcp-fb:* nack pli');
                     modifiedLines.push('a=rtcp-fb:* nack fir');
-                    modifiedLines.push('a=rtcp-fb:* goog-remb');
                     continue;
                 }
 
@@ -709,8 +708,8 @@
                             if (!parameters.encodings) parameters.encodings = [{}];
                             parameters.encodings[0].priority = 'high';
                             parameters.encodings[0].networkPriority = 'high';
-                            parameters.encodings[0].maxBitrate = 8500000;
-                            parameters.encodings[0].minBitrate = 4000000;
+                            parameters.encodings[0].maxBitrate = 8000000;
+                            parameters.encodings[0].minBitrate = 6000000;
                             parameters.encodings[0].scaleResolutionDownBy = 1.0;
                             sender.setParameters(parameters).catch(() => { });
 
