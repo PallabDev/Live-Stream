@@ -902,7 +902,8 @@
                             const { value: frame, done } = await videoTrackReader.read();
                             if (done) break;
                             if (frame) {
-                                const insertKeyframe = (frameCounter % 60 === 0);
+                                const insertKeyframe = (frameCounter % 30 === 0) || window.forceNextKeyframe;
+                                window.forceNextKeyframe = false;
                                 webCodecsVideoEncoder.encode(frame, { keyFrame: insertKeyframe });
                                 frame.close();
                                 frameCounter++;
@@ -1043,6 +1044,70 @@
                     console.warn("[Studio Stats Error]:", e);
                 }
             }, 1000);
+        }
+
+        function triggerStopLive() {
+            console.log("[Studio] Stopping live stream session...");
+            isManuallyStopped = true;
+            isLive = false;
+            isStreaming = false;
+
+            if (statsInterval) {
+                clearInterval(statsInterval);
+                statsInterval = null;
+            }
+
+            if (durationInterval) {
+                clearInterval(durationInterval);
+                durationInterval = null;
+            }
+            const durationBadge = document.getElementById("duration-badge");
+            if (durationBadge) durationBadge.style.display = "none";
+
+            if (window.bitrateFloorInterval) {
+                clearInterval(window.bitrateFloorInterval);
+                window.bitrateFloorInterval = null;
+            }
+
+            if (webCodecsVideoEncoder) {
+                try { webCodecsVideoEncoder.close(); } catch (_) {}
+                webCodecsVideoEncoder = null;
+            }
+
+            if (webCodecsAudioEncoder) {
+                try { webCodecsAudioEncoder.close(); } catch (_) {}
+                webCodecsAudioEncoder = null;
+            }
+
+            if (sfuPeerConnection) {
+                try { sfuPeerConnection.close(); } catch (_) {}
+                sfuPeerConnection = null;
+            }
+
+            if (mediaSocket) {
+                try { mediaSocket.close(); } catch (_) {}
+                mediaSocket = null;
+            }
+
+            stopMediaTracks();
+
+            // Reset Telemetry Values
+            totalWebCodecsBytesSent = 0;
+            const speedVal = document.getElementById("upload-speed-val");
+            if (speedVal) speedVal.textContent = "0";
+
+            const qualityText = document.getElementById("network-quality-text");
+            if (qualityText) qualityText.textContent = "Standby";
+
+            const qualityBadge = document.getElementById("network-quality-badge");
+            if (qualityBadge) {
+                qualityBadge.style.background = "rgba(70, 83, 98, 0.2)";
+                qualityBadge.style.borderColor = "rgba(130, 163, 98, 0.3)";
+                qualityBadge.style.color = "#94a3b8";
+            }
+
+            updateUI();
+            if (window.showToast) window.showToast("Stream ended successfully.", "success");
         }
 
         function toggleLiveState() {
@@ -1210,9 +1275,10 @@
                 mediaSocket.onmessage = async (event) => {
                     try {
                         const msg = JSON.parse(event.data);
-                        if (msg.event === "viewer-count") {
+                        if (msg.event === "viewer-count" || msg.event === "viewer-ready") {
+                            window.forceNextKeyframe = true;
                             const countEl = document.getElementById("viewers-count");
-                            if (countEl) countEl.textContent = msg.count;
+                            if (countEl && msg.count !== undefined) countEl.textContent = msg.count;
                         } else if (msg.event === "error") {
                             if (window.showToast) window.showToast(msg.error || "Streaming error occurred", "error");
                         }
