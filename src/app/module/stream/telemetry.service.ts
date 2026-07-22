@@ -1,6 +1,6 @@
 import { db } from "../../common/database/db.js";
 import { user, streamTelemetry } from "../../common/database/schema.js";
-import { eq, and, count } from "drizzle-orm";
+import { eq, and, count, gte } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 
 export class TelemetryService {
@@ -27,18 +27,28 @@ export class TelemetryService {
       return { allowed: true, currentUser };
     }
 
-    // Count streams that reached the 1.5-hour (5400s) threshold
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    // Count streams in the current calendar month that reached the 1.5-hour (5400s) threshold
     const countedResult = await db
       .select({ value: count() })
       .from(streamTelemetry)
-      .where(and(eq(streamTelemetry.userId, userId), eq(streamTelemetry.countedTowardsQuota, true)));
+      .where(
+        and(
+          eq(streamTelemetry.userId, userId),
+          eq(streamTelemetry.countedTowardsQuota, true),
+          gte(streamTelemetry.createdAt, startOfMonth)
+        )
+      );
 
     const usedCount = countedResult[0]?.value || 0;
 
     if (usedCount >= currentUser.maxAllowedStreams) {
       return {
         allowed: false,
-        reason: `Streaming quota reached (${usedCount}/${currentUser.maxAllowedStreams} counted live streams used). Contact an administrator to request a limit increase.`,
+        reason: `Monthly streaming quota reached (${usedCount}/${currentUser.maxAllowedStreams} counted live streams used this month). Contact an administrator to request a limit increase.`,
       };
     }
 

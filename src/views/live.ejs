@@ -413,8 +413,15 @@ html, body {
         error: (e) => console.error('[Viewer WebCodecs Decoder Error]:', e)
       });
 
+      let decoderCodec = 'avc1.64002A';
+      if (VideoDecoder.isConfigSupported) {
+        VideoDecoder.isConfigSupported({ codec: 'avc1.64002A' }).then(support => {
+          if (!support.supported) decoderCodec = 'avc1.42E01E';
+        }).catch(() => {});
+      }
+
       webCodecsDecoder.configure({
-        codec: 'avc1.42E01E',
+        codec: decoderCodec,
         optimizeForLatency: true,
         hardwareAcceleration: 'prefer-hardware'
       });

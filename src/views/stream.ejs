@@ -819,8 +819,20 @@
                 const width = settings.width || 1920;
                 const height = settings.height || 1080;
 
+                let codecToUse = 'avc1.64002A'; // High Profile 1080p60/30 (Eliminates Pixelation)
+                if (VideoEncoder.isConfigSupported) {
+                    const support = await VideoEncoder.isConfigSupported({
+                        codec: 'avc1.64002A',
+                        width: width,
+                        height: height,
+                        bitrate: 8000000,
+                        framerate: 30
+                    });
+                    if (!support.supported) codecToUse = 'avc1.4d002a'; // Main Profile fallback
+                }
+
                 await webCodecsEncoder.configure({
-                    codec: 'avc1.42E01E',
+                    codec: codecToUse,
                     width: width,
                     height: height,
                     bitrate: 8000000, // Forced 8.0 Mbps CBR
@@ -1085,7 +1097,10 @@
                 mediaSocket.onmessage = async (event) => {
                     try {
                         const msg = JSON.parse(event.data);
-                        if (msg.event === "error") {
+                        if (msg.event === "viewer-count") {
+                            const countEl = document.getElementById("viewers-count");
+                            if (countEl) countEl.textContent = msg.count;
+                        } else if (msg.event === "error") {
                             if (window.showToast) window.showToast(msg.error || "Streaming error occurred", "error");
                         }
                     } catch (_) {}

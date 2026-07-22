@@ -214,15 +214,29 @@ export class StreamController {
     }
   }
 
+  private static notifyBroadcasterViewerCount(session: StreamSession) {
+    if (session && session.ws && session.ws.readyState === 1) { // OPEN
+      session.ws.send(JSON.stringify({
+        event: "viewer-count",
+        count: session.viewers.size
+      }));
+    }
+  }
+
   private static setupViewerSocket(viewerWs: WebSocket, viewerId: string, streamKey: string) {
+    const session = StreamController.activeSessions.get(streamKey);
+    if (session) {
+      StreamController.notifyBroadcasterViewerCount(session);
+    }
+
     viewerWs.on("message", (message: string) => {
       try {
         const msg = JSON.parse(message);
-        const session = StreamController.activeSessions.get(streamKey);
-        if (session) {
+        const currentSession = StreamController.activeSessions.get(streamKey);
+        if (currentSession) {
           msg.viewerId = viewerId; // Attach viewer identification
-          if (session.ws && session.ws.readyState === 1) { // OPEN
-            session.ws.send(JSON.stringify(msg));
+          if (currentSession.ws && currentSession.ws.readyState === 1) { // OPEN
+            currentSession.ws.send(JSON.stringify(msg));
           }
         }
       } catch (err) {
@@ -234,12 +248,13 @@ export class StreamController {
       console.log(`[WS Signaling] Viewer ${viewerId} closed connection.`);
       MonitorService.addLog(`[Signaling] Viewer ${viewerId} disconnected`);
       
-      const session = StreamController.activeSessions.get(streamKey);
-      if (session) {
-        session.viewers.delete(viewerId);
-        if (session.ws && session.ws.readyState === 1) {
-          session.ws.send(JSON.stringify({ event: "viewer-disconnected", viewerId }));
+      const currentSession = StreamController.activeSessions.get(streamKey);
+      if (currentSession) {
+        currentSession.viewers.delete(viewerId);
+        if (currentSession.ws && currentSession.ws.readyState === 1) {
+          currentSession.ws.send(JSON.stringify({ event: "viewer-disconnected", viewerId }));
         }
+        StreamController.notifyBroadcasterViewerCount(currentSession);
       }
 
       const waiting = StreamController.waitingViewers.get(streamKey);
