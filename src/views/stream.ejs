@@ -186,7 +186,7 @@
                             Speed
                         </span>
                         <strong style="font-size: 1.05rem; color: #10b981; font-family: monospace;">
-                            <span id="upload-speed-val">0.00</span> Mbps
+                            <span id="upload-speed-val">0</span> Kbps
                         </strong>
                     </div>
 
@@ -968,7 +968,7 @@
                         const uploadMbps = (((txDelta * 8) / 1024 / 1024) / elapsedSec).toFixed(2);
 
                         const speedVal = document.getElementById("upload-speed-val");
-                        if (speedVal) speedVal.textContent = uploadMbps;
+                        if (speedVal) speedVal.textContent = uploadKbps;
 
                         // Network Quality Indicator
                         const qualityText = document.getElementById("network-quality-text");
