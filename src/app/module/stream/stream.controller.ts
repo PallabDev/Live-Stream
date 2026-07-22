@@ -168,20 +168,29 @@ export class StreamController {
       const session = StreamController.activeSessions.get(key);
 
       if (session) {
-        // Enforce maximum 5 viewers capacity limit per stream key
-        if (session.viewers.size >= 5) {
-          console.warn(`[WS Signaling] Viewer ${viewerId} rejected: Stream key ${key} reached maximum capacity of 5 viewers.`);
+        // Clean stale/closed sockets before checking capacity
+        for (const [vId, vWs] of session.viewers.entries()) {
+          if (vWs.readyState !== 1) { // 1 = OPEN
+            session.viewers.delete(vId);
+          }
+        }
+
+        // Capacity check (50 viewers limit)
+        if (session.viewers.size >= 50) {
+          console.warn(`[WS Signaling] Viewer ${viewerId} rejected: Stream key ${key} reached maximum capacity of 50 viewers.`);
           ws.send(JSON.stringify({ 
             event: "status", 
             status: "capacity_reached", 
-            message: "Stream is at maximum capacity (5 viewers max allowed)." 
+            message: "Stream is at maximum capacity (50 viewers max allowed)." 
           }));
+          try { ws.close(1008, "Capacity reached"); } catch (_) {}
           return;
         }
 
         // Broadcaster is live, add to session
         session.viewers.set(viewerId, ws);
         StreamController.setupViewerSocket(ws, viewerId, key);
+
 
         // Notify client
         ws.send(JSON.stringify({ event: "status", status: "live", viewerId }));

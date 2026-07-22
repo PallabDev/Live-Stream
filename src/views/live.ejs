@@ -373,156 +373,17 @@ html, body {
   let liveCanvas = null;
   let canvasCtx = null;
 
-  function initUnifiedWebCodecsDecoder() {
-    if (!('VideoDecoder' in window) || !('AudioDecoder' in window)) return false;
-
-    liveCanvas = document.getElementById('live-canvas');
-    const container = document.getElementById('sh-video-container') || document.body;
-
-    if (!liveCanvas) {
-      liveCanvas = document.createElement('canvas');
-      liveCanvas.id = 'live-canvas';
-      liveCanvas.style.position = 'absolute';
-      liveCanvas.style.top = '0';
-      liveCanvas.style.left = '0';
-      liveCanvas.style.width = '100%';
-      liveCanvas.style.height = '100%';
-      liveCanvas.style.objectFit = 'contain';
-      liveCanvas.style.zIndex = '1';
-      container.insertBefore(liveCanvas, container.firstChild);
-    }
-    canvasCtx = liveCanvas.getContext('2d');
-
-    try {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-    } catch (e) {
-      console.warn('[Viewer WebCodecs] AudioContext init failed:', e);
-    }
-
-    try {
-      webCodecsVideoDecoder = new VideoDecoder({
-        output: (frame) => {
-          if (liveCanvas.width !== frame.displayWidth || liveCanvas.height !== frame.displayHeight) {
-            liveCanvas.width = frame.displayWidth;
-            liveCanvas.height = frame.displayHeight;
-          }
-          canvasCtx.drawImage(frame, 0, 0, liveCanvas.width, liveCanvas.height);
-          frame.close();
-
-          if (!playbackStarted) {
-            playbackStarted = true;
-            hideLoading();
-            hideOffline();
-            updatePlayIcon();
-          }
-        },
-        error: (e) => console.error('[Viewer VideoDecoder Error]:', e)
-      });
-
-      let decoderCodec = 'avc1.64002A';
-      if (VideoDecoder.isConfigSupported) {
-        VideoDecoder.isConfigSupported({ codec: 'avc1.64002A' }).then(support => {
-          if (!support.supported) decoderCodec = 'avc1.4d002a';
-        }).catch(() => {});
-      }
-
-      webCodecsVideoDecoder.configure({
-        codec: decoderCodec,
-        optimizeForLatency: true,
-        hardwareAcceleration: 'prefer-hardware'
-      });
-    } catch (e) {
-      console.warn('[Viewer VideoDecoder Init Exception]:', e);
-    }
-
-    try {
-      webCodecsAudioDecoder = new AudioDecoder({
-        output: (audioData) => {
-          if (!audioContext || audioContext.state === 'closed') return;
-          try {
-            if (audioContext.state === 'suspended') {
-              audioContext.resume().catch(() => {});
-            }
-            const buffer = audioContext.createBuffer(
-              audioData.numberOfChannels,
-              audioData.numberOfFrames,
-              audioData.sampleRate
-            );
-            for (let channel = 0; channel < audioData.numberOfChannels; channel++) {
-              const channelData = buffer.getChannelData(channel);
-              audioData.copyTo(channelData, { planeIndex: channel });
-            }
-            const source = audioContext.createBufferSource();
-            source.buffer = buffer;
-            source.connect(audioContext.destination);
-            source.start();
-          } catch (err) {
-            console.warn('[Viewer Audio Playback Exception]:', err);
-          } finally {
-            audioData.close();
-          }
-        },
-        error: (e) => console.error('[Viewer AudioDecoder Error]:', e)
-      });
-
-      webCodecsAudioDecoder.configure({
-        codec: 'opus',
-        sampleRate: 48000,
-        numberOfChannels: 2
-      });
-    } catch (e) {
-      console.warn('[Viewer AudioDecoder Init Exception]:', e);
-    }
-
-    return true;
-  }
-
   function connectViewerSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const viewerWsUrl = `${protocol}//${window.location.host}/api/stream/${streamKey}/viewer`;
     
-    console.log('[Viewer] Connecting signaling & WebCodecs WebSocket to:', viewerWsUrl);
+    console.log('[Viewer] Connecting signaling WebSocket to:', viewerWsUrl);
     statusSocket = new WebSocket(viewerWsUrl);
-    statusSocket.binaryType = 'arraybuffer';
-
-    initUnifiedWebCodecsDecoder();
 
     statusSocket.onmessage = async (event) => {
-      if (event.data instanceof ArrayBuffer) {
-        const view = new DataView(event.data);
-        if (view.byteLength >= 16) {
-          const magic = view.getUint32(0);
-          if (magic === 0x57434F44) { // "WCOD" Magic Header
-            const payloadType = view.getUint8(4);
-            const timestamp = Number(view.getBigInt64(5, false));
-            const chunkData = new Uint8Array(event.data, 16);
-
-            if (payloadType === 0 || payloadType === 1) {
-              if (webCodecsVideoDecoder && webCodecsVideoDecoder.state === 'configured') {
-                const chunk = new EncodedVideoChunk({
-                  type: payloadType === 0 ? 'key' : 'delta',
-                  timestamp: timestamp,
-                  data: chunkData
-                });
-                webCodecsVideoDecoder.decode(chunk);
-              }
-            } else if (payloadType === 2) {
-              if (webCodecsAudioDecoder && webCodecsAudioDecoder.state === 'configured') {
-                const chunk = new EncodedAudioChunk({
-                  type: 'key',
-                  timestamp: timestamp,
-                  data: chunkData
-                });
-                webCodecsAudioDecoder.decode(chunk);
-              }
-            }
-          }
-        }
-        return;
-      }
-
       try {
         const msg = JSON.parse(event.data);
+
         const { event: signalEvent, viewerId: id, sdp, candidate, status } = msg;
 
         if (signalEvent === 'status') {

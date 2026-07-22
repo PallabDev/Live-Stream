@@ -974,26 +974,33 @@
                         const qualityIcon = document.getElementById("network-quality-icon");
 
                         if (qualityBadge) {
-                            if (uploadKbps >= 5000) {
+                            if (uploadKbps >= 3500) {
                                 qualityBadge.style.background = "rgba(16, 185, 129, 0.15)";
                                 qualityBadge.style.borderColor = "rgba(16, 185, 129, 0.35)";
                                 qualityBadge.style.color = "#10b981";
                                 if (qualityIcon) qualityIcon.className = "ti ti-wifi";
                                 if (qualityText) qualityText.textContent = "Excellent (1080p 60fps)";
-                            } else if (uploadKbps >= 4000) {
+                            } else if (uploadKbps >= 1800) {
+                                qualityBadge.style.background = "rgba(16, 185, 129, 0.15)";
+                                qualityBadge.style.borderColor = "rgba(16, 185, 129, 0.35)";
+                                qualityBadge.style.color = "#10b981";
+                                if (qualityIcon) qualityIcon.className = "ti ti-wifi-2";
+                                if (qualityText) qualityText.textContent = "Good Quality (HD)";
+                            } else if (uploadKbps >= 800) {
                                 qualityBadge.style.background = "rgba(245, 158, 11, 0.15)";
                                 qualityBadge.style.borderColor = "rgba(245, 158, 11, 0.35)";
                                 qualityBadge.style.color = "#f59e0b";
-                                if (qualityIcon) qualityIcon.className = "ti ti-wifi-2";
-                                if (qualityText) qualityText.textContent = "Good Quality";
+                                if (qualityIcon) qualityIcon.className = "ti ti-wifi-1";
+                                if (qualityText) qualityText.textContent = "Fair Connection";
                             } else {
                                 qualityBadge.style.background = "rgba(239, 68, 68, 0.15)";
                                 qualityBadge.style.borderColor = "rgba(239, 68, 68, 0.35)";
                                 qualityBadge.style.color = "#ef4444";
                                 if (qualityIcon) qualityIcon.className = "ti ti-wifi-0";
-                                if (qualityText) qualityText.textContent = "Poor Connection";
+                                if (qualityText) qualityText.textContent = "Low Bitrate";
                             }
                         }
+
                     }
                     lastBytesSent = bytesSent;
                     lastTime = now;
