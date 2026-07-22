@@ -367,12 +367,14 @@ html, body {
     offlineScreen.style.display = 'none';
   }
 
-  let webCodecsDecoder = null;
+  let webCodecsVideoDecoder = null;
+  let webCodecsAudioDecoder = null;
+  let audioContext = null;
   let liveCanvas = null;
   let canvasCtx = null;
 
-  function initWebCodecsDecoder() {
-    if (!('VideoDecoder' in window)) return false;
+  function initUnifiedWebCodecsDecoder() {
+    if (!('VideoDecoder' in window) || !('AudioDecoder' in window)) return false;
 
     liveCanvas = document.getElementById('live-canvas');
     const container = document.getElementById('sh-video-container') || document.body;
@@ -391,10 +393,14 @@ html, body {
     }
     canvasCtx = liveCanvas.getContext('2d');
 
-    console.log('[Viewer WebCodecs] Initializing GPU VideoDecoder...');
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    } catch (e) {
+      console.warn('[Viewer WebCodecs] AudioContext init failed:', e);
+    }
 
     try {
-      webCodecsDecoder = new VideoDecoder({
+      webCodecsVideoDecoder = new VideoDecoder({
         output: (frame) => {
           if (liveCanvas.width !== frame.displayWidth || liveCanvas.height !== frame.displayHeight) {
             liveCanvas.width = frame.displayWidth;
@@ -410,27 +416,65 @@ html, body {
             updatePlayIcon();
           }
         },
-        error: (e) => console.error('[Viewer WebCodecs Decoder Error]:', e)
+        error: (e) => console.error('[Viewer VideoDecoder Error]:', e)
       });
 
       let decoderCodec = 'avc1.64002A';
       if (VideoDecoder.isConfigSupported) {
         VideoDecoder.isConfigSupported({ codec: 'avc1.64002A' }).then(support => {
-          if (!support.supported) decoderCodec = 'avc1.42E01E';
+          if (!support.supported) decoderCodec = 'avc1.4d002a';
         }).catch(() => {});
       }
 
-      webCodecsDecoder.configure({
+      webCodecsVideoDecoder.configure({
         codec: decoderCodec,
         optimizeForLatency: true,
         hardwareAcceleration: 'prefer-hardware'
       });
-
-      return true;
     } catch (e) {
-      console.warn('[Viewer WebCodecs Init Exception]:', e);
-      return false;
+      console.warn('[Viewer VideoDecoder Init Exception]:', e);
     }
+
+    try {
+      webCodecsAudioDecoder = new AudioDecoder({
+        output: (audioData) => {
+          if (!audioContext || audioContext.state === 'closed') return;
+          try {
+            if (audioContext.state === 'suspended') {
+              audioContext.resume().catch(() => {});
+            }
+            const buffer = audioContext.createBuffer(
+              audioData.numberOfChannels,
+              audioData.numberOfFrames,
+              audioData.sampleRate
+            );
+            for (let channel = 0; channel < audioData.numberOfChannels; channel++) {
+              const channelData = buffer.getChannelData(channel);
+              audioData.copyTo(channelData, { planeIndex: channel });
+            }
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioContext.destination);
+            source.start();
+          } catch (err) {
+            console.warn('[Viewer Audio Playback Exception]:', err);
+          } finally {
+            audioData.close();
+          }
+        },
+        error: (e) => console.error('[Viewer AudioDecoder Error]:', e)
+      });
+
+      webCodecsAudioDecoder.configure({
+        codec: 'opus',
+        sampleRate: 48000,
+        numberOfChannels: 2
+      });
+    } catch (e) {
+      console.warn('[Viewer AudioDecoder Init Exception]:', e);
+    }
+
+    return true;
   }
 
   function connectViewerSocket() {
@@ -441,7 +485,7 @@ html, body {
     statusSocket = new WebSocket(viewerWsUrl);
     statusSocket.binaryType = 'arraybuffer';
 
-    initWebCodecsDecoder();
+    initUnifiedWebCodecsDecoder();
 
     statusSocket.onmessage = async (event) => {
       if (event.data instanceof ArrayBuffer) {
@@ -449,17 +493,28 @@ html, body {
         if (view.byteLength >= 16) {
           const magic = view.getUint32(0);
           if (magic === 0x57434F44) { // "WCOD" Magic Header
-            const isKey = view.getUint8(4) === 1;
+            const payloadType = view.getUint8(4);
             const timestamp = Number(view.getBigInt64(5, false));
             const chunkData = new Uint8Array(event.data, 16);
 
-            if (webCodecsDecoder && webCodecsDecoder.state === 'configured') {
-              const chunk = new EncodedVideoChunk({
-                type: isKey ? 'key' : 'delta',
-                timestamp: timestamp,
-                data: chunkData
-              });
-              webCodecsDecoder.decode(chunk);
+            if (payloadType === 0 || payloadType === 1) {
+              if (webCodecsVideoDecoder && webCodecsVideoDecoder.state === 'configured') {
+                const chunk = new EncodedVideoChunk({
+                  type: payloadType === 0 ? 'key' : 'delta',
+                  timestamp: timestamp,
+                  data: chunkData
+                });
+                webCodecsVideoDecoder.decode(chunk);
+              }
+            } else if (payloadType === 2) {
+              if (webCodecsAudioDecoder && webCodecsAudioDecoder.state === 'configured') {
+                const chunk = new EncodedAudioChunk({
+                  type: 'key',
+                  timestamp: timestamp,
+                  data: chunkData
+                });
+                webCodecsAudioDecoder.decode(chunk);
+              }
             }
           }
         }

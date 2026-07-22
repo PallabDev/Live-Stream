@@ -781,22 +781,27 @@
         }
 
         let totalWebCodecsBytesSent = 0;
-        let webCodecsEncoder = null;
-        let trackProcessorReader = null;
+        let webCodecsVideoEncoder = null;
+        let webCodecsAudioEncoder = null;
+        let videoTrackReader = null;
+        let audioTrackReader = null;
 
-        async function startWebCodecsStream() {
-            if (!('VideoEncoder' in window) || !('MediaStreamTrackProcessor' in window)) {
-                console.log("[WebCodecs] WebCodecs GPU encoding not supported in this browser, using WHIP fallback.");
+        async function startUnifiedWebCodecsBroadcaster() {
+            if (!('VideoEncoder' in window) || !('AudioEncoder' in window) || !('MediaStreamTrackProcessor' in window)) {
+                console.warn("[WebCodecs] WebCodecs Audio/Video encoders not fully supported in this browser, using WHIP fallback.");
                 return false;
             }
 
-            const track = mediaStream ? mediaStream.getVideoTracks()[0] : null;
-            if (!track) return false;
+            const videoTrack = mediaStream ? mediaStream.getVideoTracks()[0] : null;
+            const audioTrack = mediaStream ? mediaStream.getAudioTracks()[0] : null;
 
-            console.log("[WebCodecs] Initializing 8.0 Mbps GPU VideoEncoder...");
+            if (!videoTrack) return false;
 
+            console.log("[WebCodecs] Initializing 7.5 Mbps Video CBR + 256 Kbps Audio CBR Encoders...");
+
+            // 1. Configure VideoEncoder (7.5 Mbps High Profile H.264 60FPS CBR)
             try {
-                webCodecsEncoder = new VideoEncoder({
+                webCodecsVideoEncoder = new VideoEncoder({
                     output: (chunk, metadata) => {
                         if (!mediaSocket || mediaSocket.readyState !== WebSocket.OPEN) return;
 
@@ -805,8 +810,8 @@
 
                         const header = new ArrayBuffer(16);
                         const view = new DataView(header);
-                        view.setUint32(0, 0x57434F44); // "WCOD"
-                        view.setUint8(4, chunk.type === 'key' ? 1 : 0);
+                        view.setUint32(0, 0x57434F44); // "WCOD" Magic Header
+                        view.setUint8(4, chunk.type === 'key' ? 0 : 1); // 0 = Video Keyframe, 1 = Video Delta
                         view.setBigInt64(5, BigInt(chunk.timestamp), false);
 
                         const payload = new Uint8Array(16 + chunkData.byteLength);
@@ -816,63 +821,119 @@
                         mediaSocket.send(payload.buffer);
                         totalWebCodecsBytesSent += payload.byteLength;
                     },
-                    error: (err) => console.error("[WebCodecs Encoder Error]:", err)
+                    error: (err) => console.error("[WebCodecs VideoEncoder Error]:", err)
                 });
 
-                const settings = track.getSettings();
+                const settings = videoTrack.getSettings();
                 const width = settings.width || 1920;
                 const height = settings.height || 1080;
 
-                let codecToUse = 'avc1.64002A'; // High Profile 1080p60/30 (Eliminates Pixelation)
+                let codecToUse = 'avc1.64002A';
                 if (VideoEncoder.isConfigSupported) {
                     const support = await VideoEncoder.isConfigSupported({
                         codec: 'avc1.64002A',
                         width: width,
                         height: height,
-                        bitrate: 8000000,
-                        framerate: 30
+                        bitrate: 7500000,
+                        framerate: 60
                     });
-                    if (!support.supported) codecToUse = 'avc1.4d002a'; // Main Profile fallback
+                    if (!support.supported) codecToUse = 'avc1.4d002a';
                 }
 
-                await webCodecsEncoder.configure({
+                await webCodecsVideoEncoder.configure({
                     codec: codecToUse,
                     width: width,
                     height: height,
-                    bitrate: 8000000, // Forced 8.0 Mbps CBR
-                    framerate: 30,
+                    bitrate: 7500000, // 7.5 Mbps CBR
+                    bitrateMode: 'constant', // TRUE HARDWARE CBR
+                    framerate: 60,
                     hardwareAcceleration: 'prefer-hardware',
                     latencyMode: 'realtime'
                 });
 
-                const processor = new MediaStreamTrackProcessor({ track });
-                trackProcessorReader = processor.readable.getReader();
+                const videoProcessor = new MediaStreamTrackProcessor({ track: videoTrack });
+                videoTrackReader = videoProcessor.readable.getReader();
 
                 let frameCounter = 0;
                 (async () => {
-                    while (isStreaming && webCodecsEncoder && webCodecsEncoder.state === 'configured') {
+                    while (isStreaming && webCodecsVideoEncoder && webCodecsVideoEncoder.state === 'configured') {
                         try {
-                            const { value: frame, done } = await trackProcessorReader.read();
+                            const { value: frame, done } = await videoTrackReader.read();
                             if (done) break;
                             if (frame) {
-                                const insertKeyframe = (frameCounter % 30 === 0);
-                                webCodecsEncoder.encode(frame, { keyFrame: insertKeyframe });
+                                const insertKeyframe = (frameCounter % 60 === 0);
+                                webCodecsVideoEncoder.encode(frame, { keyFrame: insertKeyframe });
                                 frame.close();
                                 frameCounter++;
                             }
                         } catch (e) {
-                            console.warn("[WebCodecs Frame Read Exception]:", e);
+                            console.warn("[WebCodecs Video Frame Read Exception]:", e);
                             break;
                         }
                     }
                 })();
-
-                console.log("[WebCodecs] Active forced 8.0 Mbps GPU stream running!");
-                return true;
             } catch (err) {
-                console.warn("[WebCodecs Init Error]:", err);
-                return false;
+                console.error("[WebCodecs Video Init Error]:", err);
             }
+
+            // 2. Configure AudioEncoder (256 Kbps Opus Stereo 48kHz)
+            if (audioTrack) {
+                try {
+                    webCodecsAudioEncoder = new AudioEncoder({
+                        output: (chunk, metadata) => {
+                            if (!mediaSocket || mediaSocket.readyState !== WebSocket.OPEN) return;
+
+                            const chunkData = new Uint8Array(chunk.byteLength);
+                            chunk.copyTo(chunkData);
+
+                            const header = new ArrayBuffer(16);
+                            const view = new DataView(header);
+                            view.setUint32(0, 0x57434F44); // "WCOD"
+                            view.setUint8(4, 2); // 2 = Audio Payload
+                            view.setBigInt64(5, BigInt(chunk.timestamp), false);
+
+                            const payload = new Uint8Array(16 + chunkData.byteLength);
+                            payload.set(new Uint8Array(header), 0);
+                            payload.set(chunkData, 16);
+
+                            mediaSocket.send(payload.buffer);
+                            totalWebCodecsBytesSent += payload.byteLength;
+                        },
+                        error: (err) => console.error("[WebCodecs AudioEncoder Error]:", err)
+                    });
+
+                    await webCodecsAudioEncoder.configure({
+                        codec: 'opus',
+                        sampleRate: 48000,
+                        numberOfChannels: 2,
+                        bitrate: 256000 // 256 Kbps Studio Stereo Audio
+                    });
+
+                    const audioProcessor = new MediaStreamTrackProcessor({ track: audioTrack });
+                    audioTrackReader = audioProcessor.readable.getReader();
+
+                    (async () => {
+                        while (isStreaming && webCodecsAudioEncoder && webCodecsAudioEncoder.state === 'configured') {
+                            try {
+                                const { value: audioData, done } = await audioTrackReader.read();
+                                if (done) break;
+                                if (audioData) {
+                                    webCodecsAudioEncoder.encode(audioData);
+                                    audioData.close();
+                                }
+                            } catch (e) {
+                                console.warn("[WebCodecs Audio Frame Read Exception]:", e);
+                                break;
+                            }
+                        }
+                    })();
+                } catch (err) {
+                    console.error("[WebCodecs Audio Init Error]:", err);
+                }
+            }
+
+            console.log("[WebCodecs] Active Unified 7.75 Mbps Hardware CBR Stream Running!");
+            return true;
         }
 
         let statsInterval = null;
@@ -1087,7 +1148,7 @@
                 mediaSocket = new WebSocket(wsUrl);
 
                 mediaSocket.onopen = async () => {
-                    console.log("[Studio] Channel established. Initializing 8.0 Mbps GPU stream...");
+                    console.log("[Studio] Channel established. Initializing 7.75 Mbps Hardware CBR stream...");
                     isLive = true;
                     isStreaming = true;
                     updateUI();
@@ -1097,7 +1158,12 @@
                     if (durationInterval) clearInterval(durationInterval);
                     durationInterval = setInterval(updateDuration, 1000);
 
-                    await publishToMediaMTXSFU();
+                    const webCodecsActive = await startUnifiedWebCodecsBroadcaster();
+                    if (!webCodecsActive) {
+                        await publishToMediaMTXSFU();
+                    } else {
+                        startStatsMonitoring();
+                    }
                 };
 
 
