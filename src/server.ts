@@ -192,7 +192,7 @@ monitorWss.on("connection", (ws: any) => {
       const cpu = await MonitorService.getCpuUsage();
       const sysMetrics = MonitorService.getSystemMetrics();
       const monthlyStats = await MonitorService.getMonthlyStats();
-      const netStats = await MonitorService.getNetworkStats();
+      const netStats = await MonitorService.getNetworkStats(StreamController.activeSessions);
       const data = {
         cpu,
         memory: {

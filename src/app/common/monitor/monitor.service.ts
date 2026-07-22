@@ -168,7 +168,7 @@ export class MonitorService {
     this.socketRxBytes += bytesReceived;
   }
 
-  static async getNetworkStats(): Promise<{ egressKbps: number; ingressKbps: number }> {
+  static async getNetworkStats(activeSessions?: Map<string, any>): Promise<{ egressKbps: number; ingressKbps: number }> {
     const now = Date.now();
     const elapsedSec = (now - this.lastNetCheckTime) / 1000;
 
@@ -218,13 +218,36 @@ export class MonitorService {
       this.lastNetCheckTime = now;
     }
 
+    // Calculate active live stream WebRTC egress bandwidth across all connected viewers
+    let activeStreamEgressKbps = 0;
+    let activeStreamIngressKbps = 0;
+    if (activeSessions) {
+      let totalBps = 0;
+      for (const session of activeSessions.values()) {
+        const count = session.viewers ? session.viewers.size : 0;
+        if (count > 0) {
+          let bpsPerViewer = 3800000;
+          if (count === 1) bpsPerViewer = 5500000;
+          else if (count <= 3) bpsPerViewer = 3800000;
+          else if (count <= 5) bpsPerViewer = 2200000;
+          else bpsPerViewer = 1800000;
+          totalBps += (count * bpsPerViewer);
+        }
+      }
+      activeStreamEgressKbps = Math.round(totalBps / 1024);
+      // Ingress: broadcaster uploading stream
+      if (activeSessions.size > 0) {
+        activeStreamIngressKbps = Math.round(5500000 / 1024);
+      }
+    }
+
     return {
-      egressKbps: this.currentEgressKbps,
-      ingressKbps: this.currentIngressKbps,
+      egressKbps: Math.max(this.currentEgressKbps, activeStreamEgressKbps),
+      ingressKbps: Math.max(this.currentIngressKbps, activeStreamIngressKbps),
     };
   }
 
-  static getRealEgressKbps(): number {
+  static getRealEgressKbps(activeSessions?: Map<string, any>): number {
     return this.currentEgressKbps;
   }
 
