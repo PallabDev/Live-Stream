@@ -429,7 +429,7 @@
         function reorderVideoCodecs(sdp) {
             let lines = sdp.split('\r\n');
             let mVideoIndex = -1;
-            let h264HighPts = [];
+            let h264Pts = [];
             let vp9Pts = [];
             let otherPts = [];
 
@@ -443,19 +443,11 @@
                     if (match) {
                         let pt = match[1];
                         let codec = match[2].toUpperCase();
-                        
-                        let isHighProfile = false;
-                        for (let j = 0; j < lines.length; j++) {
-                            if (lines[j].startsWith(`a=fmtp:${pt} `) && lines[j].includes('profile-level-id=6400')) {
-                                isHighProfile = true;
-                                break;
-                            }
-                        }
 
-                        if (codec === 'VP9') {
+                        if (codec === 'H264') {
+                            h264Pts.push(pt);
+                        } else if (codec === 'VP9') {
                             vp9Pts.push(pt);
-                        } else if (codec === 'H264' && isHighProfile) {
-                            h264HighPts.push(pt);
                         } else {
                             otherPts.push(pt);
                         }
@@ -469,7 +461,7 @@
                 let header = parts.slice(0, 3);
                 let payloads = parts.slice(3);
 
-                let preferred = [...vp9Pts, ...h264HighPts];
+                let preferred = [...h264Pts, ...vp9Pts];
                 let remaining = payloads.filter(pt => !preferred.includes(pt));
                 let newPayloads = [...preferred, ...remaining];
 
@@ -507,14 +499,14 @@
 
                 if (line.startsWith('a=fmtp:')) {
                     if (!line.includes('x-google-start-bitrate') && !line.includes('opus')) {
-                        line = line + ';x-google-start-bitrate=6000;x-google-min-bitrate=4000;x-google-max-bitrate=10000';
+                        line = line + ';x-google-start-bitrate=4500;x-google-min-bitrate=2000;x-google-max-bitrate=6000';
                     }
                 }
 
                 if (line.startsWith('m=video')) {
                     modifiedLines.push(line);
-                    modifiedLines.push('b=AS:10000');
-                    modifiedLines.push('b=TIAS:10000000');
+                    modifiedLines.push('b=AS:6000');
+                    modifiedLines.push('b=TIAS:6000000');
                     continue;
                 }
 
@@ -669,8 +661,8 @@
                             if (!parameters.encodings) {
                                 parameters.encodings = [{}];
                             }
-                            parameters.encodings[0].maxBitrate = 10000000; // 10 Mbps max (server max)
-                            parameters.encodings[0].minBitrate = 4000000;  // 4 Mbps min floor (strictly 4Mbps minimum)
+                            parameters.encodings[0].maxBitrate = 6000000; // 6 Mbps max (optimal 1080p fit for 9Mbps upload)
+                            parameters.encodings[0].minBitrate = 2000000; // 2 Mbps min floor
                             parameters.encodings[0].scaleResolutionDownBy = 1.0; // 0 downscaling (100% native pixel density)
                             sender.setParameters(parameters).catch(err => {
                                 console.warn("[Studio WebRTC] Failed to set video encoding parameters:", err);
@@ -780,11 +772,11 @@
             const viewersCountEl = document.getElementById("viewers-count");
             if (viewersCountEl) viewersCountEl.textContent = peerConnections.size;
 
-            // Always offer max 10.0 Mbps capability with a 4.0 Mbps floor, letting WebRTC dynamically adapt per-viewer
-            const targetMaxBitrate = 10000000; // 10.0 Mbps max ceiling
-            const minFloorBitrate = 4000000;   // 4.0 Mbps min floor
+            // Configure optimal 6.0 Mbps max ceiling to fit 9.0 Mbps upload host connection cleanly without over-probing
+            const targetMaxBitrate = 6000000; // 6.0 Mbps max ceiling
+            const minFloorBitrate = 2000000;  // 2.0 Mbps min floor
 
-            console.log(`[Studio WebRTC] Configuring WebRTC 10Mbps-4Mbps adaptive range for ${peerConnections.size} connected viewer(s)`);
+            console.log(`[Studio WebRTC] Configuring WebRTC 6Mbps-2Mbps adaptive range for ${peerConnections.size} connected viewer(s)`);
 
             for (const [viewerId, pcInstance] of peerConnections) {
                 try {
