@@ -717,7 +717,7 @@
 
                             const transceiver = sfuPeerConnection.getTransceivers().find(t => t.sender === sender);
                             if (transceiver) {
-                                try { transceiver.degradationPreference = 'maintain-framerate'; } catch (_) { }
+                                try { transceiver.degradationPreference = 'maintain-resolution'; } catch (_) { }
                             }
                         } catch (err) {
                             console.warn("[Studio SFU] Transceiver setup error:", err);
