@@ -552,6 +552,7 @@
             let modifiedLines = [];
             let fmtpFound = false;
             let currentMedia = null;
+            let seenVideoFmtp = {};
 
             for (let i = 0; i < lines.length; i++) {
                 let line = lines[i];
@@ -569,8 +570,11 @@
 
                 if (currentMedia === 'video' && line.startsWith('a=fmtp:')) {
                     for (let pt of videoPts) {
-                        if (line.startsWith(`a=fmtp:${pt}`) && !line.includes('x-google-min-bitrate')) {
-                            line = line + ';x-google-start-bitrate=5000;x-google-min-bitrate=2500;x-google-max-bitrate=8000';
+                        if (line.startsWith(`a=fmtp:${pt}`)) {
+                            seenVideoFmtp[pt] = true;
+                            if (!line.includes('x-google-min-bitrate')) {
+                                line = line + ';x-google-start-bitrate=5000;x-google-min-bitrate=2500;x-google-max-bitrate=8000';
+                            }
                         }
                     }
                 }
@@ -580,6 +584,17 @@
                 if (currentMedia === 'video' && line.startsWith('c=IN ')) {
                     modifiedLines.push('b=AS:8000');
                     modifiedLines.push('b=TIAS:8000000');
+                    // Inject fmtp with x-google-min-bitrate=2500 for any video payload types that don't have an fmtp line
+                    for (let pt of videoPts) {
+                        if (!seenVideoFmtp[pt]) {
+                            modifiedLines.push(`a=fmtp:${pt} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f;x-google-start-bitrate=5000;x-google-min-bitrate=2500;x-google-max-bitrate=8000`);
+                            seenVideoFmtp[pt] = true;
+                        }
+                        modifiedLines.push(`a=rtcp-fb:${pt} nack`);
+                        modifiedLines.push(`a=rtcp-fb:${pt} nack pli`);
+                        modifiedLines.push(`a=rtcp-fb:${pt} goog-remb`);
+                        modifiedLines.push(`a=rtcp-fb:${pt} transport-cc`);
+                    }
                 }
             }
 
@@ -824,6 +839,9 @@
                     }
                 };
                 await window.dispatchKeyframe();
+
+                if (window.keyframeInterval) clearInterval(window.keyframeInterval);
+                window.keyframeInterval = setInterval(window.dispatchKeyframe, 2500);
 
                 console.log("[Studio SFU] Successfully established WebRTC WHIP stream to MediaMTX SFU!");
                 startStatsMonitoring();
