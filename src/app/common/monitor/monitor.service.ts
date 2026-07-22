@@ -178,8 +178,9 @@ export class MonitorService {
       let readFromProc = false;
 
       try {
-        if (fs.existsSync("/proc/net/dev")) {
-          const content = fs.readFileSync("/proc/net/dev", "utf8");
+        const procPath = fs.existsSync("/host_proc/net/dev") ? "/host_proc/net/dev" : (fs.existsSync("/proc/net/dev") ? "/proc/net/dev" : null);
+        if (procPath) {
+          const content = fs.readFileSync(procPath, "utf8");
           const lines = content.split("\n");
           for (const line of lines) {
             const trimmed = line.trim();
