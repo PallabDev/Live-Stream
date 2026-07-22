@@ -11,8 +11,11 @@ async function main() {
   
   if (existingUsers.length > 0) {
     const existing = existingUsers[0];
-    console.log(`[Seed-Admin] Found existing user with ID: ${existing.id}. Deleting...`);
-    // Delete user (onDelete cascade will clean up corresponding account and session records)
+    if (existing.role === "admin" && existing.hasAccess) {
+      console.log(`[Seed-Admin] Admin user ${email} already exists and is active.`);
+      process.exit(0);
+    }
+    console.log(`[Seed-Admin] Found existing non-admin user with ID: ${existing.id}. Deleting to re-create admin...`);
     await db.delete(user).where(eq(user.id, existing.id));
     console.log(`[Seed-Admin] Existing user deleted.`);
   }
