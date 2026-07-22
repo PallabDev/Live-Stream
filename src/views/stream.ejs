@@ -235,9 +235,6 @@
         let activeAudioDestNode = null;
         let mediaElementSource = null;
 
-        const peerConnections = new Map(); // viewerId -> RTCPeerConnection
-        const candidateQueues = new Map(); // viewerId -> Array of candidate objects
-
         const movieFileInput = document.getElementById("movie-file-input");
         const previewPlayer = document.getElementById("preview-player");
         const audioPlayer = document.getElementById("audio-player");
@@ -937,62 +934,7 @@
             }
         }
 
-        function closePeerConnection(viewerId) {
-            const pcInstance = peerConnections.get(viewerId);
-            if (pcInstance) {
-                console.log(`[Studio WebRTC] Closing peer connection for viewer: ${viewerId}`);
-                pcInstance.close();
-                peerConnections.delete(viewerId);
-                candidateQueues.delete(viewerId);
-                updateAdaptiveBitrates();
-            }
-        }
-
-        function updateAdaptiveBitrates() {
-            const count = Math.max(1, peerConnections.size);
-            const viewersCountEl = document.getElementById("viewers-count");
-            if (viewersCountEl) viewersCountEl.textContent = peerConnections.size;
-
-            // Configure optimal 6.0 Mbps max ceiling to fit 9.0 Mbps upload host connection cleanly without over-probing
-            const targetMaxBitrate = 6000000; // 6.0 Mbps max ceiling
-            const minFloorBitrate = 2000000;  // 2.0 Mbps min floor
-
-            console.log(`[Studio WebRTC] Configuring WebRTC 6Mbps-2Mbps adaptive range for ${peerConnections.size} connected viewer(s)`);
-
-            for (const [viewerId, pcInstance] of peerConnections) {
-                try {
-                    const senders = pcInstance.getSenders();
-                    for (const sender of senders) {
-                        if (sender.track && sender.track.kind === 'video') {
-                            const parameters = sender.getParameters();
-                            if (!parameters.encodings) parameters.encodings = [{}];
-                            parameters.encodings[0].maxBitrate = targetMaxBitrate;
-                            parameters.encodings[0].minBitrate = minFloorBitrate;
-                            parameters.encodings[0].scaleResolutionDownBy = 1.0; // Force 100% native resolution (0 downscaling)
-                            sender.setParameters(parameters).catch(err => {
-                                console.warn(`[Studio WebRTC] Error setting bitrate for viewer ${viewerId}:`, err);
-                            });
-
-                            const transceiver = pcInstance.getTransceivers().find(t => t.sender === sender);
-                            if (transceiver) {
-                                try {
-                                    transceiver.degradationPreference = 'maintain-framerate';
-                                } catch (_) { }
-                            }
-                        }
-                    }
-                } catch (err) {
-                    console.warn(`[Studio WebRTC] Error updating bitrate parameters for viewer ${viewerId}:`, err);
-                }
-            }
-        }
-
-        // Keepalive loop: Continuously re-enforce 100% native unscaled 1080p resolution every 3 seconds
-        setInterval(() => {
-            if (peerConnections.size > 0) {
-                updateAdaptiveBitrates();
-            }
-        }, 3000);
+        // Clean Studio Control Functions
 
 
 
@@ -1143,49 +1085,10 @@
                 mediaSocket.onmessage = async (event) => {
                     try {
                         const msg = JSON.parse(event.data);
-                        const { event: signalEvent, viewerId, sdp, candidate } = msg;
-
-                        if (signalEvent === "viewer-connected" || signalEvent === "viewer-ready") {
-                            await createPeerConnection(viewerId);
-                        } else if (signalEvent === "viewer-disconnected") {
-                            closePeerConnection(viewerId);
-                        } else if (signalEvent === "answer") {
-                            const pcInstance = peerConnections.get(viewerId);
-                            if (pcInstance) {
-                                await pcInstance.setRemoteDescription(new RTCSessionDescription(sdp));
-
-                                const queue = candidateQueues.get(viewerId) || [];
-                                while (queue.length > 0) {
-                                    const cand = queue.shift();
-                                    try {
-                                        await pcInstance.addIceCandidate(new RTCIceCandidate(cand));
-                                    } catch (e) {
-                                        console.warn(`[Studio WebRTC] Error adding queued candidate for viewer ${viewerId}:`, e);
-                                    }
-                                }
-                            }
-                        } else if (signalEvent === "candidate") {
-                            const pcInstance = peerConnections.get(viewerId);
-                            if (pcInstance && candidate) {
-                                if (!pcInstance.remoteDescription || !pcInstance.remoteDescription.type) {
-                                    let queue = candidateQueues.get(viewerId);
-                                    if (!queue) {
-                                        queue = [];
-                                        candidateQueues.set(viewerId, queue);
-                                    }
-                                    queue.push(candidate);
-                                } else {
-                                    try {
-                                        await pcInstance.addIceCandidate(new RTCIceCandidate(candidate));
-                                    } catch (e) {
-                                        console.warn(`[Studio WebRTC] Error adding candidate for viewer ${viewerId}:`, e);
-                                    }
-                                }
-                            }
+                        if (msg.event === "error") {
+                            if (window.showToast) window.showToast(msg.error || "Streaming error occurred", "error");
                         }
-                    } catch (err) {
-                        console.error("[Studio WS Message Exception]:", err);
-                    }
+                    } catch (_) {}
                 };
 
                 mediaSocket.onclose = (event) => {

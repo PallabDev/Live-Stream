@@ -479,54 +479,12 @@ html, body {
             }
           } else if (status === 'capacity_reached') {
             const subtitle = document.querySelector('#offline-screen p');
-            if (subtitle) subtitle.textContent = msg.message || 'Stream has reached the maximum capacity of 10 viewers.';
+            if (subtitle) subtitle.textContent = msg.message || 'Stream has reached maximum capacity.';
             const title = document.querySelector('#offline-screen h3');
-            if (title) title.textContent = 'Room Full (10 Viewers Max)';
+            if (title) title.textContent = 'Room Full';
             showOffline();
           } else {
             showOffline();
-          }
-        } else if (signalEvent === 'offer') {
-          console.log('[Viewer] Received SDP Offer from broadcaster');
-          if (pcInstance) {
-            await pcInstance.setRemoteDescription(new RTCSessionDescription(sdp));
-
-            // Drain queued ICE candidates that arrived before the remote offer was set
-            while (iceCandidateQueue.length > 0) {
-              const cand = iceCandidateQueue.shift();
-              try {
-                await pcInstance.addIceCandidate(new RTCIceCandidate(cand));
-              } catch (e) {
-                console.warn('[Viewer WebRTC] Error adding queued ICE candidate:', e);
-              }
-            }
-
-            let answer = await pcInstance.createAnswer();
-            const modifiedAnswerSdp = preferHighFidelityAudioAndVideo(answer.sdp);
-            answer = new RTCSessionDescription({
-              type: answer.type,
-              sdp: modifiedAnswerSdp
-            });
-            await pcInstance.setLocalDescription(answer);
-
-            statusSocket.send(JSON.stringify({
-              event: "answer",
-              sdp: pcInstance.localDescription
-            }));
-          }
-        } else if (signalEvent === 'candidate') {
-          console.log('[Viewer] Received ICE Candidate from broadcaster');
-          if (pcInstance && candidate) {
-            if (!pcInstance.remoteDescription || !pcInstance.remoteDescription.type) {
-              console.log('[Viewer WebRTC] Queuing ICE candidate until SDP offer is applied');
-              iceCandidateQueue.push(candidate);
-            } else {
-              try {
-                await pcInstance.addIceCandidate(new RTCIceCandidate(candidate));
-              } catch (err) {
-                console.warn('[Viewer WebRTC] Error adding ICE candidate:', err);
-              }
-            }
           }
         }
       } catch (err) {
