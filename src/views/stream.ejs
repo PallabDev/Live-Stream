@@ -318,7 +318,17 @@
                         case "webRtcTransportCreated": {
                             // 3. Create Send Transport on Mediasoup Device
                             const { id, iceParameters, iceCandidates, dtlsParameters } = msg.data;
-                            sendTransport = device.createSendTransport({ id, iceParameters, iceCandidates, dtlsParameters });
+                            sendTransport = device.createSendTransport({
+                                id,
+                                iceParameters,
+                                iceCandidates,
+                                dtlsParameters,
+                                iceServers: [
+                                    { urls: 'stun:stun.l.google.com:19302' },
+                                    { urls: 'stun:stun1.l.google.com:19302' },
+                                    { urls: 'stun:stun2.l.google.com:19302' }
+                                ]
+                            });
 
                             sendTransport.on("connect", ({ dtlsParameters }, callback, errback) => {
                                 sfuSocket.send(JSON.stringify({

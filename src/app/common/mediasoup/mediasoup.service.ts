@@ -1,13 +1,29 @@
 import * as mediasoup from "mediasoup";
 import os from "os";
 
+let cachedPublicIp: string | null = null;
+
 /**
- * Auto-detect public network interface IP for WebRTC candidates
+ * Auto-detect true public IPv4 address for WebRTC candidates
  */
-function getAnnouncedIp(): string {
+async function getAnnouncedIp(): Promise<string> {
   if (process.env.ANNOUNCED_IP && process.env.ANNOUNCED_IP !== "127.0.0.1") {
     return process.env.ANNOUNCED_IP;
   }
+  if (cachedPublicIp) return cachedPublicIp;
+
+  try {
+    const res = await fetch("https://api.ipify.org?format=json");
+    const data: any = await res.json();
+    if (data && data.ip) {
+      cachedPublicIp = data.ip;
+      console.log(`[Mediasoup SFU] Auto-detected Public Server IPv4: ${cachedPublicIp}`);
+      return data.ip as string;
+    }
+  } catch (err: any) {
+    console.warn("[Mediasoup SFU] Could not fetch public IP from ipify, falling back to network interfaces:", err.message);
+  }
+
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name] || []) {
@@ -122,6 +138,9 @@ export class MediasoupService {
       setTimeout(() => process.exit(1), 2000);
     });
 
+    // Warm up public IP detection
+    getAnnouncedIp().catch(() => {});
+
     return this.worker;
   }
 
@@ -159,7 +178,7 @@ export class MediasoupService {
       }
     }
 
-    const announcedIp = getAnnouncedIp();
+    const announcedIp = await getAnnouncedIp();
     console.log(`[Mediasoup SFU] Creating WebRtcTransport for ${isBroadcaster ? "Broadcaster" : "Viewer"} with Announced IP: ${announcedIp}`);
 
     const transport = await room.router.createWebRtcTransport({
