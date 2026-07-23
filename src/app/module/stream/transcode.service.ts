@@ -9,6 +9,7 @@ type PipelineStatus = "idle" | "waiting_for_obs" | "starting" | "active" | "fail
 interface ProbeResult {
   ready: boolean;
   hasAudio: boolean;
+  inputUrl?: string;
   error?: string;
 }
 
@@ -18,6 +19,7 @@ interface PipelineState {
   process?: ChildProcessWithoutNullStreams;
   wantsRun: boolean;
   hasAudio: boolean;
+  inputUrl?: string;
   startedAt?: number;
   lastReadyAt?: number;
   lastExitCode?: number | null;
@@ -48,16 +50,29 @@ function getMasterPlaylistPath(streamKey: string) {
   return path.join(getStreamMediaDir(streamKey), "master.m3u8");
 }
 
-function getInputUrl(streamKey: string) {
-  const template =
-    process.env.STREAM_INTERNAL_SOURCE ||
-    process.env.RTMP_INTERNAL_SOURCE ||
-    "rtsp://host.docker.internal:8554/{streamKey}";
+function expandInputTemplate(template: string, streamKey: string) {
   return template.replaceAll("{streamKey}", streamKey);
 }
 
-function isRtspInput(streamKey: string) {
-  return getInputUrl(streamKey).toLowerCase().startsWith("rtsp://");
+function getInputCandidates(streamKey: string) {
+  const configured =
+    process.env.STREAM_INTERNAL_SOURCES ||
+    process.env.STREAM_INTERNAL_SOURCE ||
+    process.env.RTMP_INTERNAL_SOURCE ||
+    [
+      "rtsp://host.docker.internal:8554/live/{streamKey}",
+      "rtsp://host.docker.internal:8554/{streamKey}",
+      "rtmp://host.docker.internal:1935/live/{streamKey}",
+    ].join(",");
+
+  return configured
+    .split(",")
+    .map((template) => expandInputTemplate(template.trim(), streamKey))
+    .filter(Boolean);
+}
+
+function isRtspInput(inputUrl: string) {
+  return inputUrl.toLowerCase().startsWith("rtsp://");
 }
 
 function buildRtmpPublicUrl(hostname: string) {
@@ -94,8 +109,7 @@ function getScaleFilter(hasAudio: boolean) {
   return "[0:v:0]split=2[v720src][v480src];[v720src]scale=w=1280:h=-2:flags=fast_bilinear[v720];[v480src]scale=w=854:h=-2:flags=fast_bilinear[v480]";
 }
 
-function buildFfmpegArgs(streamKey: string, hasAudio: boolean): string[] {
-  const inputUrl = getInputUrl(streamKey);
+function buildFfmpegArgs(streamKey: string, inputUrl: string, hasAudio: boolean): string[] {
   const mediaDir = getStreamMediaDir(streamKey);
   const segmentPattern = path.join(mediaDir, "%v", "seg_%06d.ts");
   const variantPattern = path.join(mediaDir, "%v", "index.m3u8");
@@ -112,7 +126,7 @@ function buildFfmpegArgs(streamKey: string, hasAudio: boolean): string[] {
     "-thread_queue_size", "2048",
   ];
 
-  if (isRtspInput(streamKey)) {
+  if (isRtspInput(inputUrl)) {
     args.push(
       "-rtsp_transport", "tcp",
       "-timeout", process.env.STREAM_INPUT_TIMEOUT_US || "15000000",
@@ -217,14 +231,13 @@ function buildFfmpegArgs(streamKey: string, hasAudio: boolean): string[] {
   return args;
 }
 
-function runProbe(streamKey: string): Promise<ProbeResult> {
+function runProbe(inputUrl: string): Promise<ProbeResult> {
   return new Promise((resolve) => {
-    const inputUrl = getInputUrl(streamKey);
     const args = [
       "-v", "error",
     ];
 
-    if (isRtspInput(streamKey)) {
+    if (isRtspInput(inputUrl)) {
       args.push(
         "-rtsp_transport", "tcp",
         "-timeout", process.env.STREAM_INPUT_TIMEOUT_US || "15000000",
@@ -268,16 +281,33 @@ function runProbe(streamKey: string): Promise<ProbeResult> {
       const hasVideo = types.includes("video");
       const hasAudio = types.includes("audio");
       if (code === 0 && hasVideo) {
-        resolve({ ready: true, hasAudio });
+        resolve({ ready: true, hasAudio, inputUrl });
       } else {
         resolve({
           ready: false,
           hasAudio: false,
+          inputUrl,
           error: stderr.trim() || `ffprobe exited with code ${code}`,
         });
       }
     });
   });
+}
+
+async function findReadyInput(streamKey: string): Promise<ProbeResult> {
+  const failures: string[] = [];
+
+  for (const inputUrl of getInputCandidates(streamKey)) {
+    const probe = await runProbe(inputUrl);
+    if (probe.ready) return probe;
+    failures.push(`${inputUrl}: ${probe.error || "not ready"}`);
+  }
+
+  return {
+    ready: false,
+    hasAudio: false,
+    error: failures.join("\n"),
+  };
 }
 
 export class TranscodeService {
@@ -392,23 +422,24 @@ export class TranscodeService {
     state.status = "waiting_for_obs";
     state.lastError = undefined;
 
-    const probe = await runProbe(streamKey);
+    const probe = await findReadyInput(streamKey);
     if (!probe.ready) {
       state.lastError = probe.error || "Waiting for OBS feed.";
-      log(streamKey, `Waiting for OBS feed at ${getInputUrl(streamKey)}`);
+      log(streamKey, `Waiting for OBS feed. Tried:\n${state.lastError}`);
       this.scheduleRetry(streamKey);
       return;
     }
 
     state.status = "starting";
     state.hasAudio = probe.hasAudio;
+    state.inputUrl = probe.inputUrl;
     state.startedAt = Date.now();
     state.lastExitCode = undefined;
     cleanMediaDir(streamKey);
     await StreamService.setStreamActive(streamKey, false).catch(() => {});
 
-    const args = buildFfmpegArgs(streamKey, probe.hasAudio);
-    log(streamKey, `Starting HLS pipeline (${probe.hasAudio ? "video+audio" : "video-only"}).`);
+    const args = buildFfmpegArgs(streamKey, probe.inputUrl!, probe.hasAudio);
+    log(streamKey, `Starting HLS pipeline from ${probe.inputUrl} (${probe.hasAudio ? "video+audio" : "video-only"}).`);
 
     const ffmpeg = spawn("ffmpeg", args);
     state.process = ffmpeg;
