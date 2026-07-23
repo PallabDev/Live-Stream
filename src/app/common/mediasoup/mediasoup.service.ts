@@ -58,6 +58,11 @@ const MEDIA_CODECS: mediasoup.types.RtpCodecCapability[] = [
     mimeType: "video/VP8",
     clockRate: 90000,
     preferredPayloadType: 96,
+    parameters: {
+      "x-google-min-bitrate": 4000,
+      "x-google-start-bitrate": 6000,
+      "x-google-max-bitrate": 8000,
+    },
   },
   {
     kind: "video",
@@ -68,7 +73,9 @@ const MEDIA_CODECS: mediasoup.types.RtpCodecCapability[] = [
       "packetization-mode": 1,
       "profile-level-id": "42e01f",
       "level-asymmetry-allowed": 1,
-      "x-google-start-bitrate": 5000,
+      "x-google-min-bitrate": 4000,
+      "x-google-start-bitrate": 6000,
+      "x-google-max-bitrate": 8000,
     },
   },
   {
@@ -80,6 +87,9 @@ const MEDIA_CODECS: mediasoup.types.RtpCodecCapability[] = [
       "packetization-mode": 1,
       "profile-level-id": "42001f",
       "level-asymmetry-allowed": 1,
+      "x-google-min-bitrate": 4000,
+      "x-google-start-bitrate": 6000,
+      "x-google-max-bitrate": 8000,
     },
   },
   {
@@ -91,6 +101,9 @@ const MEDIA_CODECS: mediasoup.types.RtpCodecCapability[] = [
       "packetization-mode": 1,
       "profile-level-id": "4d001f",
       "level-asymmetry-allowed": 1,
+      "x-google-min-bitrate": 4000,
+      "x-google-start-bitrate": 6000,
+      "x-google-max-bitrate": 8000,
     },
   },
   {
@@ -102,6 +115,9 @@ const MEDIA_CODECS: mediasoup.types.RtpCodecCapability[] = [
       "packetization-mode": 1,
       "profile-level-id": "64002a",
       "level-asymmetry-allowed": 1,
+      "x-google-min-bitrate": 4000,
+      "x-google-start-bitrate": 6000,
+      "x-google-max-bitrate": 8000,
     },
   },
 ];

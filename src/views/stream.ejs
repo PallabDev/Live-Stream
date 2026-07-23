@@ -401,8 +401,19 @@
                             if (videoTrack) {
                                 videoProducer = await sendTransport.produce({
                                     track: videoTrack,
-                                    encodings: [{ maxBitrate: 6000000 }], // 6.0 Mbps High Bitrate
-                                    codecOptions: { videoGoogleStartBitrate: 5000 }
+                                    encodings: [
+                                        {
+                                            minBitrate: 4000000, // Force 4.0 Mbps Minimum Bitrate Floor
+                                            maxBitrate: 8000000, // 8.0 Mbps High Quality Ceiling
+                                            priority: "high",
+                                            networkPriority: "high"
+                                        }
+                                    ],
+                                    codecOptions: {
+                                        videoGoogleStartBitrate: 6000,
+                                        videoGoogleMinBitrate: 4000,
+                                        videoGoogleMaxBitrate: 8000
+                                    }
                                 });
                             }
 
