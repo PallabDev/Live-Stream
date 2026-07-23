@@ -18,6 +18,7 @@ interface PipelineState {
   status: PipelineStatus;
   process?: ChildProcessWithoutNullStreams;
   wantsRun: boolean;
+  attemptInFlight: boolean;
   hasAudio: boolean;
   inputUrl?: string;
   startedAt?: number;
@@ -140,78 +141,69 @@ function buildFfmpegArgs(streamKey: string, inputUrl: string, hasAudio: boolean)
 
   if (hasAudio) {
     args.push(
-      "-map", "0:v:0",
-      "-map", "0:a:0",
       "-map", "[v720]",
       "-map", "0:a:0",
       "-map", "[v480]",
       "-map", "0:a:0",
-      "-c:v:0", "copy",
+      "-c:v:0", "libx264",
+      "-preset:v:0", process.env.X264_PRESET_720 || "veryfast",
+      "-tune:v:0", "zerolatency",
+      "-r:v:0", fps.toString(),
+      "-g:v:0", keyframeInterval.toString(),
+      "-keyint_min:v:0", keyframeInterval.toString(),
+      "-sc_threshold:v:0", "0",
+      "-b:v:0", "3500k",
+      "-maxrate:v:0", "4200k",
+      "-bufsize:v:0", "7000k",
+      "-pix_fmt:v:0", "yuv420p",
       "-c:a:0", "aac",
-      "-b:a:0", "160k",
+      "-b:a:0", "128k",
       "-ac:a:0", "2",
       "-ar:a:0", "48000",
       "-c:v:1", "libx264",
-      "-preset:v:1", process.env.X264_PRESET_720 || "veryfast",
+      "-preset:v:1", process.env.X264_PRESET_480 || "veryfast",
       "-tune:v:1", "zerolatency",
       "-r:v:1", fps.toString(),
       "-g:v:1", keyframeInterval.toString(),
       "-keyint_min:v:1", keyframeInterval.toString(),
       "-sc_threshold:v:1", "0",
-      "-b:v:1", "3500k",
-      "-maxrate:v:1", "4200k",
-      "-bufsize:v:1", "7000k",
+      "-b:v:1", "1400k",
+      "-maxrate:v:1", "1700k",
+      "-bufsize:v:1", "2800k",
       "-pix_fmt:v:1", "yuv420p",
       "-c:a:1", "aac",
-      "-b:a:1", "128k",
+      "-b:a:1", "112k",
       "-ac:a:1", "2",
       "-ar:a:1", "48000",
-      "-c:v:2", "libx264",
-      "-preset:v:2", process.env.X264_PRESET_480 || "veryfast",
-      "-tune:v:2", "zerolatency",
-      "-r:v:2", fps.toString(),
-      "-g:v:2", keyframeInterval.toString(),
-      "-keyint_min:v:2", keyframeInterval.toString(),
-      "-sc_threshold:v:2", "0",
-      "-b:v:2", "1400k",
-      "-maxrate:v:2", "1700k",
-      "-bufsize:v:2", "2800k",
-      "-pix_fmt:v:2", "yuv420p",
-      "-c:a:2", "aac",
-      "-b:a:2", "112k",
-      "-ac:a:2", "2",
-      "-ar:a:2", "48000",
-      "-var_stream_map", "v:0,a:0,name:1080p v:1,a:1,name:720p v:2,a:2,name:480p",
+      "-var_stream_map", "v:0,a:0,name:720p v:1,a:1,name:480p",
     );
   } else {
     args.push(
-      "-map", "0:v:0",
       "-map", "[v720]",
       "-map", "[v480]",
-      "-c:v:0", "copy",
+      "-c:v:0", "libx264",
+      "-preset:v:0", process.env.X264_PRESET_720 || "veryfast",
+      "-tune:v:0", "zerolatency",
+      "-r:v:0", fps.toString(),
+      "-g:v:0", keyframeInterval.toString(),
+      "-keyint_min:v:0", keyframeInterval.toString(),
+      "-sc_threshold:v:0", "0",
+      "-b:v:0", "3500k",
+      "-maxrate:v:0", "4200k",
+      "-bufsize:v:0", "7000k",
+      "-pix_fmt:v:0", "yuv420p",
       "-c:v:1", "libx264",
-      "-preset:v:1", process.env.X264_PRESET_720 || "veryfast",
+      "-preset:v:1", process.env.X264_PRESET_480 || "veryfast",
       "-tune:v:1", "zerolatency",
       "-r:v:1", fps.toString(),
       "-g:v:1", keyframeInterval.toString(),
       "-keyint_min:v:1", keyframeInterval.toString(),
       "-sc_threshold:v:1", "0",
-      "-b:v:1", "3500k",
-      "-maxrate:v:1", "4200k",
-      "-bufsize:v:1", "7000k",
+      "-b:v:1", "1400k",
+      "-maxrate:v:1", "1700k",
+      "-bufsize:v:1", "2800k",
       "-pix_fmt:v:1", "yuv420p",
-      "-c:v:2", "libx264",
-      "-preset:v:2", process.env.X264_PRESET_480 || "veryfast",
-      "-tune:v:2", "zerolatency",
-      "-r:v:2", fps.toString(),
-      "-g:v:2", keyframeInterval.toString(),
-      "-keyint_min:v:2", keyframeInterval.toString(),
-      "-sc_threshold:v:2", "0",
-      "-b:v:2", "1400k",
-      "-maxrate:v:2", "1700k",
-      "-bufsize:v:2", "2800k",
-      "-pix_fmt:v:2", "yuv420p",
-      "-var_stream_map", "v:0,name:1080p v:1,name:720p v:2,name:480p",
+      "-var_stream_map", "v:0,name:720p v:1,name:480p",
     );
   }
 
@@ -338,11 +330,17 @@ export class TranscodeService {
       return this.getPipelineStatus(streamKey);
     }
 
+    if (state?.attemptInFlight) {
+      state.wantsRun = true;
+      return this.getPipelineStatus(streamKey);
+    }
+
     if (!state) {
       state = {
         streamKey,
         status: "idle",
         wantsRun: true,
+        attemptInFlight: false,
         hasAudio: false,
       };
       this.pipelines.set(streamKey, state);
@@ -364,6 +362,7 @@ export class TranscodeService {
     if (!state) return;
 
     state.wantsRun = false;
+    state.attemptInFlight = false;
     state.status = "stopped";
     state.lastError = undefined;
     if (state.retryTimer) {
@@ -421,9 +420,11 @@ export class TranscodeService {
     state.retryTimer = undefined;
     state.status = "waiting_for_obs";
     state.lastError = undefined;
+    state.attemptInFlight = true;
 
     const probe = await findReadyInput(streamKey);
     if (!probe.ready) {
+      state.attemptInFlight = false;
       state.lastError = probe.error || "Waiting for OBS feed.";
       log(streamKey, `Waiting for OBS feed. Tried:\n${state.lastError}`);
       this.scheduleRetry(streamKey);
@@ -443,6 +444,7 @@ export class TranscodeService {
 
     const ffmpeg = spawn("ffmpeg", args);
     state.process = ffmpeg;
+    state.attemptInFlight = false;
     let stderrBuffer = "";
 
     state.playlistTimer = setInterval(() => {
@@ -471,6 +473,7 @@ export class TranscodeService {
     });
 
     ffmpeg.on("error", (err) => {
+      state.attemptInFlight = false;
       this.markFailed(streamKey, err.message);
     });
 
