@@ -6,8 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-    <!-- Import Mediasoup Client JS Library for WebRTC SFU Player -->
-    <script src="https://cdn.jsdelivr.net/npm/mediasoup-client@3/dist/mediasoup-client.min.js"></script>
+    <!-- Self-Hosted Mediasoup Client JS Library -->
+    <script src="/js/mediasoup-client.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         html, body {
@@ -140,7 +140,12 @@
                     switch (msg.action) {
                         case "routerRtpCapabilities": {
                             // 1. Load Mediasoup Device with Router Capabilities
-                            device = new mediasoupClient.Device();
+                            const clientLib = window.mediasoupClient || window.MediasoupClient || window.mediasoup;
+                            if (!clientLib) {
+                                console.error("[Mediasoup Player Error]: Client library not available.");
+                                return;
+                            }
+                            device = new clientLib.Device();
                             await device.load({ routerRtpCapabilities: msg.rtpCapabilities });
 
                             // 2. Request WebRTC Consumer Transport

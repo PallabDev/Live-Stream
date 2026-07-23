@@ -1,7 +1,7 @@
 <%- include('header') %>
 
-<!-- Import Mediasoup Client JS Library for WebRTC SFU Streaming -->
-<script src="https://cdn.jsdelivr.net/npm/mediasoup-client@3/dist/mediasoup-client.min.js"></script>
+<!-- Self-Hosted Mediasoup Client JS Library -->
+<script src="/js/mediasoup-client.min.js"></script>
 
 <!-- Server-passed variables for JS -->
 <div id="studio-config" data-stream-key="<%= stream.streamKey %>" data-is-live="<%= stream.isLive %>" style="display: none;"></div>
@@ -65,9 +65,9 @@
                 <!-- Footer Control Bar -->
                 <div style="padding: 1.25rem 1.5rem; background: rgba(0, 0, 0, 0.4); border-top: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
                     <div style="display: flex; align-items: center; gap: 1.25rem;">
-                        <button id="go-live-btn" onclick="toggleLiveState()" class="btn" style="padding: 0.75rem 1.75rem; font-size: 1.05rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 10px; background: #10b981; color: #fff; border: none; cursor: pointer;">
+                        <button id="go-live-btn" onclick="toggleLiveState()" class="btn" style="padding: 0.75rem 1.75rem; font-size: 1.05rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 10px; background: #ef4444; color: #fff; border: none; cursor: pointer; transition: all 0.2s ease;">
                             <i class="ti ti-broadcast" style="font-size: 1.3rem;"></i>
-                            <span>Go Live (WebRTC SFU)</span>
+                            <span>Go Live</span>
                         </button>
 
                         <div style="width: 1px; height: 30px; background: var(--panel-border);"></div>
@@ -98,7 +98,7 @@
                 <div style="margin-bottom: 1.25rem;">
                     <label style="display: block; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.4rem; font-weight: 600;">Stream Key</label>
                     <div style="display: flex; gap: 0.5rem;">
-                        <input type="text" id="stream-key-input" class="form-control" value="<%= stream.streamKey %>" readonly style="font-family: monospace; background: rgba(0,0,0,0.5);">
+                        <input type="text" id="stream-key-input" class="form-control" value="<%= stream.streamKey %>" readonly style="font-family: monospace; color: #ffffff !important; background: rgba(0, 0, 0, 0.6) !important; border: 1px solid var(--panel-border);">
                         <button class="btn btn-secondary" id="copy-key-btn" title="Copy Stream Key">
                             <i class="ti ti-copy"></i>
                         </button>
@@ -108,7 +108,7 @@
                 <div style="margin-bottom: 1.5rem;">
                     <label style="display: block; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.4rem; font-weight: 600;">Direct Viewer Link</label>
                     <div style="display: flex; gap: 0.5rem;">
-                        <input type="text" id="viewer-link-input" class="form-control" value="<%= stream.streamKey %>" readonly style="font-family: monospace; background: rgba(0,0,0,0.5);">
+                        <input type="text" id="viewer-link-input" class="form-control" value="<%= stream.streamKey %>" readonly style="font-family: monospace; color: #ffffff !important; background: rgba(0, 0, 0, 0.6) !important; border: 1px solid var(--panel-border);">
                         <button class="btn btn-secondary" id="copy-link-btn" title="Copy Link">
                             <i class="ti ti-copy"></i>
                         </button>
@@ -142,6 +142,12 @@
         // Read configuration from server-rendered dataset
         const studioConfig = document.getElementById("studio-config");
         const streamKey = studioConfig ? studioConfig.dataset.streamKey : "";
+
+        // Populate full direct viewer link in input box
+        const viewerLinkInput = document.getElementById("viewer-link-input");
+        if (viewerLinkInput && streamKey) {
+            viewerLinkInput.value = `${window.location.origin}/live/${streamKey}`;
+        }
         // Copy Helper Event Listeners
         document.getElementById("copy-key-btn")?.addEventListener("click", () => {
             const val = document.getElementById("stream-key-input")?.value;
@@ -296,7 +302,12 @@
                     switch (msg.action) {
                         case "routerRtpCapabilities": {
                             // 1. Load Mediasoup Device with Router Capabilities
-                            device = new mediasoupClient.Device();
+                            const clientLib = window.mediasoupClient || window.MediasoupClient || window.mediasoup;
+                            if (!clientLib) {
+                                alert("Mediasoup client library failed to initialize! Please refresh the page.");
+                                return;
+                            }
+                            device = new clientLib.Device();
                             await device.load({ routerRtpCapabilities: msg.rtpCapabilities });
 
                             // 2. Request WebRTC Producer Transport
