@@ -8,7 +8,7 @@ services:
     env_file:
       - .env
     environment:
-      - STREAM_INTERNAL_SOURCE=rtsp://host.docker.internal:8554/live/{streamKey}
+      - STREAM_INTERNAL_SOURCE=rtsp://host.docker.internal:8554/{streamKey}
       - RTMP_PUBLIC_SERVER=${RTMP_PUBLIC_SERVER:-rtmp://watch.pallabdev.in:1935/live}
     volumes:
       - ./data:/app/data

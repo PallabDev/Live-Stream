@@ -52,7 +52,7 @@ function getInputUrl(streamKey: string) {
   const template =
     process.env.STREAM_INTERNAL_SOURCE ||
     process.env.RTMP_INTERNAL_SOURCE ||
-    "rtsp://host.docker.internal:8554/live/{streamKey}";
+    "rtsp://host.docker.internal:8554/{streamKey}";
   return template.replaceAll("{streamKey}", streamKey);
 }
 
