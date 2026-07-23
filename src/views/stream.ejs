@@ -3,139 +3,139 @@
 <!-- Import Mediasoup Client JS Library for WebRTC SFU Streaming -->
 <script src="https://cdn.jsdelivr.net/npm/mediasoup-client@3/dist/mediasoup-client.min.js"></script>
 
-<style>
-    .hidden-row {
-        display: none !important;
-    }
-
-    .flex-row-layout {
-        display: flex;
-        justify-content: space-between;
-    }
-
-    #preview-player::-webkit-media-controls-mute-button,
-    #preview-player::-webkit-media-controls-volume-slider {
-        display: none !important;
-    }
-</style>
-
 <!-- Server-passed variables for JS -->
 <div id="studio-config" data-stream-key="<%= stream.streamKey %>" data-is-live="<%= stream.isLive %>" style="display: none;"></div>
 
-<div class="app-body">
-    <div class="row g-4">
-        <!-- Left Section: Main Live Video Player & Controls -->
-        <div class="col-lg-8">
-            <div class="card bg-dark border-secondary shadow-lg">
-                <div class="card-header border-secondary d-flex justify-content-between align-items-center bg-black bg-opacity-40 py-3">
-                    <div class="d-flex align-items-center gap-2">
-                        <span id="live-badge" class="badge bg-secondary text-uppercase px-3 py-2 fw-bold" style="letter-spacing: 1px;">Offline</span>
-                        <span id="duration-badge" class="badge bg-dark border border-secondary text-light px-3 py-2 font-monospace" style="display: none;">00:00:00</span>
+<div class="studio-container" style="max-width: 1280px; margin: 2rem auto; padding: 0 1.5rem;">
+    <div style="display: grid; grid-template-columns: 1fr 340px; gap: 1.5rem;" class="studio-grid">
+        
+        <!-- Left Column: Main Stream Stage & Controls -->
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+            <div class="glass-panel" style="padding: 0; overflow: hidden; display: flex; flex-direction: column;">
+                
+                <!-- Stage Header -->
+                <div style="padding: 1rem 1.5rem; background: rgba(0, 0, 0, 0.4); border-bottom: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <span id="live-badge" class="badge" style="background: rgba(255,255,255,0.1); color: var(--text-muted); font-weight: 700; text-transform: uppercase; padding: 0.4rem 0.8rem; letter-spacing: 1px; border-radius: 6px;">
+                            Offline
+                        </span>
+                        <span id="duration-badge" style="display: none; background: rgba(0, 0, 0, 0.6); border: 1px solid var(--panel-border); color: #fff; padding: 0.3rem 0.6rem; border-radius: 6px; font-family: monospace; font-size: 0.9rem;">
+                            00:00:00
+                        </span>
                     </div>
-                    <div id="network-quality-badge" class="badge bg-secondary bg-opacity-20 border border-secondary text-secondary px-3 py-2 d-flex align-items-center gap-2">
+
+                    <div id="network-quality-badge" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(0, 0, 0, 0.4); border: 1px solid var(--panel-border); padding: 0.4rem 0.8rem; border-radius: 20px; font-size: 0.85rem; color: var(--text-muted);">
                         <i id="network-quality-icon" class="ti ti-wifi-off"></i>
                         <span id="network-quality-text">Standby</span>
                     </div>
                 </div>
 
-                <div class="card-body p-0 position-relative bg-black d-flex align-items-center justify-content-center" style="min-height: 480px; max-height: 600px;">
-                    <!-- Placeholder graphic when no media is selected -->
-                    <div id="preview-placeholder" class="text-center p-5">
-                        <div id="placeholder-icon" class="avatar avatar-xl bg-primary bg-opacity-10 text-primary rounded-circle mb-3 mx-auto d-flex align-items-center justify-content-center">
-                            <i class="ti ti-video-plus fs-1"></i>
+                <!-- Video Stage Canvas / Player -->
+                <div style="position: relative; width: 100%; min-height: 480px; max-height: 600px; background: #000; display: flex; align-items: center; justify-content: center;">
+                    
+                    <!-- Media Selection Placeholder -->
+                    <div id="preview-placeholder" style="text-align: center; padding: 3rem 1.5rem;">
+                        <div style="width: 70px; height: 70px; background: rgba(130, 163, 161, 0.15); color: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem; font-size: 2rem;">
+                            <i class="ti ti-video-plus"></i>
                         </div>
-                        <h4 id="placeholder-title" class="text-light fw-bold mb-2">No Active Media Selected</h4>
-                        <p id="placeholder-text" class="text-secondary mb-4 mx-auto" style="max-width: 400px;">
+                        <h3 style="color: #fff; font-size: 1.5rem; margin-bottom: 0.5rem;">No Active Media Selected</h3>
+                        <p style="color: var(--text-muted); font-size: 0.95rem; max-width: 420px; margin: 0 auto 1.75rem; line-height: 1.5;">
                             Select a local video file or share your screen to begin streaming via WebRTC SFU.
                         </p>
-                        <div class="d-flex justify-content-center gap-3">
-                            <label class="btn btn-primary px-4 py-2 d-flex align-items-center gap-2 cursor-pointer shadow-sm">
-                                <i class="ti ti-movie fs-5"></i> Choose Video File
-                                <input type="file" id="movie-file-input" accept="video/*" class="d-none">
+                        
+                        <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+                            <label class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; padding: 0.75rem 1.5rem;">
+                                <i class="ti ti-movie" style="font-size: 1.2rem;"></i> Choose Video File
+                                <input type="file" id="movie-file-input" accept="video/*" style="display: none;">
                             </label>
-                            <button id="screenshare-btn" onclick="startScreenShare()" class="btn btn-outline-light px-4 py-2 d-flex align-items-center gap-2">
-                                <i class="ti ti-screen-share fs-5"></i> Share Screen
+                            
+                            <button id="screenshare-btn" onclick="startScreenShare()" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem;">
+                                <i class="ti ti-screen-share" style="font-size: 1.2rem;"></i> Share Screen
                             </button>
                         </div>
                     </div>
 
-                    <!-- Broadcaster Preview Video Player -->
-                    <video id="preview-player" class="w-100 h-100 object-fit-contain" style="display: none;" playsinline muted></video>
-
-                    <!-- Hidden Audio Player to ensure clean un-muted sound for file playback -->
+                    <!-- Broadcaster Video Preview Player -->
+                    <video id="preview-player" style="display: none; width: 100%; height: 100%; object-fit: contain;" playsinline muted></video>
+                    
+                    <!-- Hidden Audio Player -->
                     <audio id="audio-player" style="display: none;"></audio>
                 </div>
 
                 <!-- Footer Control Bar -->
-                <div class="card-footer border-secondary bg-black bg-opacity-40 p-3">
-                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                        <div class="d-flex align-items-center gap-3">
-                            <button id="go-live-btn" onclick="toggleLiveState()" class="btn btn-success btn-lg px-4 d-flex align-items-center gap-2 fw-bold shadow">
-                                <i class="ti ti-broadcast fs-4"></i>
-                                <span>Go Live (WebRTC SFU)</span>
-                            </button>
-                            <div class="vr bg-secondary opacity-25" style="height: 30px;"></div>
-                            <span id="active-source-text" class="text-secondary small font-monospace">Source: None</span>
-                        </div>
+                <div style="padding: 1.25rem 1.5rem; background: rgba(0, 0, 0, 0.4); border-top: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 1.25rem;">
+                        <button id="go-live-btn" onclick="toggleLiveState()" class="btn" style="padding: 0.75rem 1.75rem; font-size: 1.05rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 10px; background: #10b981; color: #fff; border: none; cursor: pointer;">
+                            <i class="ti ti-broadcast" style="font-size: 1.3rem;"></i>
+                            <span>Go Live (WebRTC SFU)</span>
+                        </button>
 
-                        <div class="d-flex align-items-center gap-4 text-secondary small">
-                            <div>
-                                <i class="ti ti-users text-primary me-1"></i>
-                                Viewers: <strong id="viewers-count" class="text-light font-monospace">0 / 5 Max</strong>
-                            </div>
-                            <div>
-                                <i class="ti ti-activity text-info me-1"></i>
-                                Bitrate: <strong id="upload-speed-val" class="text-light font-monospace">0</strong> Kbps
-                            </div>
+                        <div style="width: 1px; height: 30px; background: var(--panel-border);"></div>
+                        <span id="active-source-text" style="color: var(--text-muted); font-size: 0.9rem; font-family: monospace;">Source: None</span>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 1.5rem; color: var(--text-muted); font-size: 0.9rem;">
+                        <div>
+                            <i class="ti ti-users" style="color: var(--primary); margin-right: 0.25rem;"></i>
+                            Viewers: <strong id="viewers-count" style="color: #fff; font-family: monospace;">0 / 5 Max</strong>
+                        </div>
+                        <div>
+                            <i class="ti ti-activity" style="color: var(--secondary); margin-right: 0.25rem;"></i>
+                            Bitrate: <strong id="upload-speed-val" style="color: #fff; font-family: monospace;">0</strong> Kbps
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Right Section: Stream Details & Information -->
-        <div class="col-lg-4">
-            <div class="card bg-dark border-secondary shadow-lg mb-4">
-                <div class="card-header border-secondary bg-black bg-opacity-40 py-3">
-                    <h5 class="card-title text-light m-0 d-flex align-items-center gap-2">
-                        <i class="ti ti-settings text-primary"></i> Stream Information
-                    </h5>
+        <!-- Right Column: Stream Configuration & Room Limits -->
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+            <div class="glass-panel" style="padding: 1.5rem;">
+                <h3 style="font-size: 1.2rem; color: #fff; margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="ti ti-settings" style="color: var(--primary);"></i> Stream Information
+                </h3>
+
+                <div style="margin-bottom: 1.25rem;">
+                    <label style="display: block; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.4rem; font-weight: 600;">Stream Key</label>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <input type="text" class="form-control" value="<%= stream.streamKey %>" readonly style="font-family: monospace; background: rgba(0,0,0,0.5);">
+                        <button class="btn btn-secondary" onclick="navigator.clipboard.writeText('<%= stream.streamKey %>')" title="Copy Stream Key">
+                            <i class="ti ti-copy"></i>
+                        </button>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <label class="form-label text-secondary small text-uppercase">Stream Key</label>
-                        <div class="input-group">
-                            <input type="text" class="form-control bg-black text-light border-secondary font-monospace" value="<%= stream.streamKey %>" readonly>
-                            <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText('<%= stream.streamKey %>')">
-                                <i class="ti ti-copy"></i>
-                            </button>
-                        </div>
-                    </div>
 
-                    <div class="mb-3">
-                        <label class="form-label text-secondary small text-uppercase">Direct Viewer Link</label>
-                        <div class="input-group">
-                            <input type="text" class="form-control bg-black text-light border-secondary font-monospace" value="<%= process.env.APP_URL || 'http://localhost:3000' %>/live/<%= stream.streamKey %>" readonly>
-                            <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText('<%= process.env.APP_URL || 'http://localhost:3000' %>/live/<%= stream.streamKey %>')">
-                                <i class="ti ti-copy"></i>
-                            </button>
-                        </div>
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: block; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.4rem; font-weight: 600;">Direct Viewer Link</label>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <input type="text" class="form-control" value="<%= process.env.APP_URL || 'http://localhost:3000' %>/live/<%= stream.streamKey %>" readonly style="font-family: monospace; background: rgba(0,0,0,0.5);">
+                        <button class="btn btn-secondary" onclick="navigator.clipboard.writeText('<%= process.env.APP_URL || 'http://localhost:3000' %>/live/<%= stream.streamKey %>')" title="Copy Link">
+                            <i class="ti ti-copy"></i>
+                        </button>
                     </div>
+                </div>
 
-                    <div class="p-3 bg-black bg-opacity-50 rounded border border-secondary">
-                        <div class="d-flex align-items-center gap-2 text-warning mb-2">
-                            <i class="ti ti-info-circle fs-5"></i>
-                            <strong class="small">Room Limit Notice</strong>
-                        </div>
-                        <p class="text-secondary small m-0">
-                            Mediasoup SFU limits this stream to a maximum of <strong>5 concurrent viewers</strong> for ultra-high quality, sub-second WebRTC delivery.
-                        </p>
+                <div style="padding: 1rem; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: var(--radius-md);">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; color: #f59e0b; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem;">
+                        <i class="ti ti-info-circle"></i> Room Limit Notice
                     </div>
+                    <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
+                        Mediasoup SFU limits this stream to a maximum of <strong>5 concurrent viewers</strong> for ultra-high quality, sub-second WebRTC delivery.
+                    </p>
                 </div>
             </div>
         </div>
+
     </div>
 </div>
+
+<style>
+    @media (max-width: 992px) {
+        .studio-grid {
+            grid-template-columns: 1fr !important;
+        }
+    }
+</style>
 
 <script>
     document.addEventListener("DOMContentLoaded", () => {
@@ -146,7 +146,6 @@
         // UI State Variables
         let isLive = false;
         let isStreaming = false;
-        let isManuallyStopped = false;
         let currentSourceType = null; // 'file' or 'screen'
 
         // Media Stream & Player References
@@ -446,23 +445,27 @@
             const qualityText = document.getElementById("network-quality-text");
 
             if (isLive) {
-                liveBadge.className = "badge bg-danger text-uppercase px-3 py-2 fw-bold animate-pulse";
+                liveBadge.style.background = "#ef4444";
+                liveBadge.style.color = "#fff";
                 liveBadge.textContent = "● LIVE (SFU)";
 
-                goLiveBtn.className = "btn btn-danger btn-lg px-4 d-flex align-items-center gap-2 fw-bold shadow";
+                goLiveBtn.style.background = "#ef4444";
                 goLiveBtn.querySelector("span").textContent = "Stop Stream";
 
-                qualityBadge.className = "badge bg-success bg-opacity-20 border border-success text-success px-3 py-2 d-flex align-items-center gap-2";
+                qualityBadge.style.borderColor = "#10b981";
+                qualityBadge.style.color = "#10b981";
                 qualityIcon.className = "ti ti-wifi";
                 qualityText.textContent = "WebRTC SFU Active";
             } else {
-                liveBadge.className = "badge bg-secondary text-uppercase px-3 py-2 fw-bold";
+                liveBadge.style.background = "rgba(255,255,255,0.1)";
+                liveBadge.style.color = "var(--text-muted)";
                 liveBadge.textContent = "Offline";
 
-                goLiveBtn.className = "btn btn-success btn-lg px-4 d-flex align-items-center gap-2 fw-bold shadow";
+                goLiveBtn.style.background = "#10b981";
                 goLiveBtn.querySelector("span").textContent = "Go Live (WebRTC SFU)";
 
-                qualityBadge.className = "badge bg-secondary bg-opacity-20 border border-secondary text-secondary px-3 py-2 d-flex align-items-center gap-2";
+                qualityBadge.style.borderColor = "var(--panel-border)";
+                qualityBadge.style.color = "var(--text-muted)";
                 qualityIcon.className = "ti ti-wifi-off";
                 qualityText.textContent = "Standby";
 
