@@ -32,6 +32,7 @@ interface PipelineState {
 const SAFE_STREAM_KEY_RE = /^[a-zA-Z0-9_-]+$/;
 const RETRY_DELAY_MS = 5000;
 const PLAYLIST_CHECK_MS = 1000;
+const DEFAULT_PLAYLIST_STALE_MS = 15000;
 
 function log(streamKey: string, message: string) {
   const line = `[Transcode:${streamKey}] ${message}`;
@@ -96,6 +97,9 @@ function playlistExists(streamKey: string) {
   const master = getMasterPlaylistPath(streamKey);
   if (!fs.existsSync(master)) return false;
   try {
+    const stats = fs.statSync(master);
+    const staleMs = Number(process.env.HLS_PLAYLIST_STALE_MS || DEFAULT_PLAYLIST_STALE_MS);
+    if (Date.now() - stats.mtimeMs > staleMs) return false;
     const content = fs.readFileSync(master, "utf8");
     return content.includes("#EXT-X-STREAM-INF");
   } catch (_) {
@@ -152,9 +156,9 @@ function buildFfmpegArgs(streamKey: string, inputUrl: string, hasAudio: boolean)
       "-g:v:0", keyframeInterval.toString(),
       "-keyint_min:v:0", keyframeInterval.toString(),
       "-sc_threshold:v:0", "0",
-      "-b:v:0", "3500k",
-      "-maxrate:v:0", "4200k",
-      "-bufsize:v:0", "7000k",
+      "-b:v:0", process.env.HLS_720_VIDEO_BITRATE || "1800k",
+      "-maxrate:v:0", process.env.HLS_720_VIDEO_MAXRATE || "2200k",
+      "-bufsize:v:0", process.env.HLS_720_VIDEO_BUFSIZE || "3600k",
       "-pix_fmt:v:0", "yuv420p",
       "-c:a:0", "aac",
       "-b:a:0", "128k",
@@ -167,9 +171,9 @@ function buildFfmpegArgs(streamKey: string, inputUrl: string, hasAudio: boolean)
       "-g:v:1", keyframeInterval.toString(),
       "-keyint_min:v:1", keyframeInterval.toString(),
       "-sc_threshold:v:1", "0",
-      "-b:v:1", "1400k",
-      "-maxrate:v:1", "1700k",
-      "-bufsize:v:1", "2800k",
+      "-b:v:1", process.env.HLS_480_VIDEO_BITRATE || "800k",
+      "-maxrate:v:1", process.env.HLS_480_VIDEO_MAXRATE || "1000k",
+      "-bufsize:v:1", process.env.HLS_480_VIDEO_BUFSIZE || "1600k",
       "-pix_fmt:v:1", "yuv420p",
       "-c:a:1", "aac",
       "-b:a:1", "112k",
@@ -188,9 +192,9 @@ function buildFfmpegArgs(streamKey: string, inputUrl: string, hasAudio: boolean)
       "-g:v:0", keyframeInterval.toString(),
       "-keyint_min:v:0", keyframeInterval.toString(),
       "-sc_threshold:v:0", "0",
-      "-b:v:0", "3500k",
-      "-maxrate:v:0", "4200k",
-      "-bufsize:v:0", "7000k",
+      "-b:v:0", process.env.HLS_720_VIDEO_BITRATE || "1800k",
+      "-maxrate:v:0", process.env.HLS_720_VIDEO_MAXRATE || "2200k",
+      "-bufsize:v:0", process.env.HLS_720_VIDEO_BUFSIZE || "3600k",
       "-pix_fmt:v:0", "yuv420p",
       "-c:v:1", "libx264",
       "-preset:v:1", process.env.X264_PRESET_480 || "veryfast",
@@ -199,9 +203,9 @@ function buildFfmpegArgs(streamKey: string, inputUrl: string, hasAudio: boolean)
       "-g:v:1", keyframeInterval.toString(),
       "-keyint_min:v:1", keyframeInterval.toString(),
       "-sc_threshold:v:1", "0",
-      "-b:v:1", "1400k",
-      "-maxrate:v:1", "1700k",
-      "-bufsize:v:1", "2800k",
+      "-b:v:1", process.env.HLS_480_VIDEO_BITRATE || "800k",
+      "-maxrate:v:1", process.env.HLS_480_VIDEO_MAXRATE || "1000k",
+      "-bufsize:v:1", process.env.HLS_480_VIDEO_BUFSIZE || "1600k",
       "-pix_fmt:v:1", "yuv420p",
       "-var_stream_map", "v:0,name:720p v:1,name:480p",
     );
@@ -314,9 +318,9 @@ export class TranscodeService {
       recommendedObs: {
         encoder: "H.264",
         rateControl: "CBR",
-        bitrate: "6000-8000 Kbps for 1080p, 3500-5000 Kbps for 720p",
+        bitrate: "1200-1800 Kbps for 720p, 700-1000 Kbps for 480p",
         keyframeInterval: "2 seconds",
-        audio: "AAC, 160-192 Kbps, 48 kHz stereo",
+        audio: "AAC, 96-128 Kbps, 48 kHz stereo",
       },
     };
   }

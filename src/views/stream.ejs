@@ -87,7 +87,7 @@
         </div>
         <div style="display: flex; justify-content: space-between; gap: 1rem;">
           <span>Bitrate</span>
-          <strong style="color: #fff;">6000-8000 Kbps</strong>
+          <strong style="color: #fff;">1200-1800 Kbps</strong>
         </div>
       </div>
     </section>
@@ -99,11 +99,11 @@
       <div style="display: grid; gap: 0.75rem;">
         <div class="obs-ladder-row">
           <span>720p</span>
-          <strong>3.5 Mbps</strong>
+          <strong>1.8 Mbps</strong>
         </div>
         <div class="obs-ladder-row">
           <span>480p</span>
-          <strong>1.4 Mbps</strong>
+          <strong>800 Kbps</strong>
         </div>
       </div>
     </section>
@@ -148,6 +148,7 @@
 
   let hls = null;
   let previewAttached = false;
+  let previewUrl = null;
 
   window.copyField = function(id) {
     const el = document.getElementById(id);
@@ -198,9 +199,30 @@
     }
   }
 
+  function withCacheBust(url) {
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}v=${Date.now()}`;
+  }
+
+  function seekPreviewToLiveEdge() {
+    try {
+      const ranges = previewVideo.seekable;
+      if (ranges && ranges.length > 0) {
+        previewVideo.currentTime = Math.max(ranges.end(ranges.length - 1) - 1.5, 0);
+      }
+    } catch (_) {}
+  }
+
   function attachPreview(url) {
-    if (previewAttached) return;
+    const freshUrl = withCacheBust(url);
+    if (previewAttached && previewUrl === url && hls) {
+      hls.startLoad(-1);
+      seekPreviewToLiveEdge();
+      previewVideo.play().catch(() => {});
+      return;
+    }
     previewAttached = true;
+    previewUrl = url;
     previewEmpty.style.display = 'none';
 
     if (hls) {
@@ -209,7 +231,8 @@
     }
 
     if (previewVideo.canPlayType('application/vnd.apple.mpegurl')) {
-      previewVideo.src = url;
+      previewVideo.src = freshUrl;
+      previewVideo.addEventListener('loadedmetadata', seekPreviewToLiveEdge, { once: true });
       previewVideo.play().catch(() => {});
       return;
     }
@@ -217,18 +240,32 @@
     if (window.Hls && Hls.isSupported()) {
       hls = new Hls({
         lowLatencyMode: false,
-        liveSyncDurationCount: 4,
-        maxBufferLength: 45,
-        backBufferLength: 30,
+        liveSyncDurationCount: 2,
+        liveMaxLatencyDurationCount: 5,
+        maxLiveSyncPlaybackRate: 1.5,
+        maxBufferLength: 20,
+        backBufferLength: 10,
+        manifestLoadingMaxRetry: 6,
+        levelLoadingMaxRetry: 6,
+        fragLoadingMaxRetry: 6,
       });
-      hls.loadSource(url);
+      hls.loadSource(freshUrl);
       hls.attachMedia(previewVideo);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        hls.startLoad(-1);
+        seekPreviewToLiveEdge();
         previewVideo.play().catch(() => {});
       });
+      hls.on(Hls.Events.LEVEL_UPDATED, seekPreviewToLiveEdge);
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data && data.fatal) {
+        if (!data) return;
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls.startLoad(-1);
+          return;
+        }
+        if (data.fatal) {
           previewAttached = false;
+          previewUrl = null;
           previewEmpty.style.display = 'flex';
           previewMessage.textContent = 'Preview stalled. Waiting for fresh HLS segments.';
           hls.destroy();
@@ -246,7 +283,7 @@
       obsBadge.className = 'badge badge-success';
       obsBadge.innerHTML = '<i class="ti ti-point-filled"></i> OBS Preview Ready';
       goLiveBtn.disabled = false;
-      attachPreview(status.previewUrl + '?v=' + Date.now());
+      attachPreview(status.previewUrl);
     } else if (status.status === 'waiting_for_obs') {
       obsBadge.className = 'badge badge-primary';
       obsBadge.innerHTML = '<i class="ti ti-antenna-bars-off"></i> Waiting for OBS';

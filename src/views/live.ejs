@@ -197,6 +197,21 @@
     let hls = null;
     let currentUrl = null;
     let playRequested = false;
+    let lastAttachAt = 0;
+
+    function withCacheBust(url) {
+      const separator = url.includes('?') ? '&' : '?';
+      return `${url}${separator}v=${Date.now()}`;
+    }
+
+    function seekToLiveEdge() {
+      try {
+        const ranges = video.seekable;
+        if (ranges && ranges.length > 0) {
+          video.currentTime = Math.max(ranges.end(ranges.length - 1) - 1.5, 0);
+        }
+      } catch (_) {}
+    }
 
     function setOffline(message) {
       statusPill.className = 'status-pill';
@@ -206,6 +221,7 @@
       overlayCopy.textContent = message || 'The host has not opened the movie room yet. This page will start checking automatically.';
       manualPlayBtn.style.display = 'none';
       currentUrl = null;
+      lastAttachAt = 0;
       if (hls) {
         hls.destroy();
         hls = null;
@@ -231,12 +247,20 @@
 
     function attemptPlay() {
       playRequested = true;
+      seekToLiveEdge();
       video.play().then(showLiveReady).catch(showPlayPrompt);
     }
 
     function attachHls(url) {
-      if (currentUrl === url) return;
+      const shouldReload = currentUrl !== url || !hls || (Date.now() - lastAttachAt) > 30000;
+      if (!shouldReload) {
+        if (hls) hls.startLoad(-1);
+        if (!video.paused) seekToLiveEdge();
+        return;
+      }
       currentUrl = url;
+      lastAttachAt = Date.now();
+      const freshUrl = withCacheBust(url);
 
       if (hls) {
         hls.destroy();
@@ -244,7 +268,8 @@
       }
 
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = url;
+        video.src = freshUrl;
+        video.addEventListener('loadedmetadata', seekToLiveEdge, { once: true });
         attemptPlay();
         return;
       }
@@ -259,19 +284,31 @@
 
       hls = new Hls({
         lowLatencyMode: false,
-        liveSyncDurationCount: 4,
-        maxBufferLength: 60,
-        backBufferLength: 30,
+        liveSyncDurationCount: 2,
+        liveMaxLatencyDurationCount: 5,
+        maxLiveSyncPlaybackRate: 1.5,
+        maxBufferLength: 20,
+        backBufferLength: 10,
+        manifestLoadingMaxRetry: 6,
+        levelLoadingMaxRetry: 6,
+        fragLoadingMaxRetry: 6,
       });
-      hls.loadSource(url);
+      hls.loadSource(freshUrl);
       hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, attemptPlay);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        hls.startLoad(-1);
+        attemptPlay();
+      });
+      hls.on(Hls.Events.LEVEL_UPDATED, () => {
+        if (!video.paused) seekToLiveEdge();
+      });
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (!data || !data.fatal) return;
+        if (!data) return;
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          hls.startLoad();
+          hls.startLoad(-1);
           return;
         }
+        if (!data.fatal) return;
         setOffline('Playback stalled. Waiting for the host feed to recover.');
       });
     }
