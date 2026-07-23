@@ -44,6 +44,21 @@ export class SFUController {
   }
 
   /**
+   * Notify all viewers in room when broadcaster stops stream or disconnects
+   */
+  private static broadcastStreamStopped(streamKey: string) {
+    const room = this.roomSockets.get(streamKey);
+    if (!room) return;
+
+    const payload = JSON.stringify({ action: "streamStopped" });
+    for (const [_, vWs] of room.viewers.entries()) {
+      if (vWs.readyState === 1) { // OPEN
+        try { vWs.send(payload); } catch (_) {}
+      }
+    }
+  }
+
+  /**
    * Handle Mediasoup WebRTC SFU WebSocket Connection
    */
   public static handleConnection(ws: WebSocket, streamKey: string, isBroadcaster: boolean, viewerId: string) {
@@ -103,10 +118,11 @@ export class SFUController {
             // Update DB status to live
             await StreamService.setStreamLive(streamKey, true);
 
-            // Broadcast newProducer signal to all viewers waiting in room
+            // Broadcast newProducer & streamStarted signals to all viewers waiting in room
             for (const [vId, vWs] of room.viewers.entries()) {
               if (vWs.readyState === 1) { // OPEN
                 vWs.send(JSON.stringify({ action: "newProducer", kind, producerId: id }));
+                vWs.send(JSON.stringify({ action: "streamStarted" }));
               }
             }
             break;
@@ -123,6 +139,15 @@ export class SFUController {
             break;
           }
 
+          case "stopStream": {
+            if (isBroadcaster) {
+              this.broadcastStreamStopped(streamKey);
+              MediasoupService.closeRoom(streamKey);
+              await StreamService.setStreamLive(streamKey, false).catch(() => {});
+            }
+            break;
+          }
+
           default:
             console.warn(`[SFU WebSocket] Unknown action received: ${action}`);
         }
@@ -135,6 +160,7 @@ export class SFUController {
     ws.on("close", () => {
       console.log(`[SFU WebSocket] Connection closed for key: ${streamKey} | Role: ${isBroadcaster ? "Broadcaster" : "Viewer"}`);
       if (isBroadcaster) {
+        this.broadcastStreamStopped(streamKey);
         MediasoupService.closeRoom(streamKey);
         StreamService.setStreamLive(streamKey, false).catch(() => {});
         this.roomSockets.delete(streamKey);

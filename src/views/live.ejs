@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title><%= stream.title %> | CoWatch Player</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <!-- Self-Hosted Mediasoup Client JS Library -->
@@ -19,30 +19,30 @@
             background: #000000;
             font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
         }
+
+        /* Ensure Video Controls Are Fully Clickable On Mobile */
+        video::-webkit-media-controls {
+            z-index: 25;
+        }
     </style>
 </head>
 <body class="bg-black text-white h-screen w-screen overflow-hidden select-none relative">
 
-    <!-- Top Right Corner: Small Viewer Count Badge -->
-    <div class="absolute top-4 right-4 z-30 flex items-center space-x-1.5 text-xs text-white bg-black/60 px-3 py-1.5 rounded-full border border-white/20 backdrop-blur-md shadow-lg">
-        <i class="fa-solid fa-users text-blue-400 text-xs"></i>
-        <span id="room-limit-text" class="font-mono text-xs font-semibold">0 / 5</span>
+    <!-- Top Right Corner: Ultra-Small & Transparent Viewer Count Badge -->
+    <div class="absolute top-3 right-3 z-30 flex items-center space-x-1 text-[11px] text-white/90 bg-black/30 px-2 py-0.5 rounded-full border border-white/10 backdrop-blur-sm shadow-sm pointer-events-none">
+        <i class="fa-solid fa-users text-blue-400 text-[9px]"></i>
+        <span id="room-limit-text" class="font-mono text-[10px] font-medium">0 / 5</span>
     </div>
-
-    <!-- Bottom Right Corner: Fullscreen Button -->
-    <button id="fullscreen-btn" onclick="toggleFullScreen()" title="Toggle Fullscreen" class="absolute bottom-6 right-6 z-30 w-11 h-11 bg-black/70 hover:bg-blue-600 text-white rounded-full flex items-center justify-center border border-white/20 backdrop-blur-md shadow-2xl transition-all transform hover:scale-105">
-        <i class="fa-solid fa-expand text-base"></i>
-    </button>
 
     <!-- Main Video Player Stage -->
     <main class="relative w-full h-full flex items-center justify-center bg-black">
-        <!-- Unmute Tap Overlay (Middle of Screen as it is) -->
+        <!-- Unmute Tap Overlay (Middle of Screen) -->
         <div id="unmute-overlay" onclick="unmuteStream()" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm cursor-pointer transition-opacity duration-300">
-            <div class="w-20 h-20 bg-blue-600 hover:bg-blue-500 rounded-full flex items-center justify-center shadow-2xl mb-4 transform hover:scale-105 transition-all">
-                <i class="fa-solid fa-volume-high text-3xl text-white ms-1"></i>
+            <div class="w-16 h-16 bg-blue-600 hover:bg-blue-500 rounded-full flex items-center justify-center shadow-2xl mb-3 transform hover:scale-105 transition-all">
+                <i class="fa-solid fa-volume-high text-2xl text-white ms-1"></i>
             </div>
-            <p class="text-white text-lg font-medium">Click Anywhere to Unmute Sound</p>
-            <p class="text-gray-400 text-xs mt-1">High Fidelity WebRTC SFU Audio Stream</p>
+            <p class="text-white text-base font-medium">Tap Anywhere to Unmute</p>
+            <p class="text-gray-400 text-xs mt-1">Sub-Second WebRTC Stream</p>
         </div>
 
         <!-- Room Full Overlay Modal (Exceeds 5 users) -->
@@ -69,7 +69,7 @@
         </div>
 
         <!-- High Quality Video Element with Native Controls -->
-        <video id="remoteVideo" class="w-full h-full object-contain" controls autoplay playsinline muted></video>
+        <video id="remoteVideo" class="w-full h-full object-contain" controls autoplay playsinline webkit-playsinline muted></video>
     </main>
 
     <!-- Mediasoup SFU WebRTC Consumer JavaScript -->
@@ -93,19 +93,8 @@
          */
         function unmuteStream() {
             remoteVideo.muted = false;
-            unmuteOverlay.classList.add("opacity-0", "pointer-events-none");
-            setTimeout(() => unmuteOverlay.classList.add("hidden"), 300);
-        }
-
-        /**
-         * Toggle Fullscreen Mode
-         */
-        function toggleFullScreen() {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(() => {});
-            } else {
-                document.exitFullscreen().catch(() => {});
-            }
+            remoteVideo.play().catch(() => {});
+            unmuteOverlay.style.display = 'none';
         }
 
         /**
@@ -189,8 +178,10 @@
                             break;
                         }
 
+                        case "streamStarted":
                         case "newProducer": {
-                            // Automatically consume when broadcaster starts producing tracks
+                            // Automatically connect and consume when broadcaster goes live
+                            offlineOverlay.classList.add("hidden");
                             if (recvTransport && device) {
                                 sfuSocket.send(JSON.stringify({
                                     action: "consume",
@@ -198,6 +189,19 @@
                                     transportId: recvTransport.id,
                                     rtpCapabilities: device.rtpCapabilities
                                 }));
+                            } else if (sfuSocket && sfuSocket.readyState === 1) {
+                                sfuSocket.send(JSON.stringify({ action: "getRouterRtpCapabilities" }));
+                            }
+                            break;
+                        }
+
+                        case "streamStopped": {
+                            console.log("[Mediasoup Player] Broadcaster stopped stream. Transitioning to offline state.");
+                            offlineOverlay.classList.remove("hidden");
+                            remoteVideo.srcObject = null;
+                            if (recvTransport) {
+                                try { recvTransport.close(); } catch (_) {}
+                                recvTransport = null;
                             }
                             break;
                         }

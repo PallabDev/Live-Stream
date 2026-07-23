@@ -473,6 +473,10 @@
             isLive = false;
             isStreaming = false;
 
+            if (sfuSocket && sfuSocket.readyState === 1) {
+                try { sfuSocket.send(JSON.stringify({ action: "stopStream" })); } catch (_) {}
+            }
+
             if (videoProducer) { try { videoProducer.close(); } catch (_) {} videoProducer = null; }
             if (audioProducer) { try { audioProducer.close(); } catch (_) {} audioProducer = null; }
             if (sendTransport) { try { sendTransport.close(); } catch (_) {} sendTransport = null; }
