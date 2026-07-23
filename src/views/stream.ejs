@@ -98,8 +98,8 @@
                 <div style="margin-bottom: 1.25rem;">
                     <label style="display: block; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.4rem; font-weight: 600;">Stream Key</label>
                     <div style="display: flex; gap: 0.5rem;">
-                        <input type="text" class="form-control" value="<%= stream.streamKey %>" readonly style="font-family: monospace; background: rgba(0,0,0,0.5);">
-                        <button class="btn btn-secondary" onclick="navigator.clipboard.writeText('<%= stream.streamKey %>')" title="Copy Stream Key">
+                        <input type="text" id="stream-key-input" class="form-control" value="<%= stream.streamKey %>" readonly style="font-family: monospace; background: rgba(0,0,0,0.5);">
+                        <button class="btn btn-secondary" id="copy-key-btn" title="Copy Stream Key">
                             <i class="ti ti-copy"></i>
                         </button>
                     </div>
@@ -108,8 +108,8 @@
                 <div style="margin-bottom: 1.5rem;">
                     <label style="display: block; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.4rem; font-weight: 600;">Direct Viewer Link</label>
                     <div style="display: flex; gap: 0.5rem;">
-                        <input type="text" class="form-control" value="<%= process.env.APP_URL || 'http://localhost:3000' %>/live/<%= stream.streamKey %>" readonly style="font-family: monospace; background: rgba(0,0,0,0.5);">
-                        <button class="btn btn-secondary" onclick="navigator.clipboard.writeText('<%= process.env.APP_URL || 'http://localhost:3000' %>/live/<%= stream.streamKey %>')" title="Copy Link">
+                        <input type="text" id="viewer-link-input" class="form-control" value="<%= stream.streamKey %>" readonly style="font-family: monospace; background: rgba(0,0,0,0.5);">
+                        <button class="btn btn-secondary" id="copy-link-btn" title="Copy Link">
                             <i class="ti ti-copy"></i>
                         </button>
                     </div>
@@ -141,7 +141,16 @@
     document.addEventListener("DOMContentLoaded", () => {
         // Read configuration from server-rendered dataset
         const studioConfig = document.getElementById("studio-config");
-        const streamKey = studioConfig.dataset.streamKey;
+        const streamKey = studioConfig ? studioConfig.dataset.streamKey : "";
+        // Copy Helper Event Listeners
+        document.getElementById("copy-key-btn")?.addEventListener("click", () => {
+            const val = document.getElementById("stream-key-input")?.value;
+            if (val) navigator.clipboard.writeText(val);
+        });
+        document.getElementById("copy-link-btn")?.addEventListener("click", () => {
+            const link = `${window.location.origin}/live/${streamKey}`;
+            navigator.clipboard.writeText(link);
+        });
 
         // UI State Variables
         let isLive = false;
