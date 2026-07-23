@@ -88,8 +88,8 @@
             <p class="text-gray-400 text-xs">Waiting for the broadcaster to start WebRTC stream...</p>
         </div>
 
-        <!-- High Quality Video Element -->
-        <video id="remoteVideo" class="w-full h-full object-contain" autoplay playsinline muted></video>
+        <!-- High Quality Video Element with Native Controls -->
+        <video id="remoteVideo" class="w-full h-full object-contain" controls autoplay playsinline muted></video>
     </main>
 
     <!-- Mediasoup SFU WebRTC Consumer JavaScript -->
@@ -178,6 +178,19 @@
                                 transportId: recvTransport.id,
                                 rtpCapabilities: device.rtpCapabilities
                             }));
+                            break;
+                        }
+
+                        case "newProducer": {
+                            // Automatically consume when broadcaster starts producing tracks
+                            if (recvTransport && device) {
+                                sfuSocket.send(JSON.stringify({
+                                    action: "consume",
+                                    viewerId,
+                                    transportId: recvTransport.id,
+                                    rtpCapabilities: device.rtpCapabilities
+                                }));
+                            }
                             break;
                         }
 

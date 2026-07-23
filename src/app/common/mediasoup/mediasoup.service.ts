@@ -1,4 +1,23 @@
 import * as mediasoup from "mediasoup";
+import os from "os";
+
+/**
+ * Auto-detect public network interface IP for WebRTC candidates
+ */
+function getAnnouncedIp(): string {
+  if (process.env.ANNOUNCED_IP && process.env.ANNOUNCED_IP !== "127.0.0.1") {
+    return process.env.ANNOUNCED_IP;
+  }
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === "IPv4" && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return "127.0.0.1";
+}
 
 // Audio & Video Media Codec Definitions for High Quality WebRTC Streaming
 const MEDIA_CODECS: mediasoup.types.RtpCodecCapability[] = [
@@ -16,6 +35,12 @@ const MEDIA_CODECS: mediasoup.types.RtpCodecCapability[] = [
   },
   {
     kind: "video",
+    mimeType: "video/VP8",
+    clockRate: 90000,
+    preferredPayloadType: 96,
+  },
+  {
+    kind: "video",
     mimeType: "video/H264",
     clockRate: 90000,
     preferredPayloadType: 102,
@@ -24,6 +49,39 @@ const MEDIA_CODECS: mediasoup.types.RtpCodecCapability[] = [
       "profile-level-id": "42e01f",
       "level-asymmetry-allowed": 1,
       "x-google-start-bitrate": 5000,
+    },
+  },
+  {
+    kind: "video",
+    mimeType: "video/H264",
+    clockRate: 90000,
+    preferredPayloadType: 125,
+    parameters: {
+      "packetization-mode": 1,
+      "profile-level-id": "42001f",
+      "level-asymmetry-allowed": 1,
+    },
+  },
+  {
+    kind: "video",
+    mimeType: "video/H264",
+    clockRate: 90000,
+    preferredPayloadType: 126,
+    parameters: {
+      "packetization-mode": 1,
+      "profile-level-id": "4d001f",
+      "level-asymmetry-allowed": 1,
+    },
+  },
+  {
+    kind: "video",
+    mimeType: "video/H264",
+    clockRate: 90000,
+    preferredPayloadType: 127,
+    parameters: {
+      "packetization-mode": 1,
+      "profile-level-id": "64002a",
+      "level-asymmetry-allowed": 1,
     },
   },
 ];
@@ -101,12 +159,14 @@ export class MediasoupService {
       }
     }
 
-    const publicIp = process.env.ANNOUNCED_IP || "127.0.0.1";
+    const announcedIp = getAnnouncedIp();
+    console.log(`[Mediasoup SFU] Creating WebRtcTransport for ${isBroadcaster ? "Broadcaster" : "Viewer"} with Announced IP: ${announcedIp}`);
+
     const transport = await room.router.createWebRtcTransport({
       listenIps: [
         {
           ip: "0.0.0.0",
-          announcedIp: publicIp,
+          announcedIp: announcedIp,
         },
       ],
       enableUdp: true,
@@ -116,6 +176,7 @@ export class MediasoupService {
     });
 
     transport.on("dtlsstatechange", (dtlsState: mediasoup.types.DtlsState) => {
+      console.log(`[Mediasoup SFU] Transport DTLS State: ${dtlsState} (${isBroadcaster ? "Broadcaster" : "Viewer"})`);
       if (dtlsState === "closed" || dtlsState === "failed") {
         transport.close();
       }

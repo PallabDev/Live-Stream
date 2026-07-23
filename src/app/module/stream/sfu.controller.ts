@@ -2,12 +2,35 @@ import { WebSocket } from "ws";
 import { MediasoupService } from "../../common/mediasoup/mediasoup.service.js";
 import { StreamService } from "./stream.service.js";
 
+interface RoomSockets {
+  broadcaster?: WebSocket;
+  viewers: Map<string, WebSocket>;
+}
+
 export class SFUController {
+  private static roomSockets = new Map<string, RoomSockets>();
+
+  private static getOrCreateRoomSockets(streamKey: string): RoomSockets {
+    let room = this.roomSockets.get(streamKey);
+    if (!room) {
+      room = { viewers: new Map() };
+      this.roomSockets.set(streamKey, room);
+    }
+    return room;
+  }
+
   /**
    * Handle Mediasoup WebRTC SFU WebSocket Connection
    */
   public static handleConnection(ws: WebSocket, streamKey: string, isBroadcaster: boolean, viewerId: string) {
     console.log(`[SFU WebSocket] Connection opened for streamKey: ${streamKey} | Role: ${isBroadcaster ? "Broadcaster" : "Viewer"} | ViewerId: ${viewerId}`);
+
+    const room = this.getOrCreateRoomSockets(streamKey);
+    if (isBroadcaster) {
+      room.broadcaster = ws;
+    } else {
+      room.viewers.set(viewerId, ws);
+    }
 
     ws.on("message", async (rawMessage: string) => {
       try {
@@ -46,6 +69,13 @@ export class SFUController {
             
             // Update DB status to live
             await StreamService.setStreamLive(streamKey, true);
+
+            // Broadcast newProducer signal to all viewers waiting in room
+            for (const [vId, vWs] of room.viewers.entries()) {
+              if (vWs.readyState === 1) { // OPEN
+                vWs.send(JSON.stringify({ action: "newProducer", kind, producerId: id }));
+              }
+            }
             break;
           }
 
@@ -73,8 +103,10 @@ export class SFUController {
       if (isBroadcaster) {
         MediasoupService.closeRoom(streamKey);
         StreamService.setStreamLive(streamKey, false).catch(() => {});
+        this.roomSockets.delete(streamKey);
       } else {
         MediasoupService.removeViewer(streamKey, viewerId);
+        room.viewers.delete(viewerId);
       }
     });
   }
