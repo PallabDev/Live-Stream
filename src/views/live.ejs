@@ -1,286 +1,1171 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title><%= stream.title %> | CoWatch Player</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <link rel="icon" type="image/png" href="/favicon.png">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-    <!-- Self-Hosted Mediasoup Client JS Library -->
-    <script src="/js/mediasoup-client.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background: #000000;
-            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-        }
+<meta charset="UTF-8">
+<title><%= stream.title %> | CoWatch Player</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link
+  rel="stylesheet"
+  href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+/>
+<script src="/js/mediasoup-client.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        accent: '#82A3A1',
+        'accent-dark': '#465362',
+        secondary: '#9FC490',
+        'control-bg': 'rgba(18, 22, 26, 0.95)',
+        'glass-bg': 'rgba(70, 83, 98, 0.4)',
+        'glass-border': 'rgba(130, 163, 161, 0.25)',
+      },
+      animation: {
+        'spin-slow': 'spin 1s linear infinite',
+        'pulse-slow': 'pulse 2s ease-in-out infinite',
+      },
+      backdropBlur: {
+        'glass': '10px',
+      },
+    }
+  }
+}
+</script>
+<style>
+:root {
+  --progress-bg: #2a323b;
+  --progress-fill: #82A3A1;
+  --value: 100%;
+}
 
-        /* Ensure Video Controls Are Fully Clickable On Mobile */
-        video::-webkit-media-controls {
-            z-index: 25;
-        }
-    </style>
+/* Make page exactly viewport size, no scroll */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000000;
+}
+
+/* Custom scrollbar for settings */
+.sh-settings-list::-webkit-scrollbar {
+  width: 6px;
+}
+.sh-settings-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+.sh-settings-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+.sh-settings-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* === VERTICAL VOLUME SLIDER === */
+.sh-volume-slider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Base input reset */
+.sh-volume-range {
+  -webkit-appearance: none;
+  appearance: none;
+  writing-mode: vertical-lr; direction: rtl;
+  width: 12px;                   /* thickness of the track */
+  height: 100%;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* WebKit track */
+.sh-volume-range::-webkit-slider-runnable-track {
+  width: 12px;
+  height: 100%;
+  background: #1e1b4b;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* WebKit thumb */
+.sh-volume-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid #111;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+  margin-top: -3px; /* center thumb on track */
+}
+
+/* Firefox track */
+.sh-volume-range::-moz-range-track {
+  width: 12px;
+  height: 100%;
+  background: #1e1b4b;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Firefox thumb */
+.sh-volume-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid #111;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+}
+
+/* Hide ugly focus ring */
+.sh-volume-range:focus {
+  outline: none;
+}
+
+/* Progress bar gradient */
+.sh-progress-bar {
+  background: linear-gradient(90deg, #6366f1, #4f46e5);
+}
+
+/* Player layout centering and aspect ratio constraint */
+.sh-player {
+  width: 100%;
+  max-width: 100%;
+  max-height: 100dvh;
+  aspect-ratio: 16/9;
+  background: #000;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+  transition: all 0.3s ease;
+}
+
+@media (min-width: 1200px) {
+  .sh-player {
+    max-width: 1200px;
+    border-radius: 12px;
+  }
+}
+
+/* Fullscreen adjustments override */
+:fullscreen .sh-player,
+:-webkit-full-screen .sh-player,
+:-moz-full-screen .sh-player {
+  border-radius: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+}
+
+#sh-controls {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 1.25rem) !important;
+}
+
+/* Responsive adjustments for controls */
+@media (max-width: 600px) {
+  #sh-controls {
+    padding: 0.75rem !important;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem) !important;
+    gap: 0.5rem !important;
+  }
+  .sh-play-btn {
+    width: 2.25rem !important;
+    height: 2.25rem !important;
+  }
+  .sh-btn {
+    width: 2rem !important;
+    height: 2rem !important;
+  }
+  #sh-current-time, #sh-duration {
+    font-size: 0.75rem !important;
+    min-width: 36px !important;
+  }
+}
+</style>
 </head>
-<body class="bg-black text-white h-screen w-screen overflow-hidden select-none relative">
+<body class="bg-[#000000] m-0 p-0 font-['Inter',system-ui,sans-serif] text-white">
+  <!-- Full-screen container -->
+  <div class="w-screen h-[100dvh] flex items-center justify-center bg-black relative overflow-hidden">
+    <!-- Player container -->
+    <div
+      class="sh-player"
+      id="sh-player"
+    >
+      <video
+        class="w-full h-full object-contain bg-black block"
+        id="sh-video"
+        preload="auto"
+        playsinline
+        style="image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;"
+      ></video>
 
-    <!-- Top Right Corner: Ultra-Small & Transparent Viewer Count Badge -->
-    <div class="absolute top-3 right-3 z-30 flex items-center space-x-1 text-[11px] text-white/90 bg-black/30 px-2 py-0.5 rounded-full border border-white/10 backdrop-blur-sm shadow-sm pointer-events-none">
-        <i class="fa-solid fa-users text-blue-400 text-[9px]"></i>
-        <span id="room-limit-text" class="font-mono text-[10px] font-medium">0 / 5</span>
-    </div>
 
-    <!-- Main Video Player Stage -->
-    <main class="relative w-full h-full flex items-center justify-center bg-black">
-        <!-- Center Tap-to-Mute / Unmute Button -->
-        <div id="unmute-overlay" onclick="toggleMuteSound()" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/30 backdrop-blur-[1px] cursor-pointer transition-all duration-300">
-            <div id="mute-btn-bg" class="w-16 h-16 bg-blue-600/90 hover:bg-blue-500 rounded-full flex items-center justify-center shadow-2xl mb-3 transform hover:scale-105 transition-all border border-white/20">
-                <i id="mute-btn-icon" class="fa-solid fa-volume-xmark text-2xl text-white"></i>
-            </div>
-            <p id="mute-btn-text" class="text-white text-xs font-semibold tracking-wide bg-black/70 px-3 py-1 rounded-full border border-white/10 shadow-lg">Tap to Unmute Sound</p>
+
+      <!-- Offline Screen Overlay -->
+      <div
+        id="offline-screen"
+        class="fixed inset-0 bg-[#0f172a] z-50 flex flex-col justify-center items-center text-center p-6"
+        style="display: flex;"
+      >
+        <div class="text-indigo-500 text-6xl mb-4 animate-pulse">
+          <i class="fa-solid fa-satellite-dish"></i>
+        </div>
+        <h3 class="text-2xl font-bold text-white mb-2">Stream is Offline</h3>
+        <p class="text-slate-400 text-sm max-w-sm mb-6">
+          The broadcaster is not streaming live right now. The feed will automatically play once they start broadcasting.
+        </p>
+        <button
+          class="px-6 py-2.5 rounded-full bg-indigo-600 hover:bg-indigo-500 font-semibold text-sm transition-all hover:scale-105"
+          onclick="checkStreamStatus()"
+        >
+          <i class="fa-solid fa-arrows-rotate mr-1.5"></i> Check Again
+        </button>
+      </div>
+
+      <!-- Loading Spinner -->
+      <div class="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none">
+        <div
+          class="w-10 h-10 sm:w-[60px] sm:h-[60px] border-4 border-solid border-white/10 border-t-accent rounded-full hidden animate-spin pointer-events-auto"
+          id="sh-loading"
+        ></div>
+      </div>
+
+      <!-- Controls -->
+      <div
+        class="absolute left-0 right-0 bottom-0 p-4 sm:p-6 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex flex-col gap-3 transition-all duration-150 z-10"
+        id="sh-controls"
+      >
+        <!-- Row 1: Progress & Time -->
+        <div class="flex items-center w-full gap-3 min-w-0">
+          <span
+            class="text-xs sm:text-sm font-medium text-[#aaaaaa] min-w-[42px] sm:min-w-[50px] font-mono tabular-nums"
+            id="sh-current-time"
+          >
+            00:00
+          </span>
+
+          <div
+            class="sh-progress relative flex-1 h-1.5 sm:h-2 rounded-full bg-[#3a3a3a] cursor-pointer overflow-hidden transition-all duration-150 hover:h-2 sm:hover:h-2.5"
+            id="sh-progress"
+          >
+            <div
+              class="sh-progress-buffer absolute top-0 left-0 bottom-0 w-0 rounded-full bg-white/20"
+              id="sh-progress-buffer"
+            ></div>
+            <div
+              class="sh-progress-bar absolute top-0 left-0 bottom-0 w-0 rounded-full"
+              id="sh-progress-bar"
+            ></div>
+            <div
+              class="sh-progress-handle absolute top-1/2 -translate-y-1/2 w-0 h-0 rounded-full bg-white shadow-none transition-all duration-150 pointer-events-none"
+              id="sh-progress-handle"
+            ></div>
+          </div>
+
+          <span
+            class="text-xs sm:text-sm font-medium text-[#aaaaaa] min-w-[42px] sm:min-w-[50px] font-mono tabular-nums"
+            id="sh-duration"
+          >
+            00:00
+          </span>
         </div>
 
-        <!-- Room Full Overlay Modal (Exceeds 5 users) -->
-        <div id="room-full-overlay" class="hidden absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/90 backdrop-blur-md p-6 text-center">
-            <div class="w-16 h-16 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center text-3xl mb-4 border border-red-500/40">
-                <i class="fa-solid fa-door-closed"></i>
-            </div>
-            <h2 class="text-2xl font-bold text-white mb-2">Stream Room Full</h2>
-            <p class="text-gray-300 max-w-md text-sm mb-6">
-                This WebRTC stream has reached its maximum capacity of <strong>5 concurrent viewers</strong> for ultra-high quality delivery. Please wait until a viewer leaves.
-            </p>
-            <button onclick="window.location.reload()" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg text-sm transition-all shadow-lg">
-                <i class="fa-solid fa-rotate-right me-2"></i> Try Rejoining Room
+        <!-- Row 2: Control Buttons -->
+        <div class="flex items-center justify-between w-full">
+          <!-- Play / Pause (Left) -->
+          <button
+            class="sh-play-btn w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-accent text-white flex items-center justify-center text-lg transition-all duration-150 shadow-[0_4px_12px_rgba(99,102,241,0.4)] hover:bg-accent-dark hover:scale-105 hover:shadow-[0_6px_16px_rgba(99,102,241,0.5)]"
+            id="sh-play-btn"
+            aria-label="Play/Pause"
+          >
+            <i class="fas fa-play" id="sh-play-icon"></i>
+          </button>
+
+          <!-- Right Action Controls -->
+          <div class="sh-controls-right flex items-center gap-1.5 sm:gap-2">
+            <!-- Volume Button -->
+            <button
+              class="sh-btn w-8 h-8 sm:w-10 sm:h-10 bg-transparent text-[#aaaaaa] flex items-center justify-center text-lg p-2 rounded-lg transition-all duration-150 hover:text-white hover:bg-white/10 min-w-[32px]"
+              id="sh-volume-btn"
+              title="Mute/Unmute"
+            >
+              <i class="fas fa-volume-up" id="sh-volume-icon"></i>
             </button>
+
+
+
+            <!-- Fullscreen -->
+            <button
+              class="sh-btn sh-full-btn w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-white/10 flex items-center justify-center text-lg transition-all duration-150 hover:bg-white/20 hover:scale-105"
+              id="sh-full-btn"
+              title="Fullscreen"
+            >
+              <i class="fas fa-expand" id="sh-fullscreen-icon"></i>
+            </button>
+          </div>
         </div>
+      </div>
+    </div>
+  </div>
 
-        <!-- Waiting / Offline Overlay -->
-        <div id="offline-overlay" class="hidden absolute inset-0 z-10 flex flex-col items-center justify-center bg-black p-6 text-center">
-            <div class="w-16 h-16 bg-gray-800 text-gray-400 rounded-full flex items-center justify-center text-2xl mb-4">
-                <i class="fa-solid fa-video-slash"></i>
-            </div>
-            <h2 class="text-xl font-semibold text-white mb-1">Broadcaster is Offline</h2>
-            <p class="text-gray-400 text-xs">Waiting for the broadcaster to start WebRTC stream...</p>
-        </div>
+<script>
+(function () {
+  // DOM Elements
+  const video = document.getElementById('sh-video');
+  const player = document.getElementById('sh-player');
+  const playBtn = document.getElementById('sh-play-btn');
+  const playIcon = document.getElementById('sh-play-icon');
+  const currentTimeEl = document.getElementById('sh-current-time');
+  const durationEl = document.getElementById('sh-duration');
+  const progress = document.getElementById('sh-progress');
+  const progressBar = document.getElementById('sh-progress-bar');
+  const progressBuffer = document.getElementById('sh-progress-buffer');
+  const progressHandle = document.getElementById('sh-progress-handle');
+  const volumeBtn = document.getElementById('sh-volume-btn');
+  const volumeIcon = document.getElementById('sh-volume-icon');
 
-        <!-- High Quality Video Element with Native Controls -->
-        <video id="remoteVideo" class="w-full h-full object-contain" controls autoplay playsinline webkit-playsinline muted></video>
-    </main>
+  const fullBtn = document.getElementById('sh-full-btn');
+  const fullscreenIcon = document.getElementById('sh-fullscreen-icon');
+  const loadingSpinner = document.getElementById('sh-loading');
+  const controls = document.getElementById('sh-controls');
+  const offlineScreen = document.getElementById('offline-screen');
 
-    <!-- Mediasoup SFU WebRTC Consumer JavaScript -->
-    <script>
-        const streamKey = "<%= stream.streamKey %>";
-        const viewerId = `viewer_${Math.random().toString(36).substring(2, 9)}`;
+  const streamKey = "<%= stream.streamKey %>";
+  let viewerId = null;
+  let pcInstance = null;
+  let statusSocket = null;
+  let playbackStarted = false;
+  let iceCandidateQueue = [];
 
-        let sfuSocket = null;
-        let device = null;
-        let recvTransport = null;
-        let remoteStream = new MediaStream();
+  let scrubbing = false;
+  let controlsTimeout = null;
 
-        const remoteVideo = document.getElementById("remoteVideo");
-        const unmuteOverlay = document.getElementById("unmute-overlay");
-        const roomFullOverlay = document.getElementById("room-full-overlay");
-        const offlineOverlay = document.getElementById("offline-overlay");
-        const roomLimitText = document.getElementById("room-limit-text");
+  function showOffline() {
+    offlineScreen.style.display = 'flex';
+    hideLoading();
+    playbackStarted = false;
+    if (pcInstance) {
+      pcInstance.close();
+      pcInstance = null;
+    }
+    video.srcObject = null;
+  }
 
-        /**
-         * Toggle Mute / Unmute Sound
-         */
-        function toggleMuteSound() {
-            remoteVideo.muted = !remoteVideo.muted;
-            remoteVideo.play().catch(() => {});
-            updateMuteUI();
-        }
+  function hideOffline() {
+    offlineScreen.style.display = 'none';
+  }
 
-        /**
-         * Update Center Mute Button UI State
-         */
-        function updateMuteUI() {
-            const icon = document.getElementById("mute-btn-icon");
-            const text = document.getElementById("mute-btn-text");
+  let webCodecsVideoDecoder = null;
+  let webCodecsAudioDecoder = null;
+  let audioContext = null;
+  let liveCanvas = null;
+  let canvasCtx = null;
 
-            if (!remoteVideo.muted) {
-                icon.className = "fa-solid fa-volume-high text-2xl text-white ms-1";
-                text.textContent = "Sound Unmuted (Tap to Mute)";
-                setTimeout(() => {
-                    if (!remoteVideo.muted) unmuteOverlay.style.opacity = '0';
-                }, 1500);
-            } else {
-                unmuteOverlay.style.opacity = '1';
-                icon.className = "fa-solid fa-volume-xmark text-2xl text-white";
-                text.textContent = "Tap to Unmute Sound";
+  function initUnifiedWebCodecsDecoder() {
+    if (!('VideoDecoder' in window) || !('AudioDecoder' in window)) return false;
+
+    liveCanvas = document.getElementById('live-canvas');
+    const container = document.getElementById('sh-video-container') || document.body;
+
+    if (!liveCanvas) {
+      liveCanvas = document.createElement('canvas');
+      liveCanvas.id = 'live-canvas';
+      liveCanvas.style.position = 'absolute';
+      liveCanvas.style.top = '0';
+      liveCanvas.style.left = '0';
+      liveCanvas.style.width = '100%';
+      liveCanvas.style.height = '100%';
+      liveCanvas.style.objectFit = 'contain';
+      liveCanvas.style.zIndex = '1';
+      container.insertBefore(liveCanvas, container.firstChild);
+    }
+    canvasCtx = liveCanvas.getContext('2d');
+
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    } catch (e) {
+      console.warn('[Viewer WebCodecs] AudioContext init failed:', e);
+    }
+
+    try {
+      webCodecsVideoDecoder = new VideoDecoder({
+        output: (frame) => {
+          if (liveCanvas.width !== frame.displayWidth || liveCanvas.height !== frame.displayHeight) {
+            liveCanvas.width = frame.displayWidth;
+            liveCanvas.height = frame.displayHeight;
+          }
+          canvasCtx.drawImage(frame, 0, 0, liveCanvas.width, liveCanvas.height);
+          frame.close();
+
+          if (!playbackStarted) {
+            playbackStarted = true;
+            hideLoading();
+            hideOffline();
+            updatePlayIcon();
+          }
+        },
+        error: (e) => console.error('[Viewer VideoDecoder Error]:', e)
+      });
+
+      let decoderCodec = 'avc1.64002A';
+      if (VideoDecoder.isConfigSupported) {
+        VideoDecoder.isConfigSupported({ codec: 'avc1.64002A' }).then(support => {
+          if (!support.supported) decoderCodec = 'avc1.4d002a';
+        }).catch(() => {});
+      }
+
+      webCodecsVideoDecoder.configure({
+        codec: decoderCodec,
+        optimizeForLatency: true,
+        hardwareAcceleration: 'prefer-hardware'
+      });
+    } catch (e) {
+      console.warn('[Viewer VideoDecoder Init Exception]:', e);
+    }
+
+    try {
+      webCodecsAudioDecoder = new AudioDecoder({
+        output: (audioData) => {
+          if (!audioContext || audioContext.state === 'closed') return;
+          try {
+            if (audioContext.state === 'suspended') {
+              audioContext.resume().catch(() => {});
             }
+            const buffer = audioContext.createBuffer(
+              audioData.numberOfChannels,
+              audioData.numberOfFrames,
+              audioData.sampleRate
+            );
+            for (let channel = 0; channel < audioData.numberOfChannels; channel++) {
+              const channelData = buffer.getChannelData(channel);
+              audioData.copyTo(channelData, { planeIndex: channel });
+            }
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioContext.destination);
+            source.start();
+          } catch (err) {
+            console.warn('[Viewer Audio Playback Exception]:', err);
+          } finally {
+            audioData.close();
+          }
+        },
+        error: (e) => console.error('[Viewer AudioDecoder Error]:', e)
+      });
+
+      webCodecsAudioDecoder.configure({
+        codec: 'opus',
+        sampleRate: 48000,
+        numberOfChannels: 2
+      });
+    } catch (e) {
+      console.warn('[Viewer AudioDecoder Init Exception]:', e);
+    }
+
+    return true;
+  }
+
+  let device = null;
+  let recvTransport = null;
+  let sfuSocket = null;
+  let remoteStream = new MediaStream();
+
+  function connectViewerSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const sfuWsUrl = `${protocol}//${window.location.host}/api/sfu/ws?streamKey=${encodeURIComponent(streamKey)}&role=viewer&viewerId=${viewerId}`;
+
+    console.log('[Viewer Mediasoup] Connecting to SFU WebSocket for stream:', sfuWsUrl);
+    sfuSocket = new WebSocket(sfuWsUrl);
+
+    sfuSocket.onopen = () => {
+      console.log('[Viewer Mediasoup] WebSocket connected! Requesting Router Capabilities...');
+      sfuSocket.send(JSON.stringify({ action: "getRouterRtpCapabilities" }));
+    };
+
+    sfuSocket.onmessage = async (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        switch (msg.action) {
+          case "viewerCount": {
+            const viewerEl = document.getElementById("viewer-count-val");
+            if (viewerEl) viewerEl.textContent = `${msg.count} / ${msg.max}`;
+            break;
+          }
+
+          case "routerRtpCapabilities": {
+            const clientLib = window.mediasoupClient || window.MediasoupClient || window.mediasoup;
+            if (!clientLib) {
+              console.error("[Mediasoup Player Error]: Client library not available.");
+              return;
+            }
+            device = new clientLib.Device();
+            await device.load({ routerRtpCapabilities: msg.rtpCapabilities });
+
+            sfuSocket.send(JSON.stringify({
+              action: "createWebRtcTransport",
+              isBroadcaster: false,
+              viewerId
+            }));
+            break;
+          }
+
+          case "webRtcTransportCreated": {
+            const { id, iceParameters, iceCandidates, dtlsParameters } = msg.data;
+            recvTransport = device.createRecvTransport({
+              id,
+              iceParameters,
+              iceCandidates,
+              dtlsParameters,
+              iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
+              ]
+            });
+
+            recvTransport.on("connect", ({ dtlsParameters }, callback, errback) => {
+              sfuSocket.send(JSON.stringify({
+                action: "connectTransport",
+                transportId: recvTransport.id,
+                dtlsParameters
+              }));
+              callback();
+            });
+
+            sfuSocket.send(JSON.stringify({
+              action: "consume",
+              viewerId,
+              transportId: recvTransport.id,
+              rtpCapabilities: device.rtpCapabilities
+            }));
+            break;
+          }
+
+          case "streamStarted":
+          case "newProducer": {
+            hideOffline();
+            showLoading();
+            if (recvTransport && device) {
+              sfuSocket.send(JSON.stringify({
+                action: "consume",
+                viewerId,
+                transportId: recvTransport.id,
+                rtpCapabilities: device.rtpCapabilities
+              }));
+            } else if (sfuSocket && sfuSocket.readyState === 1) {
+              sfuSocket.send(JSON.stringify({ action: "getRouterRtpCapabilities" }));
+            }
+            break;
+          }
+
+          case "streamStopped": {
+            console.log("[Mediasoup Player] Broadcaster stopped stream. Displaying offline overlay.");
+            showOffline();
+            video.srcObject = null;
+            if (recvTransport) {
+              try { recvTransport.close(); } catch (_) {}
+              recvTransport = null;
+            }
+            break;
+          }
+
+          case "consumed": {
+            const consumers = msg.consumers;
+            if (!consumers || consumers.length === 0) {
+              console.warn("[Mediasoup Player] Broadcaster has not published tracks yet.");
+              showOffline();
+              return;
+            }
+
+            hideOffline();
+            remoteStream = new MediaStream();
+
+            for (const c of consumers) {
+              const consumer = await recvTransport.consume({
+                id: c.id,
+                producerId: c.producerId,
+                kind: c.kind,
+                rtpParameters: c.rtpParameters
+              });
+              remoteStream.addTrack(consumer.track);
+            }
+
+            video.srcObject = remoteStream;
+            hideLoading();
+            video.play().catch(e => console.warn("Player play error:", e));
+            console.log("[Mediasoup Player] Successfully playing real-time WebRTC SFU Stream (< 0.1s latency)!");
+            break;
+          }
+
+          case "error": {
+            console.error("[Mediasoup Player Error]:", msg.message);
+            if (msg.message && msg.message.includes("Room limit reached")) {
+              showOffline();
+              const title = document.querySelector('#offline-screen h3');
+              if (title) title.textContent = 'Room Full (5/5 Max Viewers)';
+            }
+            break;
+          }
         }
+      } catch (err) {
+        console.error("[Mediasoup Player Exception]:", err);
+      }
+    };
 
-        /**
-         * Connect to Mediasoup SFU WebRTC Session
-         */
-        async function connectMediasoupSFU() {
-            console.log(`[Mediasoup Player] Connecting to SFU WebSocket for stream: ${streamKey}`);
+    const pingInterval = setInterval(() => {
+      if (sfuSocket && sfuSocket.readyState === 1) {
+        sfuSocket.send(JSON.stringify({ action: "ping" }));
+      }
+    }, 5000);
 
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/api/sfu/ws?streamKey=${encodeURIComponent(streamKey)}&role=viewer&viewerId=${viewerId}`;
+    sfuSocket.onclose = () => {
+      clearInterval(pingInterval);
+      console.log("[Mediasoup Player] WebSocket connection closed.");
+    };
+  }
 
-            sfuSocket = new WebSocket(wsUrl);
+  window.checkStreamStatus = function () {
+    if (!statusSocket || statusSocket.readyState !== WebSocket.OPEN) {
+      connectViewerSocket();
+    } else {
+      statusSocket.send(JSON.stringify({ event: "viewer-ready" }));
+    }
+  };
 
-            sfuSocket.onopen = () => {
-                console.log("[Mediasoup Player] WebSocket connected! Requesting Router Capabilities...");
-                sfuSocket.send(JSON.stringify({ action: "getRouterRtpCapabilities" }));
-            };
+  // Automatic offline poll: when broadcaster restarts, viewer automatically wakes up and replays!
+  setInterval(() => {
+    if (!pcInstance || pcInstance.connectionState !== 'connected') {
+      window.checkStreamStatus();
+    }
+  }, 3000);
 
-            sfuSocket.onmessage = async (event) => {
-                try {
-                    const msg = JSON.parse(event.data);
+  function preferHighFidelityAudioAndVideo(sdp) {
+    let lines = sdp.split('\r\n');
+    let opusPt = null;
 
-                    switch (msg.action) {
-                        case "viewerCount": {
-                            if (roomLimitText) {
-                                roomLimitText.textContent = `${msg.count} / ${msg.max}`;
-                            }
-                            break;
-                        }
-
-                        case "routerRtpCapabilities": {
-                            // 1. Load Mediasoup Device with Router Capabilities
-                            const clientLib = window.mediasoupClient || window.MediasoupClient || window.mediasoup;
-                            if (!clientLib) {
-                                console.error("[Mediasoup Player Error]: Client library not available.");
-                                return;
-                            }
-                            device = new clientLib.Device();
-                            await device.load({ routerRtpCapabilities: msg.rtpCapabilities });
-
-                            // 2. Request WebRTC Consumer Transport
-                            sfuSocket.send(JSON.stringify({
-                                action: "createWebRtcTransport",
-                                isBroadcaster: false,
-                                viewerId
-                            }));
-                            break;
-                        }
-
-                        case "webRtcTransportCreated": {
-                            // 3. Create Receive Transport on Mediasoup Device
-                            const { id, iceParameters, iceCandidates, dtlsParameters } = msg.data;
-                            recvTransport = device.createRecvTransport({
-                                id,
-                                iceParameters,
-                                iceCandidates,
-                                dtlsParameters,
-                                iceServers: [
-                                    { urls: 'stun:stun.l.google.com:19302' },
-                                    { urls: 'stun:stun1.l.google.com:19302' },
-                                    { urls: 'stun:stun2.l.google.com:19302' }
-                                ]
-                            });
-
-                            recvTransport.on("connect", ({ dtlsParameters }, callback, errback) => {
-                                sfuSocket.send(JSON.stringify({
-                                    action: "connectTransport",
-                                    transportId: recvTransport.id,
-                                    dtlsParameters
-                                }));
-                                callback();
-                            });
-
-                            // 4. Request Audio & Video Consumers from Mediasoup SFU
-                            sfuSocket.send(JSON.stringify({
-                                action: "consume",
-                                viewerId,
-                                transportId: recvTransport.id,
-                                rtpCapabilities: device.rtpCapabilities
-                            }));
-                            break;
-                        }
-
-                        case "streamStarted":
-                        case "newProducer": {
-                            // Automatically connect and consume when broadcaster goes live
-                            offlineOverlay.classList.add("hidden");
-                            if (recvTransport && device) {
-                                sfuSocket.send(JSON.stringify({
-                                    action: "consume",
-                                    viewerId,
-                                    transportId: recvTransport.id,
-                                    rtpCapabilities: device.rtpCapabilities
-                                }));
-                            } else if (sfuSocket && sfuSocket.readyState === 1) {
-                                sfuSocket.send(JSON.stringify({ action: "getRouterRtpCapabilities" }));
-                            }
-                            break;
-                        }
-
-                        case "streamStopped": {
-                            console.log("[Mediasoup Player] Broadcaster stopped stream. Transitioning to offline state.");
-                            offlineOverlay.classList.remove("hidden");
-                            remoteVideo.srcObject = null;
-                            if (recvTransport) {
-                                try { recvTransport.close(); } catch (_) {}
-                                recvTransport = null;
-                            }
-                            break;
-                        }
-
-                        case "consumed": {
-                            // 5. Attach Incoming Audio & Video Tracks to Video Element
-                            const consumers = msg.consumers;
-                            if (!consumers || consumers.length === 0) {
-                                console.warn("[Mediasoup Player] Broadcaster has not published tracks yet.");
-                                offlineOverlay.classList.remove("hidden");
-                                return;
-                            }
-
-                            offlineOverlay.classList.add("hidden");
-                            remoteStream = new MediaStream();
-
-                            for (const c of consumers) {
-                                const consumer = await recvTransport.consume({
-                                    id: c.id,
-                                    producerId: c.producerId,
-                                    kind: c.kind,
-                                    rtpParameters: c.rtpParameters
-                                });
-                                remoteStream.addTrack(consumer.track);
-                            }
-
-                            remoteVideo.srcObject = remoteStream;
-                            remoteVideo.play().catch(e => console.warn("Player play error:", e));
-                            console.log("[Mediasoup Player] Successfully playing real-time WebRTC SFU Stream (< 0.1s latency)!");
-                            break;
-                        }
-
-                        case "error": {
-                            console.error("[Mediasoup Player Error]:", msg.message);
-                            if (msg.message && msg.message.includes("Room limit reached")) {
-                                roomFullOverlay.classList.remove("hidden");
-                            }
-                            break;
-                        }
-                    }
-                } catch (err) {
-                    console.error("[Mediasoup Player Exception]:", err);
-                }
-            };
-
-            // Start 5-second WebSocket ping interval to keep connection alive
-            const pingInterval = setInterval(() => {
-                if (sfuSocket && sfuSocket.readyState === 1) {
-                    sfuSocket.send(JSON.stringify({ action: "ping" }));
-                }
-            }, 5000);
-
-            sfuSocket.onclose = () => {
-                clearInterval(pingInterval);
-                console.log("[Mediasoup Player] WebSocket connection closed.");
-            };
+    for (let line of lines) {
+      if (line.toLowerCase().includes('opus/48000')) {
+        const match = line.match(/a=rtpmap:(\d+)\s+opus\/48000/i);
+        if (match) {
+          opusPt = match[1];
+          break;
         }
+      }
+    }
 
-        // Initialize Player on DOM Load
-        document.addEventListener("DOMContentLoaded", connectMediasoupSFU);
-    </script>
+    let modifiedLines = [];
+    let fmtpFound = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+
+      if (opusPt && line.startsWith(`a=fmtp:${opusPt}`)) {
+        fmtpFound = true;
+        line = `a=fmtp:${opusPt} stereo=1;sprop-stereo=1;maxaveragebitrate=256000;maxplaybackrate=48000;usedtx=0`;
+      }
+
+      modifiedLines.push(line);
+    }
+
+    if (opusPt && !fmtpFound) {
+      for (let i = 0; i < modifiedLines.length; i++) {
+        if (modifiedLines[i].startsWith(`a=rtpmap:${opusPt}`)) {
+          modifiedLines.splice(i + 1, 0, `a=fmtp:${opusPt} stereo=1;sprop-stereo=1;maxaveragebitrate=256000;maxplaybackrate=48000;usedtx=0`);
+          break;
+        }
+      }
+    }
+
+    return modifiedLines.join('\r\n');
+  }
+
+  async function initWebRTC() {
+    if (typeof RTCPeerConnection === 'undefined') {
+      alert("WebRTC streaming requires a secure context (HTTPS). Please open this site over HTTPS.");
+      hideLoading();
+      return;
+    }
+
+    if (pcInstance) {
+      try { pcInstance.close(); } catch (_) {}
+      pcInstance = null;
+    }
+
+    console.log('[Viewer SFU] Initializing WHEP MediaMTX subscriber for key:', streamKey);
+    const turnHost = window.location.hostname;
+    const config = {
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { 
+            urls: [`turn:${turnHost}:3478`, `turn:${turnHost}:3478?transport=tcp`], 
+            username: "guest", 
+            credential: "somepassword" 
+        }
+      ]
+    };
+
+    pcInstance = new RTCPeerConnection(config);
+
+    // Request audio and video transceivers from MediaMTX SFU
+    pcInstance.addTransceiver('video', { direction: 'recvonly' });
+    pcInstance.addTransceiver('audio', { direction: 'recvonly' });
+
+    pcInstance.ontrack = (event) => {
+      console.log('[Viewer SFU] MediaMTX track received:', event.track.kind);
+
+      if (event.receiver) {
+        try {
+          if ('playoutDelayHint' in event.receiver) {
+            event.receiver.playoutDelayHint = 0; // Zero playout delay for immediate smooth 30 FPS playback
+          }
+          if ('jitterBufferTarget' in event.receiver) {
+            event.receiver.jitterBufferTarget = 0;
+          }
+        } catch (e) {
+          console.warn('[Viewer SFU] Receiver delay hint error:', e);
+        }
+      }
+
+      if (event.streams && event.streams[0]) {
+        if (video.srcObject !== event.streams[0]) {
+          video.srcObject = event.streams[0];
+          console.log('[Viewer SFU] Attached MediaMTX stream to video player');
+        }
+      } else {
+        if (!video.srcObject) {
+          const newStream = new MediaStream();
+          newStream.addTrack(event.track);
+          video.srcObject = newStream;
+        } else {
+          video.srcObject.addTrack(event.track);
+        }
+      }
+
+      video.play().then(() => {
+        hideLoading();
+        hideOffline();
+        playbackStarted = true;
+        updatePlayIcon();
+      }).catch(err => {
+        console.warn('[Viewer SFU] Autoplay prevented by browser policy:', err);
+        hideLoading();
+        hideOffline();
+        updatePlayIcon();
+      });
+    };
+
+    try {
+      let offer = await pcInstance.createOffer();
+      await pcInstance.setLocalDescription(offer);
+
+      // Wait for STUN/TURN ICE candidate gathering to complete (max 800ms)
+      if (pcInstance.iceGatheringState !== 'complete') {
+        await new Promise(resolve => {
+          const checkState = () => {
+            if (pcInstance && pcInstance.iceGatheringState === 'complete') {
+              pcInstance.removeEventListener('icegatheringstatechange', checkState);
+              resolve();
+            }
+          };
+          pcInstance.addEventListener('icegatheringstatechange', checkState);
+          setTimeout(resolve, 800);
+        });
+      }
+
+      console.log('[Viewer SFU] Sending WHEP offer to MediaMTX SFU proxy...');
+      const res = await fetch(`/api/sfu/whep/${streamKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: pcInstance.localDescription ? pcInstance.localDescription.sdp : offer.sdp
+      });
+
+      if (!res.ok) {
+        throw new Error(`MediaMTX WHEP HTTP error ${res.status}`);
+      }
+
+      const answerSdp = await res.text();
+      await pcInstance.setRemoteDescription(new RTCSessionDescription({
+        type: 'answer',
+        sdp: answerSdp
+      }));
+
+      console.log('[Viewer SFU] Successfully connected to MediaMTX SFU WHEP stream!');
+    } catch (err) {
+      console.error('[Viewer SFU] WHEP connection error:', err);
+      showOffline();
+    }
+  }
+
+  function formatTime(sec) {
+    if (!sec || !isFinite(sec)) return '00:00';
+    const s = Math.floor(sec % 60);
+    const m = Math.floor(sec / 60);
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  function showLoading() {
+    loadingSpinner.style.display = 'block';
+  }
+  function hideLoading() {
+    loadingSpinner.style.display = 'none';
+  }
+
+  // Play / pause
+  function updatePlayIcon() {
+    if (video.paused) {
+      playIcon.className = 'fas fa-play';
+      playBtn.setAttribute('aria-label', 'Play');
+    } else {
+      playIcon.className = 'fas fa-pause';
+      playBtn.setAttribute('aria-label', 'Pause');
+    }
+  }
+
+  playBtn.addEventListener('click', () => {
+    if (video.paused) {
+      video.muted = false; // Always unmute on explicit user play intent
+      video.play().catch(e => console.warn("Play error:", e));
+      if (volumeIcon) volumeIcon.className = 'fas fa-volume-up';
+    } else {
+      video.pause();
+    }
+    resetControlsTimer();
+  });
+
+  video.addEventListener('play', updatePlayIcon);
+  video.addEventListener('pause', updatePlayIcon);
+
+  // Time + progress & zero-latency catchup
+  video.addEventListener('timeupdate', () => {
+    const ct = video.currentTime || 0;
+    const dur = video.duration || 0;
+    currentTimeEl.textContent = formatTime(ct);
+
+    if (dur > 0) {
+      const percent = (ct / dur) * 100;
+      progressBar.style.width = percent + '%';
+      progressHandle.style.left = percent + '%';
+    }
+  });
+
+  video.addEventListener('loadedmetadata', () => {
+    durationEl.textContent = formatTime(video.duration);
+  });
+
+  video.addEventListener('waiting', showLoading);
+  video.addEventListener('playing', hideLoading);
+
+  // Buffer progress
+  function updateBufferProgress() {
+    if (video.buffered && video.buffered.length > 0 && video.duration > 0) {
+      const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+      const percent = (bufferedEnd / video.duration) * 100;
+      progressBuffer.style.width = percent + '%';
+    }
+  }
+  video.addEventListener('progress', updateBufferProgress);
+
+  // Hover handle
+  progress.addEventListener('mouseenter', () => {
+    progressHandle.style.width = '14px';
+    progressHandle.style.height = '14px';
+    progressHandle.style.boxShadow = '0 0 0 3px rgba(0, 0, 0, 0.5)';
+  });
+  progress.addEventListener('mouseleave', () => {
+    progressHandle.style.width = '0';
+    progressHandle.style.height = '0';
+    progressHandle.style.boxShadow = 'none';
+  });
+
+  // Seek
+  function seekByClientX(clientX) {
+    const rect = progress.getBoundingClientRect();
+    const ratio =
+      Math.min(Math.max(0, clientX - rect.left), rect.width) / rect.width;
+    if (video.duration) {
+      video.currentTime = ratio * video.duration;
+    }
+  }
+
+  progress.addEventListener('mousedown', (e) => {
+    scrubbing = true;
+    seekByClientX(e.clientX);
+    resetControlsTimer();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (scrubbing) {
+      seekByClientX(e.clientX);
+      resetControlsTimer();
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    scrubbing = false;
+    resetControlsTimer();
+  });
+
+  progress.addEventListener('click', (e) => {
+    seekByClientX(e.clientX);
+    resetControlsTimer();
+  });
+
+  // Volume Mute/Unmute
+  volumeBtn.addEventListener('click', () => {
+    video.muted = !video.muted;
+    if (video.muted) {
+      volumeIcon.className = 'fas fa-volume-mute';
+    } else {
+      volumeIcon.className = 'fas fa-volume-up';
+    }
+    resetControlsTimer();
+  });
+
+
+
+  // Fullscreen (works inside iframe; fullscreen is for player element)
+  function toggleFullscreen() {
+    if (
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement
+    ) {
+      exitFullscreen();
+    } else {
+      enterFullscreen();
+    }
+  }
+
+  function enterFullscreen() {
+    const element = player;
+
+    if (element.requestFullscreen) {
+      element.requestFullscreen();
+    } else if (element.mozRequestFullScreen) {
+      element.mozRequestFullScreen();
+    } else if (element.webkitRequestFullscreen) {
+      element.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
+    } else if (element.msRequestFullscreen) {
+      element.msRequestFullscreen();
+    }
+
+    if (isMobile() && screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(() => {});
+    }
+
+    isFullscreen = true;
+    fullscreenIcon.className = 'fas fa-compress';
+    resetControlsTimer();
+  }
+
+  function exitFullscreen() {
+    if (document.exitFullscreen) {
+      document.exitFullscreen();
+    } else if (document.mozCancelFullScreen) {
+      document.mozCancelFullScreen();
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    } else if (document.msExitFullscreen) {
+      document.msExitFullscreen();
+    }
+
+    if (screen.orientation && screen.orientation.unlock) {
+      screen.orientation.unlock();
+    }
+
+    isFullscreen = false;
+    fullscreenIcon.className = 'fas fa-expand';
+    resetControlsTimer();
+  }
+
+  fullBtn.addEventListener('click', toggleFullscreen);
+
+  // Fullscreen events
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+  document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+  document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+  function handleFullscreenChange() {
+    isFullscreen = !!(
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement
+    );
+
+    if (isFullscreen) {
+      fullscreenIcon.className = 'fas fa-compress';
+      if (isMobile() && screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('landscape').catch(() => {});
+      }
+    } else {
+      fullscreenIcon.className = 'fas fa-expand';
+      if (screen.orientation && screen.orientation.unlock) {
+        screen.orientation.unlock();
+      }
+    }
+    resetControlsTimer();
+  }
+
+  // Auto-hide controls
+  function resetControlsTimer() {
+    clearTimeout(controlsTimeout);
+    controls.style.opacity = '1';
+    controls.style.transform = 'translateY(0)';
+    controls.style.pointerEvents = 'auto';
+    controlsHidden = false;
+
+    if (!video.paused) {
+      controlsTimeout = setTimeout(() => {
+        if (!scrubbing) {
+          controls.style.opacity = '0';
+          controls.style.transform = 'translateY(10px)';
+          controls.style.pointerEvents = 'none';
+          controlsHidden = true;
+        }
+      }, 3000);
+    }
+  }
+
+  player.addEventListener('mousemove', () => {
+    resetControlsTimer();
+  });
+
+  // Tap or click anywhere outside buttons to toggle controls
+  player.addEventListener('pointerdown', (e) => {
+    if (controls.contains(e.target)) {
+      return;
+    }
+    if (controlsHidden) {
+      resetControlsTimer();
+    } else {
+      clearTimeout(controlsTimeout);
+      controls.style.opacity = '0';
+      controls.style.transform = 'translateY(10px)';
+      controls.style.pointerEvents = 'none';
+      controlsHidden = true;
+    }
+  });
+
+  player.addEventListener('dblclick', (e) => {
+    if (controls.contains(e.target)) return;
+    toggleFullscreen();
+  });
+
+  window.addEventListener('keydown', (e) => {
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+    if (e.key === ' ' || e.key === 'k') {
+      e.preventDefault();
+      if (video.paused) video.play(); else video.pause();
+    } else if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault();
+      toggleFullscreen();
+    } else if (e.key === 'm' || e.key === 'M') {
+      e.preventDefault();
+      volumeBtn.click();
+    }
+  });
+
+  const controlElements = [
+    playBtn,
+    progress,
+    volumeBtn,
+    fullBtn,
+  ];
+
+  controlElements.forEach((el) => {
+    el.addEventListener('mouseenter', () => {
+      clearTimeout(controlsTimeout);
+      controls.style.opacity = '1';
+      controls.style.transform = 'translateY(0)';
+      controls.style.pointerEvents = 'auto';
+      controlsHidden = false;
+    });
+
+    el.addEventListener('mouseleave', () => {
+      if (!video.paused) {
+        controlsTimeout = setTimeout(() => {
+          if (!video.paused && !scrubbing) {
+            controls.style.opacity = '0';
+            controls.style.transform = 'translateY(10px)';
+            controls.style.pointerEvents = 'none';
+            controlsHidden = true;
+          }
+        }, 1000);
+      }
+    });
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if (e.target.matches('input, textarea')) return;
+
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (video.paused) video.play();
+      else video.pause();
+      resetControlsTimer();
+    }
+
+    if (e.code === 'KeyF') {
+      e.preventDefault();
+      toggleFullscreen();
+    }
+
+    if (e.code === 'Escape') {
+      if (isFullscreen) {
+        e.preventDefault();
+        exitFullscreen();
+
+      }
+    }
+
+    if (e.code === 'KeyM') {
+      e.preventDefault();
+      video.muted = !video.muted;
+      resetControlsTimer();
+    }
+  });
+
+  function isMobile() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      navigator.userAgent
+    );
+  }
+
+  // Init
+  connectViewerSocket();
+  resetControlsTimer();
+
+  window.onbeforeunload = () => {
+    if (statusSocket) {
+      statusSocket.onclose = null;
+      statusSocket.close();
+      statusSocket = null;
+    }
+    if (pcInstance) {
+      pcInstance.close();
+      pcInstance = null;
+    }
+  };
+})();
+</script>
 </body>
 </html>

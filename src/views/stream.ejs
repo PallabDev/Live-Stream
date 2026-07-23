@@ -398,15 +398,7 @@
                             const videoTrack = mediaStream.getVideoTracks()[0];
                             const audioTrack = mediaStream.getAudioTracks()[0];
 
-                            if (videoTrack) {
-                                try {
-                                    videoTrack.applyConstraints({
-                                        width: { ideal: 1920, max: 1920 },
-                                        height: { ideal: 1080, max: 1080 },
-                                        frameRate: { ideal: 60, max: 60 }
-                                    }).catch(() => {});
-                                } catch (_) {}
-
+                            if (videoTrack && videoTrack.readyState === 'live') {
                                 if ('contentHint' in videoTrack) {
                                     videoTrack.contentHint = 'detail';
                                 }
@@ -429,15 +421,7 @@
                                 });
                             }
 
-                            if (audioTrack) {
-                                try {
-                                    audioTrack.applyConstraints({
-                                        autoGainControl: false,
-                                        echoCancellation: false,
-                                        noiseSuppression: false
-                                    }).catch(() => {});
-                                } catch (_) {}
-
+                            if (audioTrack && audioTrack.readyState === 'live') {
                                 audioProducer = await sendTransport.produce({
                                     track: audioTrack,
                                     codecOptions: {
