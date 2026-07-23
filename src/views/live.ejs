@@ -36,13 +36,12 @@
 
     <!-- Main Video Player Stage -->
     <main class="relative w-full h-full flex items-center justify-center bg-black">
-        <!-- Unmute Tap Overlay (Middle of Screen) -->
-        <div id="unmute-overlay" onclick="unmuteStream()" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm cursor-pointer transition-opacity duration-300">
-            <div class="w-16 h-16 bg-blue-600 hover:bg-blue-500 rounded-full flex items-center justify-center shadow-2xl mb-3 transform hover:scale-105 transition-all">
-                <i class="fa-solid fa-volume-high text-2xl text-white ms-1"></i>
+        <!-- Center Tap-to-Mute / Unmute Button -->
+        <div id="unmute-overlay" onclick="toggleMuteSound()" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/30 backdrop-blur-[1px] cursor-pointer transition-all duration-300">
+            <div id="mute-btn-bg" class="w-16 h-16 bg-blue-600/90 hover:bg-blue-500 rounded-full flex items-center justify-center shadow-2xl mb-3 transform hover:scale-105 transition-all border border-white/20">
+                <i id="mute-btn-icon" class="fa-solid fa-volume-xmark text-2xl text-white"></i>
             </div>
-            <p class="text-white text-base font-medium">Tap Anywhere to Unmute</p>
-            <p class="text-gray-400 text-xs mt-1">Sub-Second WebRTC Stream</p>
+            <p id="mute-btn-text" class="text-white text-xs font-semibold tracking-wide bg-black/70 px-3 py-1 rounded-full border border-white/10 shadow-lg">Tap to Unmute Sound</p>
         </div>
 
         <!-- Room Full Overlay Modal (Exceeds 5 users) -->
@@ -89,12 +88,32 @@
         const roomLimitText = document.getElementById("room-limit-text");
 
         /**
-         * Unmute player sound on user gesture
+         * Toggle Mute / Unmute Sound
          */
-        function unmuteStream() {
-            remoteVideo.muted = false;
+        function toggleMuteSound() {
+            remoteVideo.muted = !remoteVideo.muted;
             remoteVideo.play().catch(() => {});
-            unmuteOverlay.style.display = 'none';
+            updateMuteUI();
+        }
+
+        /**
+         * Update Center Mute Button UI State
+         */
+        function updateMuteUI() {
+            const icon = document.getElementById("mute-btn-icon");
+            const text = document.getElementById("mute-btn-text");
+
+            if (!remoteVideo.muted) {
+                icon.className = "fa-solid fa-volume-high text-2xl text-white ms-1";
+                text.textContent = "Sound Unmuted (Tap to Mute)";
+                setTimeout(() => {
+                    if (!remoteVideo.muted) unmuteOverlay.style.opacity = '0';
+                }, 1500);
+            } else {
+                unmuteOverlay.style.opacity = '1';
+                icon.className = "fa-solid fa-volume-xmark text-2xl text-white";
+                text.textContent = "Tap to Unmute Sound";
+            }
         }
 
         /**
