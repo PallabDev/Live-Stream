@@ -1,151 +1,81 @@
-import { Request, Response } from "express";
-import http from "http";
+import { WebSocket } from "ws";
+import { MediasoupService } from "../../common/mediasoup/mediasoup.service.js";
+import { StreamService } from "./stream.service.js";
 
 export class SFUController {
-  private static getMediaMTXHost(): string {
-    return process.env.MEDIAMTX_HOST || "host.docker.internal";
-  }
+  /**
+   * Handle Mediasoup WebRTC SFU WebSocket Connection
+   */
+  public static handleConnection(ws: WebSocket, streamKey: string, isBroadcaster: boolean, viewerId: string) {
+    console.log(`[SFU WebSocket] Connection opened for streamKey: ${streamKey} | Role: ${isBroadcaster ? "Broadcaster" : "Viewer"} | ViewerId: ${viewerId}`);
 
-  private static getMediaMTXPort(): number {
-    return parseInt(process.env.MEDIAMTX_PORT || "8889", 10);
-  }
+    ws.on("message", async (rawMessage: string) => {
+      try {
+        const msg = JSON.parse(rawMessage);
+        const { action, transportId, dtlsParameters, kind, rtpParameters, rtpCapabilities } = msg;
 
-  private static optimizeSdp(sdp: string): string {
-    if (!sdp) return sdp;
-    let lines = sdp.split("\r\n");
-    let modifiedLines: string[] = [];
+        switch (action) {
+          case "getRouterRtpCapabilities": {
+            const capabilities = await MediasoupService.getRouterRtpCapabilities(streamKey);
+            ws.send(JSON.stringify({ action: "routerRtpCapabilities", rtpCapabilities: capabilities }));
+            break;
+          }
 
-    for (let line of lines) {
-      let currentLine = line;
+          case "createWebRtcTransport": {
+            try {
+              const data = await MediasoupService.createWebRtcTransport(streamKey, isBroadcaster, viewerId);
+              ws.send(JSON.stringify({ action: "webRtcTransportCreated", data }));
+            } catch (err: any) {
+              ws.send(JSON.stringify({ action: "error", message: err.message }));
+            }
+            break;
+          }
 
-      if (currentLine.startsWith("b=AS:")) {
-        currentLine = "b=AS:8000";
-      } else if (currentLine.startsWith("b=TIAS:")) {
-        currentLine = "b=TIAS:8000000";
+          case "connectTransport": {
+            await MediasoupService.connectTransport(streamKey, transportId, dtlsParameters);
+            ws.send(JSON.stringify({ action: "transportConnected" }));
+            break;
+          }
+
+          case "produce": {
+            if (!isBroadcaster) {
+              return ws.send(JSON.stringify({ action: "error", message: "Only broadcaster can produce" }));
+            }
+            const { id } = await MediasoupService.produce(streamKey, transportId, kind, rtpParameters);
+            ws.send(JSON.stringify({ action: "produced", id, kind }));
+            
+            // Update DB status to live
+            await StreamService.setStreamLive(streamKey, true);
+            break;
+          }
+
+          case "consume": {
+            try {
+              const consumers = await MediasoupService.consume(streamKey, viewerId, transportId, rtpCapabilities);
+              ws.send(JSON.stringify({ action: "consumed", consumers }));
+            } catch (err: any) {
+              ws.send(JSON.stringify({ action: "error", message: err.message }));
+            }
+            break;
+          }
+
+          default:
+            console.warn(`[SFU WebSocket] Unknown action received: ${action}`);
+        }
+      } catch (err: any) {
+        console.error(`[SFU WebSocket Error]:`, err.message);
+        ws.send(JSON.stringify({ action: "error", message: err.message }));
       }
-
-      modifiedLines.push(currentLine);
-    }
-
-    return modifiedLines.join("\r\n");
-  }
-
-
-  // Broadcaster WHIP Publisher proxy endpoint
-  static async handleWhipPublish(req: Request, res: Response): Promise<void> {
-    const { streamKey } = req.params;
-    if (!streamKey) {
-      res.status(400).send("Stream key is required");
-      return;
-    }
-
-    const rawSdp = typeof req.body === "string" ? req.body : req.body.toString("utf8");
-    const sdpOffer = SFUController.optimizeSdp(rawSdp);
-    const mtxHost = SFUController.getMediaMTXHost();
-    const mtxPort = SFUController.getMediaMTXPort();
-
-    const options: http.RequestOptions = {
-      hostname: mtxHost,
-      port: mtxPort,
-      path: `/${encodeURIComponent(streamKey)}/whip`,
-      method: "POST",
-      headers: {
-        "Content-Type": "application/sdp",
-        "Content-Length": Buffer.byteLength(sdpOffer),
-      },
-    };
-
-    const proxyReq = http.request(options, (proxyRes) => {
-      let data = "";
-      proxyRes.on("data", (chunk) => (data += chunk));
-      proxyRes.on("end", () => {
-        const statusCode = proxyRes.statusCode || 500;
-        if (proxyRes.headers.location) {
-          res.setHeader("Location", proxyRes.headers.location);
-        }
-        res.setHeader("Content-Type", "application/sdp");
-        const optimizedAnswer = SFUController.optimizeSdp(data);
-        res.status(statusCode).send(optimizedAnswer);
-      });
     });
 
-    proxyReq.on("error", (err) => {
-      console.error(`[SFU Controller WHIP Error] Failed to reach MediaMTX (${mtxHost}:${mtxPort}):`, err.message);
-      res.status(502).send("MediaMTX SFU server unavailable");
+    ws.on("close", () => {
+      console.log(`[SFU WebSocket] Connection closed for key: ${streamKey} | Role: ${isBroadcaster ? "Broadcaster" : "Viewer"}`);
+      if (isBroadcaster) {
+        MediasoupService.closeRoom(streamKey);
+        StreamService.setStreamLive(streamKey, false).catch(() => {});
+      } else {
+        MediasoupService.removeViewer(streamKey, viewerId);
+      }
     });
-
-    proxyReq.write(sdpOffer);
-    proxyReq.end();
-  }
-
-  // Viewer WHEP Subscriber proxy endpoint
-  static async handleWhepSubscribe(req: Request, res: Response): Promise<void> {
-    const { streamKey } = req.params;
-    if (!streamKey) {
-      res.status(400).send("Stream key is required");
-      return;
-    }
-
-    const rawSdp = typeof req.body === "string" ? req.body : req.body.toString("utf8");
-    const sdpOffer = SFUController.optimizeSdp(rawSdp);
-    const mtxHost = SFUController.getMediaMTXHost();
-    const mtxPort = SFUController.getMediaMTXPort();
-
-    const options: http.RequestOptions = {
-      hostname: mtxHost,
-      port: mtxPort,
-      path: `/${encodeURIComponent(streamKey)}/whep`,
-      method: "POST",
-      headers: {
-        "Content-Type": "application/sdp",
-        "Content-Length": Buffer.byteLength(sdpOffer),
-      },
-    };
-
-    const proxyReq = http.request(options, (proxyRes) => {
-      let data = "";
-      proxyRes.on("data", (chunk) => (data += chunk));
-      proxyRes.on("end", () => {
-        const statusCode = proxyRes.statusCode || 500;
-        if (proxyRes.headers.location) {
-          res.setHeader("Location", proxyRes.headers.location);
-        }
-        res.setHeader("Content-Type", "application/sdp");
-        const optimizedAnswer = SFUController.optimizeSdp(data);
-        res.status(statusCode).send(optimizedAnswer);
-      });
-    });
-
-    proxyReq.on("error", (err) => {
-      console.error(`[SFU Controller WHEP Error] Failed to reach MediaMTX (${mtxHost}:${mtxPort}):`, err.message);
-      res.status(502).send("MediaMTX SFU server unavailable");
-    });
-
-    proxyReq.write(sdpOffer);
-    proxyReq.end();
-  }
-
-  // WHIP/WHEP Session termination proxy endpoint
-  static async handleSessionDelete(req: Request, res: Response): Promise<void> {
-    const { streamKey } = req.params;
-    const mtxHost = SFUController.getMediaMTXHost();
-    const mtxPort = SFUController.getMediaMTXPort();
-
-    const options: http.RequestOptions = {
-      hostname: mtxHost,
-      port: mtxPort,
-      path: `/${encodeURIComponent(streamKey)}/whip`,
-      method: "DELETE",
-    };
-
-    const proxyReq = http.request(options, (proxyRes) => {
-      res.status(proxyRes.statusCode || 200).send("Session closed");
-    });
-
-    proxyReq.on("error", () => {
-      res.status(200).send("Session closed");
-    });
-
-    proxyReq.end();
   }
 }

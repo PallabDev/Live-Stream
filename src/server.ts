@@ -89,11 +89,6 @@ app.use(streamRoutes);
 app.use(dashboardRoutes);
 app.use(liveRoutes);
 
-// MediaMTX SFU WebRTC WHIP / WHEP Endpoints
-app.post("/api/sfu/whip/:streamKey", SFUController.handleWhipPublish);
-app.delete("/api/sfu/whip/:streamKey", SFUController.handleSessionDelete);
-app.post("/api/sfu/whep/:streamKey", SFUController.handleWhepSubscribe);
-
 // Serve live streams media chunks
 // etag:false + lastModified:false prevents browsers from sending If-None-Match / If-Modified-Since
 // which would cause a 304 "Not Modified" response and serve a stale cached playlist to the player.
@@ -242,10 +237,29 @@ monitorWss.on("connection", (ws: any) => {
   });
 });
 
+const sfuWss = new WebSocketServer({ noServer: true });
+
+sfuWss.on("connection", (ws: any, request: http.IncomingMessage, info: { streamKey: string; isBroadcaster: boolean; viewerId: string }) => {
+  SFUController.handleConnection(ws, info.streamKey, info.isBroadcaster, info.viewerId);
+});
+
 server.on("upgrade", (request, socket, head) => {
   // Use simple URL parsing to guarantee robust path extraction in all network topologies
-  const parsedUrl = url.parse(request.url || "");
+  const parsedUrl = url.parse(request.url || "", true);
   const pathname = parsedUrl.pathname || "";
+
+  const sfuMatch = pathname.match(/^\/api\/sfu\/ws\/?$/);
+  if (sfuMatch) {
+    const streamKey = (parsedUrl.query.streamKey as string) || "";
+    const role = (parsedUrl.query.role as string) || "viewer";
+    const viewerId = (parsedUrl.query.viewerId as string) || `viewer_${Date.now()}`;
+    const isBroadcaster = role === "broadcaster";
+
+    sfuWss.handleUpgrade(request, socket, head, (ws) => {
+      sfuWss.emit("connection", ws, request, { streamKey, isBroadcaster, viewerId });
+    });
+    return;
+  }
 
   const match = pathname.match(/^\/api\/stream\/([^\/]+)\/ws\/?$/);
   const viewerMatch = pathname.match(/^\/api\/stream\/([^\/]+)\/viewer\/?$/);

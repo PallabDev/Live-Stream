@@ -1,257 +1,180 @@
 <%- include('header') %>
 
-    <style>
-        .hidden-row {
-            display: none !important;
-        }
+<!-- Import Mediasoup Client JS Library for WebRTC SFU Streaming -->
+<script src="https://cdn.jsdelivr.net/npm/mediasoup-client@3/dist/mediasoup-client.min.js"></script>
 
-        .flex-row-layout {
-            display: flex;
-            justify-content: space-between;
-        }
+<style>
+    .hidden-row {
+        display: none !important;
+    }
 
-        @media (max-width: 768px) {
-            #preview-placeholder {
-                padding: 1rem !important;
-            }
+    .flex-row-layout {
+        display: flex;
+        justify-content: space-between;
+    }
 
-            #placeholder-icon {
-                width: 50px !important;
-                height: 50px !important;
-                font-size: 1.5rem !important;
-                margin-bottom: 0.75rem !important;
-            }
+    #preview-player::-webkit-media-controls-mute-button,
+    #preview-player::-webkit-media-controls-volume-slider {
+        display: none !important;
+    }
+</style>
 
-            #placeholder-title {
-                font-size: 1.1rem !important;
-                margin-bottom: 0.25rem !important;
-            }
+<!-- Server-passed variables for JS -->
+<div id="studio-config" data-stream-key="<%= stream.streamKey %>" data-is-live="<%= stream.isLive %>" style="display: none;"></div>
 
-            #placeholder-text {
-                font-size: 0.8rem !important;
-                line-height: 1.4 !important;
-                max-width: 290px !important;
-            }
-        }
+<div class="app-body">
+    <div class="row g-4">
+        <!-- Left Section: Main Live Video Player & Controls -->
+        <div class="col-lg-8">
+            <div class="card bg-dark border-secondary shadow-lg">
+                <div class="card-header border-secondary d-flex justify-content-between align-items-center bg-black bg-opacity-40 py-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <span id="live-badge" class="badge bg-secondary text-uppercase px-3 py-2 fw-bold" style="letter-spacing: 1px;">Offline</span>
+                        <span id="duration-badge" class="badge bg-dark border border-secondary text-light px-3 py-2 font-monospace" style="display: none;">00:00:00</span>
+                    </div>
+                    <div id="network-quality-badge" class="badge bg-secondary bg-opacity-20 border border-secondary text-secondary px-3 py-2 d-flex align-items-center gap-2">
+                        <i id="network-quality-icon" class="ti ti-wifi-off"></i>
+                        <span id="network-quality-text">Standby</span>
+                    </div>
+                </div>
 
-        /* Permanently hide volume/mute controls on the preview player to prevent accidental unmuting (echo) */
-        #preview-player::-webkit-media-controls-mute-button,
-        #preview-player::-webkit-media-controls-volume-slider {
-            display: none !important;
-        }
-    </style>
-
-    <!-- Server-passed variables for JS (prevents IDE template parsing warnings) -->
-    <div id="studio-config" data-stream-key="<%= stream.streamKey %>" data-is-live="<%= stream.isLive %>"
-        style="display: none;">
-    </div>
-
-
-
-    <div class="stream-grid">
-        <!-- Left Side: Streaming Preview and Controls -->
-        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
-            <div class="glass-panel" style="padding: 1rem;">
-                <div class="video-container"
-                    style="position: relative; background: #000; border-radius: var(--radius); overflow: hidden; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center;">
-
-                    <!-- Video Element for local preview and movie playback -->
-                    <video id="preview-player" class="video-element" playsinline controls muted
-                        style="display: none; width: 100%; height: 100%; object-fit: contain; image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;"></video>
-
-                    <!-- Hidden Audio Element for Chrome bug workaround -->
-                    <audio id="audio-player" style="display: none;"></audio>
-
-                    <!-- Offline/Ready State Placeholder -->
-                    <div id="preview-placeholder"
-                        style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem; color: var(--text-muted);">
-                        <div id="placeholder-icon" class="badge-danger"
-                            style="width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin-bottom: 1.5rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3);">
-                            <i class="ti ti-video-off" id="icon-element" style="color: var(--danger);"></i>
+                <div class="card-body p-0 position-relative bg-black d-flex align-items-center justify-content-center" style="min-height: 480px; max-height: 600px;">
+                    <!-- Placeholder graphic when no media is selected -->
+                    <div id="preview-placeholder" class="text-center p-5">
+                        <div id="placeholder-icon" class="avatar avatar-xl bg-primary bg-opacity-10 text-primary rounded-circle mb-3 mx-auto d-flex align-items-center justify-content-center">
+                            <i class="ti ti-video-plus fs-1"></i>
                         </div>
-                        <h3 id="placeholder-title" style="margin-bottom: 0.5rem; font-size: 1.5rem; color: #fff;">No
-                            Media Selected</h3>
-                        <p id="placeholder-text" style="max-width: 450px; font-size: 0.95rem; line-height: 1.6;">
-                            Select a local movie file using the media source panel, then click <strong>Go Live</strong>
-                            to start.
+                        <h4 id="placeholder-title" class="text-light fw-bold mb-2">No Active Media Selected</h4>
+                        <p id="placeholder-text" class="text-secondary mb-4 mx-auto" style="max-width: 400px;">
+                            Select a local video file or share your screen to begin streaming via WebRTC SFU.
                         </p>
+                        <div class="d-flex justify-content-center gap-3">
+                            <label class="btn btn-primary px-4 py-2 d-flex align-items-center gap-2 cursor-pointer shadow-sm">
+                                <i class="ti ti-movie fs-5"></i> Choose Video File
+                                <input type="file" id="movie-file-input" accept="video/*" class="d-none">
+                            </label>
+                            <button id="screenshare-btn" onclick="startScreenShare()" class="btn btn-outline-light px-4 py-2 d-flex align-items-center gap-2">
+                                <i class="ti ti-screen-share fs-5"></i> Share Screen
+                            </button>
+                        </div>
                     </div>
 
-                    <div class="video-overlay"
-                        style="position: absolute; top: 1rem; left: 1rem; display: flex; gap: 0.5rem; z-index: 10;">
-                        <span id="status-badge" class="badge badge-danger">
-                            <i class="ti ti-point-filled"></i> Offline
-                        </span>
-                        <span id="viewers-badge" class="badge badge-secondary"
-                            style="background: rgba(70, 83, 98, 0.85); color: #fff; border: 1px solid rgba(130, 163, 161, 0.3);">
-                            <i class="ti ti-users"></i> <span id="viewers-count">0</span> Viewers
-                        </span>
+                    <!-- Broadcaster Preview Video Player -->
+                    <video id="preview-player" class="w-100 h-100 object-fit-contain" style="display: none;" playsinline muted></video>
 
-                        <span id="duration-badge" class="badge badge-primary" style="display: none;">
-                            00:00:00
-                        </span>
-                    </div>
+                    <!-- Hidden Audio Player to ensure clean un-muted sound for file playback -->
+                    <audio id="audio-player" style="display: none;"></audio>
                 </div>
-            </div>
 
-            <!-- Streaming Control Dock -->
-            <div style="display: flex; justify-content: center; margin-top: 0.5rem;">
-                <div class="control-dock"
-                    style="display: flex; gap: 1rem; background: rgba(30, 41, 59, 0.6); border: 1px solid var(--panel-border); padding: 0.75rem 1.5rem; border-radius: 50px; backdrop-filter: blur(10px); align-items: center;">
-                    <button id="btn-toggle-live" class="btn btn-primary" onclick="toggleLiveState()" disabled
-                        style="border-radius: 30px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 600; opacity: 0.5; transition: all 0.2s ease;">
-                        <i class="ti ti-player-play" id="toggle-live-icon"></i> <span id="toggle-live-text">Go
-                            Live</span>
-                    </button>
+                <!-- Footer Control Bar -->
+                <div class="card-footer border-secondary bg-black bg-opacity-40 p-3">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                        <div class="d-flex align-items-center gap-3">
+                            <button id="go-live-btn" onclick="toggleLiveState()" class="btn btn-success btn-lg px-4 d-flex align-items-center gap-2 fw-bold shadow">
+                                <i class="ti ti-broadcast fs-4"></i>
+                                <span>Go Live (WebRTC SFU)</span>
+                            </button>
+                            <div class="vr bg-secondary opacity-25" style="height: 30px;"></div>
+                            <span id="active-source-text" class="text-secondary small font-monospace">Source: None</span>
+                        </div>
 
-                    <button id="btn-share" class="btn btn-secondary" onclick="copyViewerLink()" title="Copy Viewer Link"
-                        style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center;">
-                        <i class="ti ti-share" style="font-size: 1.2rem;"></i>
-                    </button>
+                        <div class="d-flex align-items-center gap-4 text-secondary small">
+                            <div>
+                                <i class="ti ti-users text-primary me-1"></i>
+                                Viewers: <strong id="viewers-count" class="text-light font-monospace">0 / 5 Max</strong>
+                            </div>
+                            <div>
+                                <i class="ti ti-activity text-info me-1"></i>
+                                Bitrate: <strong id="upload-speed-val" class="text-light font-monospace">0</strong> Kbps
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Right Side: Stream Configuration & Studio Controls -->
-        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
-            <!-- Media Source Selector -->
-            <div class="glass-panel" style="padding: 1.5rem;">
-                <div class="card-header"
-                    style="margin-bottom: 1.25rem; padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                    <h4 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
-                        <i class="ti ti-device-tv" style="color: var(--primary); font-size: 1.3rem;"></i> Studio Media
-                        Source
-                    </h4>
+        <!-- Right Section: Stream Details & Information -->
+        <div class="col-lg-4">
+            <div class="card bg-dark border-secondary shadow-lg mb-4">
+                <div class="card-header border-secondary bg-black bg-opacity-40 py-3">
+                    <h5 class="card-title text-light m-0 d-flex align-items-center gap-2">
+                        <i class="ti ti-settings text-primary"></i> Stream Information
+                    </h5>
                 </div>
-
-                <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-                    <input type="file" id="movie-file-input"
-                        accept="video/*,video/mp4,video/mkv,video/webm,video/x-matroska,video/quicktime"
-                        style="display: none;">
-
-                    <!-- Select Movie File Button -->
-                    <button id="btn-select-file" class="btn btn-secondary"
-                        onclick="document.getElementById('movie-file-input').click()"
-                        style="justify-content: flex-start; border-radius: 12px; padding: 0.8rem 1.2rem; width: 100%;">
-                        <i class="ti ti-movie" style="font-size: 1.2rem; color: var(--primary);"></i> Select Movie File
-                    </button>
-
-                    <!-- Share Screen Button -->
-                    <button id="btn-select-screen" class="btn btn-secondary" onclick="startScreenShare()"
-                        style="justify-content: flex-start; border-radius: 12px; padding: 0.8rem 1.2rem; width: 100%;">
-                        <i class="ti ti-screen-share" style="font-size: 1.2rem; color: var(--secondary);"></i> Share
-                        Desktop Screen
-                    </button>
-
-
-
-                    <!-- Active Source Info -->
-                    <div
-                        style="background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: 12px; margin-top: 0.5rem;">
-                        <span
-                            style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em;">Current
-                            Source</span>
-                        <strong id="active-source-text" style="font-size: 0.9rem; color: #fff;">None Selected</strong>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small text-uppercase">Stream Key</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control bg-black text-light border-secondary font-monospace" value="<%= stream.streamKey %>" readonly>
+                            <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText('<%= stream.streamKey %>')">
+                                <i class="ti ti-copy"></i>
+                            </button>
+                        </div>
                     </div>
 
-                    <div class="screen-share-tip"
-                        style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem;">
-                        <p style="color: var(--text-muted); font-size: 0.8rem; line-height: 1.5; margin: 0;">
-                            <i class="ti ti-info-circle" style="color: var(--primary);"></i>
-                            <strong>Pro Tip:</strong> When sharing your screen, make sure to check the <strong>"Share
-                                system audio"</strong> checkbox in the browser popup to stream the movie sound!
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small text-uppercase">Direct Viewer Link</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control bg-black text-light border-secondary font-monospace" value="<%= process.env.APP_URL || 'http://localhost:3000' %>/live/<%= stream.streamKey %>" readonly>
+                            <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText('<%= process.env.APP_URL || 'http://localhost:3000' %>/live/<%= stream.streamKey %>')">
+                                <i class="ti ti-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="p-3 bg-black bg-opacity-50 rounded border border-secondary">
+                        <div class="d-flex align-items-center gap-2 text-warning mb-2">
+                            <i class="ti ti-info-circle fs-5"></i>
+                            <strong class="small">Room Limit Notice</strong>
+                        </div>
+                        <p class="text-secondary small m-0">
+                            Mediasoup SFU limits this stream to a maximum of <strong>5 concurrent viewers</strong> for ultra-high quality, sub-second WebRTC delivery.
                         </p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Stream Telemetry & Network Quality Panel -->
-            <div class="glass-panel" id="telemetry-panel"
-                style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
-                <div class="card-header"
-                    style="padding-bottom: 0.5rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                    <h4
-                        style="font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: #fff;">
-                        <i class="ti ti-activity" style="color: var(--primary); font-size: 1.2rem;"></i> Stream
-                        Telemetry
-                    </h4>
-                </div>
-
-                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-                    <!-- Upload Speed Stat Row -->
-                    <div
-                        style="display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.6); padding: 0.85rem 1rem; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05);">
-                        <span
-                            style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.5rem;">
-                            <i class="ti ti-arrow-up-circle" style="color: #10b981; font-size: 1.2rem;"></i> Host Upload
-                            Speed
-                        </span>
-                        <strong style="font-size: 1.05rem; color: #10b981; font-family: monospace;">
-                            <span id="upload-speed-val">0</span> Kbps
-                        </strong>
-                    </div>
-
-                    <!-- Network Quality Indicator Row -->
-                    <div
-                        style="display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.6); padding: 0.85rem 1rem; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05);">
-                        <span
-                            style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.5rem;">
-                            <i class="ti ti-wifi" id="network-quality-icon"
-                                style="color: #10b981; font-size: 1.2rem;"></i> Network Quality
-                        </span>
-                        <span id="network-quality-badge"
-                            style="font-size: 0.85rem; font-weight: 600; padding: 0.2rem 0.6rem; border-radius: 6px; background: rgba(70, 83, 98, 0.2); border: 1px solid rgba(130, 163, 161, 0.3); color: #94a3b8;">
-                            <span id="network-quality-text">Standby</span>
-                        </span>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+</div>
 
-
-
-    <script>
-        // Read config properties initialized by server side (prevents IDE template syntax confusion)
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        // Read configuration from server-rendered dataset
         const studioConfig = document.getElementById("studio-config");
         const streamKey = studioConfig.dataset.streamKey;
+
+        // UI State Variables
         let isLive = false;
-
-        let isStreaming = false; // WebRTC Peer Connection is actively sending data
-        let streamStartTime = null;
-        let durationInterval = null;
-
-        let pc = null;
-        let mediaRecorder = null;
-        let mediaSocket = null;
-        let captureStream = null;
-        let currentSourceType = null; // 'file' or 'screen'
-        let mediaStream = null; // Globally stored media track stream reference
-
-        let reconnectTimeout = null;
+        let isStreaming = false;
         let isManuallyStopped = false;
+        let currentSourceType = null; // 'file' or 'screen'
 
-        let audioCtx = null;
-        let activeAudioSourceNode = null;
-        let activeAudioDestNode = null;
-        let mediaElementSource = null;
+        // Media Stream & Player References
+        let mediaStream = null;
+        let durationInterval = null;
+        let statsInterval = null;
+        let streamStartTime = null;
+
+        // Mediasoup SFU WebRTC Client Variables
+        let sfuSocket = null;
+        let device = null;
+        let sendTransport = null;
+        let videoProducer = null;
+        let audioProducer = null;
 
         const movieFileInput = document.getElementById("movie-file-input");
         const previewPlayer = document.getElementById("preview-player");
         const audioPlayer = document.getElementById("audio-player");
         const previewPlaceholder = document.getElementById("preview-placeholder");
 
-        // Handle local video file selection
+        /**
+         * Handle Video File Selection
+         */
         movieFileInput.addEventListener("change", (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
-            // Reset current stream state if active
-            if (isStreaming) {
-                triggerStopLive();
-            }
-
-            // Stop active screen share tracks if any
+            if (isLive) stopMediasoupBroadcaster();
             stopMediaTracks();
 
             const fileUrl = URL.createObjectURL(file);
@@ -259,1124 +182,295 @@
             previewPlayer.src = fileUrl;
             previewPlayer.load();
 
-            audioPlayer.srcObject = null;
             audioPlayer.src = fileUrl;
             audioPlayer.load();
 
-            // Sync playback state between the two players
             previewPlayer.onplay = () => {
                 audioPlayer.currentTime = previewPlayer.currentTime;
-                audioPlayer.play().catch(e => console.warn("audioPlayer play error:", e));
+                audioPlayer.play().catch(() => {});
             };
-            previewPlayer.onpause = () => {
-                audioPlayer.pause();
-            };
-            previewPlayer.onseeked = () => {
-                audioPlayer.currentTime = previewPlayer.currentTime;
-            };
-
-            // Force previewPlayer to remain muted permanently to prevent broadcaster echo
-            previewPlayer.onvolumechange = () => {
-                if (!previewPlayer.muted || previewPlayer.volume > 0) {
-                    previewPlayer.muted = true;
-                    previewPlayer.volume = 0;
-                }
-            };
+            previewPlayer.onpause = () => audioPlayer.pause();
+            previewPlayer.onseeked = () => audioPlayer.currentTime = previewPlayer.currentTime;
 
             currentSourceType = 'file';
             document.getElementById("active-source-text").textContent = `Movie File: ${file.name}`;
-
-            // Show player preview, hide default state
             previewPlayer.style.display = "block";
             previewPlaceholder.style.display = "none";
-
             updateUI();
         });
 
-        // Handle local screen sharing
-        async function startScreenShare() {
+        /**
+         * Handle Screen Sharing Capture
+         */
+        window.startScreenShare = async function() {
             try {
-                if (isStreaming) {
-                    triggerStopLive();
-                }
-
+                if (isLive) stopMediasoupBroadcaster();
                 stopMediaTracks();
-                if (movieFileInput.value) {
-                    movieFileInput.value = "";
-                    previewPlayer.src = "";
-                    audioPlayer.src = "";
-                }
 
-                // Prompt screen capture with native high-resolution video & system audio request
-                let stream;
-                try {
-                    stream = await navigator.mediaDevices.getDisplayMedia({
-                        video: {
-                            width: { ideal: 1920 },
-                            height: { ideal: 1080 },
-                            frameRate: { ideal: 30, max: 30 },
-                            displaySurface: "monitor"
-                        },
-                        audio: {
-                            echoCancellation: false,
-                            noiseSuppression: false,
-                            autoGainControl: false,
-                            suppressLocalAudioPlayback: false
-                        }
-                    });
-                } catch (e) {
-                    stream = await navigator.mediaDevices.getDisplayMedia({
-                        video: {
-                            width: { ideal: 1920 },
-                            height: { ideal: 1080 },
-                            frameRate: { ideal: 60, max: 60 }
-                        },
-                        audio: true
-                    });
-                }
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } },
+                    audio: true
+                });
 
-                const screenVideoTrack = stream.getVideoTracks()[0];
-                if (screenVideoTrack) {
-                    if ('contentHint' in screenVideoTrack) {
-                        screenVideoTrack.contentHint = 'motion';
-                    }
-                    if (typeof screenVideoTrack.applyConstraints === 'function') {
-                        screenVideoTrack.applyConstraints({
-                            width: { ideal: 1920 },
-                            height: { ideal: 1080 },
-                            frameRate: { ideal: 60, max: 60 }
-                        }).catch(err => console.warn("[Studio Screen] applyConstraints error:", err));
-                    }
-                    // Re-enforce 1080p and unscaled parameters when track unmutes or resizes during YouTube video switches
-                    screenVideoTrack.onunmute = () => {
-                        console.log("[Studio Screen] Screen track unmuted/resized. Re-enforcing 1080p unscaled resolution.");
-                        if (typeof screenVideoTrack.applyConstraints === 'function') {
-                            screenVideoTrack.applyConstraints({
-                                width: { ideal: 1920 },
-                                height: { ideal: 1080 },
-                                frameRate: { ideal: 60, max: 60 }
-                            }).catch(() => { });
-                        }
-                    };
-                    screenVideoTrack.onended = () => {
-                        console.log("Screen share track ended by browser controls.");
-                        triggerStopLive();
-                    };
-                }
-
-                captureStream = stream;
-                previewPlayer.src = null;
+                mediaStream = stream;
+                previewPlayer.src = "";
                 previewPlayer.srcObject = stream;
-                previewPlayer.play().catch(e => console.log("Local preview play error:", e));
+                previewPlayer.play().catch(() => {});
 
                 currentSourceType = 'screen';
-                document.getElementById("active-source-text").textContent = "Screen Sharing (1080p @ 60 FPS)";
-
+                document.getElementById("active-source-text").textContent = "Source: Screen Share";
                 previewPlayer.style.display = "block";
                 previewPlaceholder.style.display = "none";
-
                 updateUI();
             } catch (err) {
-                if (window.showToast) window.showToast("Screen sharing cancelled or failed: " + err.message, "error");
+                console.error("[Screen Share Error]:", err);
             }
-        }
-
-        function stopMediaTracks() {
-            if (captureStream) {
-                captureStream.getTracks().forEach(track => track.stop());
-                captureStream = null;
-            }
-        }
-
-        function updateUI() {
-            const btnToggleLive = document.getElementById("btn-toggle-live");
-            const toggleLiveIcon = document.getElementById("toggle-live-icon");
-            const toggleLiveText = document.getElementById("toggle-live-text");
-            const statusBadge = document.getElementById("status-badge");
-
-            if (currentSourceType === 'file' || currentSourceType === 'screen') {
-                if (btnToggleLive) {
-                    btnToggleLive.disabled = false;
-                    btnToggleLive.style.opacity = "1";
-                    btnToggleLive.style.cursor = "pointer";
-                }
-            } else {
-                if (btnToggleLive) {
-                    btnToggleLive.disabled = true;
-                    btnToggleLive.style.opacity = "0.5";
-                    btnToggleLive.style.cursor = "not-allowed";
-                }
-            }
-
-            if (isLive || isStreaming) {
-                if (btnToggleLive) {
-                    btnToggleLive.className = "btn btn-danger";
-                    btnToggleLive.style.background = "var(--danger)";
-                    btnToggleLive.style.borderColor = "var(--danger)";
-                }
-                if (toggleLiveIcon) toggleLiveIcon.className = "ti ti-player-stop-filled";
-                if (toggleLiveText) toggleLiveText.textContent = "End Stream";
-
-                if (statusBadge) {
-                    statusBadge.className = "badge badge-danger";
-                    statusBadge.style.background = "";
-                    statusBadge.style.borderColor = "";
-                    statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> LIVE';
-                }
-            } else {
-                if (btnToggleLive) {
-                    btnToggleLive.className = "btn btn-primary";
-                    btnToggleLive.style.background = "";
-                    btnToggleLive.style.borderColor = "";
-                }
-                if (toggleLiveIcon) toggleLiveIcon.className = "ti ti-player-play";
-                if (toggleLiveText) toggleLiveText.textContent = "Go Live";
-
-                if (statusBadge) {
-                    statusBadge.className = "badge badge-danger";
-                    statusBadge.style.background = "";
-                    statusBadge.style.borderColor = "";
-                    statusBadge.innerHTML = '<i class="ti ti-point-filled"></i> Offline';
-                }
-            }
-        }
-
-        function triggerStopLive() {
-            isManuallyStopped = true;
-            isLive = false;
-            isStreaming = false;
-
-            if (durationInterval) {
-                clearInterval(durationInterval);
-                durationInterval = null;
-            }
-            const durationBadge = document.getElementById("duration-badge");
-            if (durationBadge) durationBadge.style.display = "none";
-
-            if (reconnectTimeout) {
-                clearTimeout(reconnectTimeout);
-                reconnectTimeout = null;
-            }
-
-            if (mediaSocket) {
-                try { mediaSocket.close(); } catch (e) { }
-                mediaSocket = null;
-            }
-
-            for (const [viewerId, pcInstance] of peerConnections) {
-                try { pcInstance.close(); } catch (e) { }
-            }
-            peerConnections.clear();
-            candidateQueues.clear();
-
-            updateUI();
-        }
-
-        function reorderVideoCodecs(sdp) {
-            let lines = sdp.split('\r\n');
-            let mVideoIndex = -1;
-            let h264BaselinePts = [];
-            let h264OtherPts = [];
-            let vp9Pts = [];
-            let otherPts = [];
-
-            for (let i = 0; i < lines.length; i++) {
-                let line = lines[i];
-                if (line.startsWith('m=video ')) {
-                    mVideoIndex = i;
-                }
-                if (line.startsWith('a=rtpmap:') && line.includes('video/')) {
-                    let match = line.match(/a=rtpmap:(\d+)\s+([^\/]+)/);
-                    if (match) {
-                        let pt = match[1];
-                        let codec = match[2].toUpperCase();
-
-                        if (codec === 'H264') {
-                            // Find corresponding fmtp for this PT to check for baseline profile
-                            let fmtpLine = lines.find(l => l.startsWith(`a=fmtp:${pt}`));
-                            if (fmtpLine && (fmtpLine.includes('42e0') || fmtpLine.includes('4200') || fmtpLine.includes('4210'))) {
-                                h264BaselinePts.push(pt);
-                            } else {
-                                h264OtherPts.push(pt);
-                            }
-                        } else if (codec === 'VP9') {
-                            vp9Pts.push(pt);
-                        } else {
-                            otherPts.push(pt);
-                        }
-                    }
-                }
-            }
-
-            if (mVideoIndex !== -1) {
-                let mLine = lines[mVideoIndex];
-                let parts = mLine.split(' ');
-                let header = parts.slice(0, 3);
-                let payloads = parts.slice(3);
-
-                let preferred = [...h264BaselinePts, ...h264OtherPts, ...vp9Pts];
-                let remaining = payloads.filter(pt => !preferred.includes(pt));
-                let newPayloads = [...preferred, ...remaining];
-
-                lines[mVideoIndex] = header.join(' ') + ' ' + newPayloads.join(' ');
-            }
-
-            return lines.join('\r\n');
-        }
-
-        function preferHighFidelityAudioAndVideo(sdp) {
-            if (!sdp) return sdp;
-            let lines = sdp.split('\r\n');
-            let opusPt = null;
-            let videoPts = [];
-            let inVideoSection = false;
-
-            for (let line of lines) {
-                if (line.startsWith('m=video')) {
-                    inVideoSection = true;
-                } else if (line.startsWith('m=audio') || line.startsWith('m=application')) {
-                    inVideoSection = false;
-                }
-
-                if (!inVideoSection && line.toLowerCase().includes('opus/48000')) {
-                    const match = line.match(/a=rtpmap:(\d+)\s+opus\/48000/i);
-                    if (match) opusPt = match[1];
-                }
-
-                if (inVideoSection && line.startsWith('a=rtpmap:')) {
-                    const match = line.match(/a=rtpmap:(\d+)\s+/);
-                    if (match) videoPts.push(match[1]);
-                }
-            }
-
-            let modifiedLines = [];
-            let fmtpFound = false;
-            let currentMedia = null;
-            let seenVideoFmtp = {};
-
-            for (let i = 0; i < lines.length; i++) {
-                let line = lines[i];
-
-                if (line.startsWith('m=audio')) {
-                    currentMedia = 'audio';
-                } else if (line.startsWith('m=video')) {
-                    currentMedia = 'video';
-                }
-
-                if (currentMedia === 'audio' && opusPt && line.startsWith(`a=fmtp:${opusPt}`)) {
-                    fmtpFound = true;
-                    line = `a=fmtp:${opusPt} stereo=1;sprop-stereo=1;maxaveragebitrate=256000;maxplaybackrate=48000;usedtx=0`;
-                }
-
-                if (currentMedia === 'video' && line.startsWith('a=fmtp:')) {
-                    for (let pt of videoPts) {
-                        if (line.startsWith(`a=fmtp:${pt}`)) {
-                            seenVideoFmtp[pt] = true;
-                            if (!line.includes('x-google-min-bitrate')) {
-                                line = line + ';x-google-start-bitrate=5000;x-google-min-bitrate=2500;x-google-max-bitrate=8000';
-                            }
-                        }
-                    }
-                }
-
-                modifiedLines.push(line);
-
-                if (currentMedia === 'video' && line.startsWith('c=IN ')) {
-                    modifiedLines.push('b=AS:8000');
-                    modifiedLines.push('b=TIAS:8000000');
-                    // Inject fmtp with x-google-min-bitrate=2500 for any video payload types that don't have an fmtp line
-                    for (let pt of videoPts) {
-                        if (!seenVideoFmtp[pt]) {
-                            modifiedLines.push(`a=fmtp:${pt} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f;x-google-start-bitrate=5000;x-google-min-bitrate=2500;x-google-max-bitrate=8000`);
-                            seenVideoFmtp[pt] = true;
-                        }
-                        modifiedLines.push(`a=rtcp-fb:${pt} nack`);
-                        modifiedLines.push(`a=rtcp-fb:${pt} nack pli`);
-                        modifiedLines.push(`a=rtcp-fb:${pt} goog-remb`);
-                        modifiedLines.push(`a=rtcp-fb:${pt} transport-cc`);
-                    }
-                }
-            }
-
-            if (opusPt && !fmtpFound) {
-                for (let i = 0; i < modifiedLines.length; i++) {
-                    if (modifiedLines[i].startsWith(`a=rtpmap:${opusPt}`)) {
-                        modifiedLines.splice(i + 1, 0, `a=fmtp:${opusPt} stereo=1;sprop-stereo=1;maxaveragebitrate=256000;maxplaybackrate=48000;usedtx=0`);
-                        break;
-                    }
-                }
-            }
-
-            return reorderVideoCodecs(modifiedLines.join('\r\n'));
-        }
-
-
-        function showReconnectingStatus() {
-            isLive = false;
-            isStreaming = false;
-
-            const statusBadge = document.getElementById("status-badge");
-            statusBadge.className = "badge badge-warning";
-            statusBadge.style.background = "#eab308";
-            statusBadge.style.borderColor = "#eab308";
-            statusBadge.innerHTML = '<i class="ti ti-loader animate-spin"></i> Reconnecting...';
-        }
-
-        function scheduleBroadcasterReconnect() {
-            if (reconnectTimeout) clearTimeout(reconnectTimeout);
-            reconnectTimeout = setTimeout(() => {
-                console.warn("[Studio] Attempting to reconnect signaling channel...");
-                reconnectBroadcaster();
-            }, 3000);
-        }
-
-        async function reconnectBroadcaster() {
-            if (isManuallyStopped) return;
-            try {
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${protocol}//${window.location.host}/api/stream/${streamKey}/ws`;
-
-                console.log("[Studio] Reconnecting signaling WebSocket to:", wsUrl);
-                mediaSocket = new WebSocket(wsUrl);
-
-                mediaSocket.onopen = () => {
-                    console.log("[Studio] Reconnected to signaling channel successfully.");
-                    isLive = true;
-                    isStreaming = true;
-                    updateUI();
-                };
-
-                mediaSocket.onmessage = async (event) => {
-                    try {
-                        const msg = JSON.parse(event.data);
-                        const { event: signalEvent, viewerId, sdp, candidate } = msg;
-
-                        if (signalEvent === "viewer-connected" || signalEvent === "viewer-ready") {
-                            await createPeerConnection(viewerId);
-                        } else if (signalEvent === "viewer-disconnected") {
-                            closePeerConnection(viewerId);
-                        }
-                    } catch (err) {
-                        console.error("[Studio WS Message Exception]:", err);
-                    }
-                };
-
-                mediaSocket.onclose = (event) => {
-                    if (!isManuallyStopped) {
-                        showReconnectingStatus();
-                        scheduleBroadcasterReconnect();
-                    }
-                };
-
-                mediaSocket.onerror = (err) => {
-                    console.error("[Studio] Reconnect socket error:", err);
-                };
-            } catch (err) {
-                console.warn("[Studio] Reconnect attempt error:", err);
-                scheduleBroadcasterReconnect();
-            }
-        }
-
-        let sfuPeerConnection = null;
-
-        async function publishToMediaMTXSFU() {
-            if (sfuPeerConnection) {
-                try { sfuPeerConnection.close(); } catch (_) { }
-                sfuPeerConnection = null;
-            }
-
-            console.log(`[Studio SFU] Initializing WHIP MediaMTX publisher for stream key: ${streamKey}`);
-            const turnHost = window.location.hostname;
-            const config = {
-                iceServers: [
-                    { urls: "stun:stun.l.google.com:19302" },
-                    { urls: "stun:stun1.l.google.com:19302" },
-                    {
-                        urls: [`turn:${turnHost}:3478`, `turn:${turnHost}:3478?transport=tcp`],
-                        username: "guest",
-                        credential: "somepassword"
-                    }
-                ]
-            };
-
-            sfuPeerConnection = new RTCPeerConnection(config);
-
-            if (mediaStream) {
-                mediaStream.getTracks().forEach(track => {
-                    const sender = sfuPeerConnection.addTrack(track, mediaStream);
-                    if (track.kind === 'video') {
-                        try {
-                            const parameters = sender.getParameters();
-                            if (!parameters.encodings) parameters.encodings = [{}];
-                            parameters.encodings[0].priority = 'high';
-                            parameters.encodings[0].networkPriority = 'high';
-                            parameters.encodings[0].maxBitrate = 8000000;
-                            parameters.encodings[0].minBitrate = 2500000;
-                            parameters.encodings[0].scaleResolutionDownBy = 1.0;
-                            sender.setParameters(parameters).catch(() => { });
-
-                            const transceiver = sfuPeerConnection.getTransceivers().find(t => t.sender === sender);
-                            if (transceiver) {
-                                try { transceiver.degradationPreference = 'maintain-framerate'; } catch (_) { }
-                            }
-                        } catch (err) {
-                            console.warn("[Studio SFU] Transceiver setup error:", err);
-                        }
-                    }
-                });
-            }
-
-            sfuPeerConnection.onconnectionstatechange = () => {
-                console.log(`[Studio SFU] Connection state: ${sfuPeerConnection.connectionState}`);
-                if (sfuPeerConnection.connectionState === 'connected') {
-                    console.log("[Studio SFU] Broadcaster connected to MediaMTX SFU server successfully!");
-                }
-            };
-
-            try {
-                let offer = await sfuPeerConnection.createOffer();
-                const modifiedSdp = preferHighFidelityAudioAndVideo(offer.sdp);
-                offer = new RTCSessionDescription({
-                    type: offer.type,
-                    sdp: modifiedSdp
-                });
-                await sfuPeerConnection.setLocalDescription(offer);
-
-                // Fast ICE candidate gathering wait (resolves as soon as STUN srflx candidate is found or max 400ms)
-                if (sfuPeerConnection.iceGatheringState !== 'complete') {
-                    await new Promise(resolve => {
-                        let done = false;
-                        const finish = () => {
-                            if (!done) {
-                                done = true;
-                                if (sfuPeerConnection) {
-                                    sfuPeerConnection.removeEventListener('icecandidate', onCand);
-                                    sfuPeerConnection.removeEventListener('icegatheringstatechange', onState);
-                                }
-                                resolve();
-                            }
-                        };
-                        const onCand = (e) => {
-                            if (!e.candidate || (e.candidate.candidate && e.candidate.candidate.includes('typ srflx'))) {
-                                setTimeout(finish, 50);
-                            }
-                        };
-                        const onState = () => {
-                            if (sfuPeerConnection && sfuPeerConnection.iceGatheringState === 'complete') finish();
-                        };
-                        sfuPeerConnection.addEventListener('icecandidate', onCand);
-                        sfuPeerConnection.addEventListener('icegatheringstatechange', onState);
-                        setTimeout(finish, 400);
-                    });
-                }
-
-                console.log("[Studio SFU] Sending WHIP offer to MediaMTX SFU proxy...");
-                const res = await fetch(`/api/sfu/whip/${streamKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/sdp' },
-                    body: sfuPeerConnection.localDescription ? sfuPeerConnection.localDescription.sdp : offer.sdp
-                });
-
-                if (!res.ok) {
-                    throw new Error(`MediaMTX SFU WHIP HTTP error ${res.status}`);
-                }
-
-                let answerSdp = await res.text();
-                answerSdp = preferHighFidelityAudioAndVideo(answerSdp);
-                
-                // Ensure MediaMTX answer SDP uses 8.0 Mbps bandwidth cap
-                if (answerSdp.includes('b=AS:')) {
-                    answerSdp = answerSdp.replace(/b=AS:\d+/g, 'b=AS:8000');
-                }
-                if (answerSdp.includes('b=TIAS:')) {
-                    answerSdp = answerSdp.replace(/b=TIAS:\d+/g, 'b=TIAS:8000000');
-                }
-
-                await sfuPeerConnection.setRemoteDescription(new RTCSessionDescription({
-                    type: 'answer',
-                    sdp: answerSdp
-                }));
-
-                // Apply high quality bitrate parameters AFTER setRemoteDescription
-                async function applyForcedBitrateParameters() {
-                    if (!sfuPeerConnection) return;
-                    const senders = sfuPeerConnection.getSenders();
-                    for (const sender of senders) {
-                        if (sender.track && sender.track.kind === 'video') {
-                            try {
-                                const parameters = sender.getParameters();
-                                if (!parameters.encodings || parameters.encodings.length === 0) {
-                                    parameters.encodings = [{}];
-                                }
-                                parameters.encodings[0].priority = 'high';
-                                parameters.encodings[0].networkPriority = 'high';
-                                parameters.encodings[0].maxBitrate = 8000000;  // 8.0 Mbps Ceiling (full BluRay 1080p quality)
-                                parameters.encodings[0].minBitrate = 2500000;  // 2.5 Mbps Floor
-                                parameters.encodings[0].scaleResolutionDownBy = 1.0;
-                                await sender.setParameters(parameters);
-                                console.log("[Studio SFU] Enforced 2.5 Mbps - 8 Mbps high-quality bitrate range!");
-                            } catch (e) {
-                                console.warn("[Studio SFU] Failed to enforce video sender parameters:", e);
-                            }
-                        }
-                    }
-                }
-
-                await applyForcedBitrateParameters();
-                if (window.bitrateFloorInterval) clearInterval(window.bitrateFloorInterval);
-                window.bitrateFloorInterval = setInterval(applyForcedBitrateParameters, 5000);
-
-                // Dispatch keyframe on connection for instant viewer startup
-                window.dispatchKeyframe = async function() {
-                    if (!sfuPeerConnection) return;
-                    const senders = sfuPeerConnection.getSenders();
-                    for (const sender of senders) {
-                        if (sender.track && sender.track.kind === 'video') {
-                            if (typeof sender.generateKeyFrame === 'function') {
-                                try { await sender.generateKeyFrame(); } catch (_) {}
-                            }
-                        }
-                    }
-                };
-                await window.dispatchKeyframe();
-
-                if (window.keyframeInterval) clearInterval(window.keyframeInterval);
-                window.keyframeInterval = setInterval(window.dispatchKeyframe, 2500);
-
-                console.log("[Studio SFU] Successfully established WebRTC WHIP stream to MediaMTX SFU!");
-                startStatsMonitoring();
-
-            } catch (err) {
-                console.error("[Studio SFU] MediaMTX WHIP publish error:", err);
-                if (window.showToast) window.showToast("Failed to connect to SFU server.", "error");
-            }
-        }
-
-
-
-        let totalWebCodecsBytesSent = 0;
-        let webCodecsVideoEncoder = null;
-        let webCodecsAudioEncoder = null;
-        let videoTrackReader = null;
-        let audioTrackReader = null;
-
-        async function startUnifiedWebCodecsBroadcaster() {
-            if (!('VideoEncoder' in window) || !('AudioEncoder' in window) || !('MediaStreamTrackProcessor' in window)) {
-                console.warn("[WebCodecs] WebCodecs Audio/Video encoders not fully supported in this browser, using WHIP fallback.");
-                return false;
-            }
-
-            const videoTrack = mediaStream ? mediaStream.getVideoTracks()[0] : null;
-            const audioTrack = mediaStream ? mediaStream.getAudioTracks()[0] : null;
-
-            if (!videoTrack) return false;
-
-            console.log("[WebCodecs] Initializing 7.5 Mbps Video CBR + 256 Kbps Audio CBR Encoders...");
-
-            // 1. Configure VideoEncoder (7.5 Mbps High Profile H.264 60FPS CBR)
-            try {
-                webCodecsVideoEncoder = new VideoEncoder({
-                    output: (chunk, metadata) => {
-                        if (!mediaSocket || mediaSocket.readyState !== WebSocket.OPEN) return;
-
-                        const chunkData = new Uint8Array(chunk.byteLength);
-                        chunk.copyTo(chunkData);
-
-                        const header = new ArrayBuffer(16);
-                        const view = new DataView(header);
-                        view.setUint32(0, 0x57434F44); // "WCOD" Magic Header
-                        view.setUint8(4, chunk.type === 'key' ? 0 : 1); // 0 = Video Keyframe, 1 = Video Delta
-                        view.setBigInt64(5, BigInt(chunk.timestamp), false);
-
-                        const payload = new Uint8Array(16 + chunkData.byteLength);
-                        payload.set(new Uint8Array(header), 0);
-                        payload.set(chunkData, 16);
-
-                        mediaSocket.send(payload.buffer);
-                        totalWebCodecsBytesSent += payload.byteLength;
-                    },
-                    error: (err) => console.error("[WebCodecs VideoEncoder Error]:", err)
-                });
-
-                const settings = videoTrack.getSettings();
-                const width = settings.width || 1920;
-                const height = settings.height || 1080;
-
-                let codecToUse = 'avc1.64002A';
-                if (VideoEncoder.isConfigSupported) {
-                    const support = await VideoEncoder.isConfigSupported({
-                        codec: 'avc1.64002A',
-                        width: width,
-                        height: height,
-                        bitrate: 7500000,
-                        framerate: 60
-                    });
-                    if (!support.supported) codecToUse = 'avc1.4d002a';
-                }
-
-                await webCodecsVideoEncoder.configure({
-                    codec: codecToUse,
-                    width: width,
-                    height: height,
-                    bitrate: 7500000, // 7.5 Mbps CBR
-                    bitrateMode: 'constant', // TRUE HARDWARE CBR
-                    framerate: 60,
-                    hardwareAcceleration: 'prefer-hardware',
-                    latencyMode: 'realtime'
-                });
-
-                const videoProcessor = new MediaStreamTrackProcessor({ track: videoTrack });
-                videoTrackReader = videoProcessor.readable.getReader();
-
-                let frameCounter = 0;
-                (async () => {
-                    while (isStreaming && webCodecsVideoEncoder && webCodecsVideoEncoder.state === 'configured') {
-                        try {
-                            const { value: frame, done } = await videoTrackReader.read();
-                            if (done) break;
-                            if (frame) {
-                                const insertKeyframe = (frameCounter % 30 === 0) || window.forceNextKeyframe;
-                                window.forceNextKeyframe = false;
-                                webCodecsVideoEncoder.encode(frame, { keyFrame: insertKeyframe });
-                                frame.close();
-                                frameCounter++;
-                            }
-                        } catch (e) {
-                            console.warn("[WebCodecs Video Frame Read Exception]:", e);
-                            break;
-                        }
-                    }
-                })();
-            } catch (err) {
-                console.error("[WebCodecs Video Init Error]:", err);
-            }
-
-            // 2. Configure AudioEncoder (256 Kbps Opus Stereo 48kHz)
-            if (audioTrack) {
-                try {
-                    webCodecsAudioEncoder = new AudioEncoder({
-                        output: (chunk, metadata) => {
-                            if (!mediaSocket || mediaSocket.readyState !== WebSocket.OPEN) return;
-
-                            const chunkData = new Uint8Array(chunk.byteLength);
-                            chunk.copyTo(chunkData);
-
-                            const header = new ArrayBuffer(16);
-                            const view = new DataView(header);
-                            view.setUint32(0, 0x57434F44); // "WCOD"
-                            view.setUint8(4, 2); // 2 = Audio Payload
-                            view.setBigInt64(5, BigInt(chunk.timestamp), false);
-
-                            const payload = new Uint8Array(16 + chunkData.byteLength);
-                            payload.set(new Uint8Array(header), 0);
-                            payload.set(chunkData, 16);
-
-                            mediaSocket.send(payload.buffer);
-                            totalWebCodecsBytesSent += payload.byteLength;
-                        },
-                        error: (err) => console.error("[WebCodecs AudioEncoder Error]:", err)
-                    });
-
-                    await webCodecsAudioEncoder.configure({
-                        codec: 'opus',
-                        sampleRate: 48000,
-                        numberOfChannels: 2,
-                        bitrate: 256000 // 256 Kbps Studio Stereo Audio
-                    });
-
-                    const audioProcessor = new MediaStreamTrackProcessor({ track: audioTrack });
-                    audioTrackReader = audioProcessor.readable.getReader();
-
-                    (async () => {
-                        while (isStreaming && webCodecsAudioEncoder && webCodecsAudioEncoder.state === 'configured') {
-                            try {
-                                const { value: audioData, done } = await audioTrackReader.read();
-                                if (done) break;
-                                if (audioData) {
-                                    webCodecsAudioEncoder.encode(audioData);
-                                    audioData.close();
-                                }
-                            } catch (e) {
-                                console.warn("[WebCodecs Audio Frame Read Exception]:", e);
-                                break;
-                            }
-                        }
-                    })();
-                } catch (err) {
-                    console.error("[WebCodecs Audio Init Error]:", err);
-                }
-            }
-
-            console.log("[WebCodecs] Active Unified 7.75 Mbps Hardware CBR Stream Running!");
-            return true;
-        }
-
-        let statsInterval = null;
-
-        window.getWebRTCStats = async function() {
-            if (!sfuPeerConnection) {
-                console.log("[Studio SFU] No active PeerConnection.");
-                return;
-            }
-            const stats = await sfuPeerConnection.getStats();
-            stats.forEach(report => {
-                if (report.type === 'outbound-rtp' && report.kind === 'video') {
-                    console.log(`[Studio WebRTC Outbound Video]`, {
-                        fps: report.framesPerSecond,
-                        bytesSent: report.bytesSent,
-                        qualityLimitationReason: report.qualityLimitationReason,
-                        firCount: report.firCount,
-                        pliCount: report.pliCount,
-                        nackCount: report.nackCount
-                    });
-                }
-            });
         };
 
-        function startStatsMonitoring() {
-            if (statsInterval) clearInterval(statsInterval);
-            let lastBytesSent = 0;
-            let lastTime = Date.now();
-
-            const qualityBadge = document.getElementById("network-quality-badge");
-
-            statsInterval = setInterval(async () => {
-                try {
-                    let bytesSent = totalWebCodecsBytesSent;
-
-                    if (sfuPeerConnection) {
-                        try {
-                            const stats = await sfuPeerConnection.getStats();
-                            stats.forEach(report => {
-                                if (report.type === 'outbound-rtp') {
-                                    bytesSent += (report.bytesSent || 0);
-                                }
-                            });
-                        } catch (_) { }
-                    }
-
-                    const now = Date.now();
-                    const elapsedSec = (now - lastTime) / 1000;
-                    if (elapsedSec > 0 && lastBytesSent > 0 && bytesSent >= lastBytesSent) {
-                        const txDelta = bytesSent - lastBytesSent;
-                        const uploadKbps = Math.round((txDelta * 8) / 1024 / elapsedSec);
-                        const uploadMbps = (((txDelta * 8) / 1024 / 1024) / elapsedSec).toFixed(2);
-
-                        const speedVal = document.getElementById("upload-speed-val");
-                        if (speedVal) speedVal.textContent = uploadKbps;
-
-                        // Network Quality Indicator
-                        const qualityText = document.getElementById("network-quality-text");
-                        const qualityIcon = document.getElementById("network-quality-icon");
-
-                        if (qualityBadge) {
-                            if (uploadKbps >= 3500) {
-                                qualityBadge.style.background = "rgba(16, 185, 129, 0.15)";
-                                qualityBadge.style.borderColor = "rgba(16, 185, 129, 0.35)";
-                                qualityBadge.style.color = "#10b981";
-                                if (qualityIcon) qualityIcon.className = "ti ti-wifi";
-                                if (qualityText) qualityText.textContent = "Excellent (1080p 60fps)";
-                            } else if (uploadKbps >= 1800) {
-                                qualityBadge.style.background = "rgba(16, 185, 129, 0.15)";
-                                qualityBadge.style.borderColor = "rgba(16, 185, 129, 0.35)";
-                                qualityBadge.style.color = "#10b981";
-                                if (qualityIcon) qualityIcon.className = "ti ti-wifi-2";
-                                if (qualityText) qualityText.textContent = "Good Quality (HD)";
-                            } else if (uploadKbps >= 800) {
-                                qualityBadge.style.background = "rgba(245, 158, 11, 0.15)";
-                                qualityBadge.style.borderColor = "rgba(245, 158, 11, 0.35)";
-                                qualityBadge.style.color = "#f59e0b";
-                                if (qualityIcon) qualityIcon.className = "ti ti-wifi-1";
-                                if (qualityText) qualityText.textContent = "Fair Connection";
-                            } else {
-                                qualityBadge.style.background = "rgba(239, 68, 68, 0.15)";
-                                qualityBadge.style.borderColor = "rgba(239, 68, 68, 0.35)";
-                                qualityBadge.style.color = "#ef4444";
-                                if (qualityIcon) qualityIcon.className = "ti ti-wifi-0";
-                                if (qualityText) qualityText.textContent = "Low Bitrate";
-                            }
-                        }
-
-                    }
-                    lastBytesSent = bytesSent;
-                    lastTime = now;
-                } catch (e) {
-                    console.warn("[Studio Stats Error]:", e);
-                }
-            }, 1000);
-        }
-
-        function triggerStopLive() {
-            console.log("[Studio] Stopping live stream session...");
-            isManuallyStopped = true;
-            isLive = false;
-            isStreaming = false;
-
-            if (statsInterval) {
-                clearInterval(statsInterval);
-                statsInterval = null;
-            }
-
-            if (durationInterval) {
-                clearInterval(durationInterval);
-                durationInterval = null;
-            }
-            const durationBadge = document.getElementById("duration-badge");
-            if (durationBadge) durationBadge.style.display = "none";
-
-            if (window.bitrateFloorInterval) {
-                clearInterval(window.bitrateFloorInterval);
-                window.bitrateFloorInterval = null;
-            }
-
-            if (webCodecsVideoEncoder) {
-                try { webCodecsVideoEncoder.close(); } catch (_) {}
-                webCodecsVideoEncoder = null;
-            }
-
-            if (webCodecsAudioEncoder) {
-                try { webCodecsAudioEncoder.close(); } catch (_) {}
-                webCodecsAudioEncoder = null;
-            }
-
-            if (sfuPeerConnection) {
-                try { sfuPeerConnection.close(); } catch (_) {}
-                sfuPeerConnection = null;
-            }
-
-            if (mediaSocket) {
-                try { mediaSocket.close(); } catch (_) {}
-                mediaSocket = null;
-            }
-
-            stopMediaTracks();
-
-            // Reset Telemetry Values
-            totalWebCodecsBytesSent = 0;
-            const speedVal = document.getElementById("upload-speed-val");
-            if (speedVal) speedVal.textContent = "0";
-
-            const qualityText = document.getElementById("network-quality-text");
-            if (qualityText) qualityText.textContent = "Standby";
-
-            const qualityBadge = document.getElementById("network-quality-badge");
-            if (qualityBadge) {
-                qualityBadge.style.background = "rgba(70, 83, 98, 0.2)";
-                qualityBadge.style.borderColor = "rgba(130, 163, 98, 0.3)";
-                qualityBadge.style.color = "#94a3b8";
-            }
-
-            updateUI();
-            if (window.showToast) window.showToast("Stream ended successfully.", "success");
-        }
-
-        function toggleLiveState() {
-            if (audioCtx && audioCtx.state === 'suspended') {
-                audioCtx.resume().catch(e => console.warn("AudioContext resume failed:", e));
-            }
-            if (isStreaming || isLive) {
-                triggerStopLive();
-            } else {
-                triggerGoLive();
-            }
-        }
-
-        // Clean Studio Control Functions
-
-
-
-        async function triggerGoLive() {
-            if (isStreaming) return;
-            isManuallyStopped = false;
-
-            mediaStream = null;
-
-            // Obtain the media tracks based on selected source type
-            if (currentSourceType === 'file') {
-                // Keep preview player muted to prevent broadcaster echo. audioPlayer handles the sound.
-                previewPlayer.muted = true;
-                if (previewPlayer.paused) {
-                    try { await previewPlayer.play(); } catch (e) { console.warn("Player play error:", e); }
-                }
-
-                let capturedStream;
-                if (previewPlayer.captureStream) {
-                    capturedStream = previewPlayer.captureStream();
-                } else if (previewPlayer.mozCaptureStream) {
-                    capturedStream = previewPlayer.mozCaptureStream();
-                } else {
-                    console.warn("[Mobile Studio] captureStream not available on video element, using Canvas capture fallback.");
-                    const canvas = document.createElement("canvas");
-                    canvas.width = previewPlayer.videoWidth || 1280;
-                    canvas.height = previewPlayer.videoHeight || 720;
-                    const ctx = canvas.getContext("2d");
-
-                    function renderCanvasFrame() {
-                        if (isManuallyStopped || currentSourceType !== 'file') return;
-                        if (!previewPlayer.paused && !previewPlayer.ended) {
-                            if (previewPlayer.videoWidth && canvas.width !== previewPlayer.videoWidth) {
-                                canvas.width = previewPlayer.videoWidth;
-                                canvas.height = previewPlayer.videoHeight;
-                            }
-                            ctx.drawImage(previewPlayer, 0, 0, canvas.width, canvas.height);
-                        }
-                        requestAnimationFrame(renderCanvasFrame);
-                    }
-                    renderCanvasFrame();
-                    capturedStream = canvas.captureStream(30);
-                }
-
-                // Keep preview player muted to prevent double-audio echo on the broadcaster side
-                previewPlayer.muted = true;
-
-                try {
-                    if (!audioCtx) {
-                        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000, latencyHint: 'playback' });
-                    }
-                    if (audioCtx.state === 'suspended') {
-                        await audioCtx.resume();
-                    }
-
-                    // Native audio extraction: JITTER FREE, perfectly stable!
-                    // Extract from the hidden audioPlayer to bypass Chrome's captureStream audio muting bug!
-                    if (!mediaElementSource) {
-                        mediaElementSource = audioCtx.createMediaElementSource(audioPlayer);
-                        // Connect to local destination so broadcaster can still hear the video
-                        mediaElementSource.connect(audioCtx.destination);
-                    }
-
-                    // Create a FRESH destination node for every new stream.
-                    activeAudioDestNode = audioCtx.createMediaStreamDestination();
-                    mediaElementSource.connect(activeAudioDestNode);
-
-                    const syncedAudioTrack = activeAudioDestNode.stream.getAudioTracks()[0];
-                    const videoTrack = capturedStream.getVideoTracks()[0];
-
-                    mediaStream = new MediaStream();
-                    if (videoTrack) mediaStream.addTrack(videoTrack);
-                    if (syncedAudioTrack) mediaStream.addTrack(syncedAudioTrack);
-
-                    console.log(`[Studio Audio] Successfully extracted jitter-free native audio and delayed by 250ms for A/V sync.`);
-                } catch (e) {
-                    console.error("[Studio Audio] Native audio extraction failed:", e);
-                    mediaStream = capturedStream;
-                }
-
-                if (previewPlayer.paused) {
-                    previewPlayer.play().catch(e => console.warn("Player play error:", e));
-                }
-            } else if (currentSourceType === 'screen') {
-                mediaStream = captureStream;
-            }
-
-            // Optimize audio and video track configurations
+        /**
+         * Stop all active media tracks
+         */
+        function stopMediaTracks() {
             if (mediaStream) {
-                mediaStream.getAudioTracks().forEach(track => {
-                    if ('contentHint' in track) {
-                        track.contentHint = 'music';
-                        console.log("[WebRTC] Set audio track contentHint to 'music' for studio quality audio");
-                    }
-                    if (typeof track.applyConstraints === 'function') {
-                        track.applyConstraints({
-                            echoCancellation: false,
-                            noiseSuppression: false,
-                            autoGainControl: false,
-                            channelCount: 2
-                        }).catch(err => console.warn("Failed to apply audio constraints:", err));
-                    }
-                });
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+        }
 
-                mediaStream.getVideoTracks().forEach(track => {
-                    if ('contentHint' in track) {
-                        track.contentHint = 'motion';
-                        console.log("[WebRTC] Set video track contentHint to 'motion' for high FPS smooth streaming");
-                    }
-                    if (typeof track.applyConstraints === 'function') {
-                        track.applyConstraints({
-                            width: { ideal: 1920 },
-                            height: { ideal: 1080 },
-                            frameRate: { ideal: 60, max: 60 }
-                        }).catch(err => console.warn("Failed to apply 1080p constraints:", err));
-                    }
-                });
+        /**
+         * Toggle Live State (Go Live / Stop Live)
+         */
+        window.toggleLiveState = function() {
+            if (isLive) {
+                stopMediasoupBroadcaster();
+            } else {
+                startMediasoupBroadcaster();
+            }
+        };
+
+        /**
+         * Start Mediasoup SFU WebRTC Broadcaster
+         */
+        async function startMediasoupBroadcaster() {
+            if (isLive) return;
+
+            // Prepare MediaStream from active player or screen capture
+            if (currentSourceType === 'file') {
+                if (previewPlayer.captureStream) {
+                    mediaStream = previewPlayer.captureStream();
+                } else if (previewPlayer.mozCaptureStream) {
+                    mediaStream = previewPlayer.mozCaptureStream();
+                }
+                previewPlayer.play().catch(() => {});
             }
 
             if (!mediaStream || mediaStream.getTracks().length === 0) {
-                if (window.showToast) window.showToast("No active media tracks found. Please play the video or start screen sharing first.", "error");
+                alert("Please select a video file or share your screen first!");
                 return;
             }
 
-            try {
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${protocol}//${window.location.host}/api/stream/${streamKey}/ws`;
+            console.log(`[Mediasoup Broadcaster] Connecting to SFU WebSocket for stream: ${streamKey}`);
 
-                console.log("[Studio] Connecting signaling WebSocket to:", wsUrl);
-                mediaSocket = new WebSocket(wsUrl);
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/api/sfu/ws?streamKey=${encodeURIComponent(streamKey)}&role=broadcaster`;
 
-                mediaSocket.onopen = async () => {
-                    console.log("[Studio] Channel established. Initializing WebRTC SFU WHIP Stream...");
-                    isLive = true;
-                    isStreaming = true;
-                    updateUI();
+            sfuSocket = new WebSocket(wsUrl);
 
-                    streamStartTime = Date.now();
-                    document.getElementById("duration-badge").style.display = "inline-flex";
-                    if (durationInterval) clearInterval(durationInterval);
-                    durationInterval = setInterval(updateDuration, 1000);
+            sfuSocket.onopen = () => {
+                console.log("[Mediasoup Broadcaster] WebSocket connected! Requesting Router Capabilities...");
+                sfuSocket.send(JSON.stringify({ action: "getRouterRtpCapabilities" }));
+            };
 
-                    // Publish WebRTC WHIP Stream directly to MediaMTX SFU
-                    await publishToMediaMTXSFU();
-                    startStatsMonitoring();
-                };
+            sfuSocket.onmessage = async (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
 
+                    switch (msg.action) {
+                        case "routerRtpCapabilities": {
+                            // 1. Load Mediasoup Device with Router Capabilities
+                            device = new mediasoupClient.Device();
+                            await device.load({ routerRtpCapabilities: msg.rtpCapabilities });
 
-                mediaSocket.onmessage = async (event) => {
-                    try {
-                        const msg = JSON.parse(event.data);
-                        if (msg.event === "viewer-count" || msg.event === "viewer-ready") {
-                            if (window.dispatchKeyframe) window.dispatchKeyframe();
-                            const countEl = document.getElementById("viewers-count");
-                            if (countEl && msg.count !== undefined) countEl.textContent = msg.count;
-                        } else if (msg.event === "error") {
-                            if (window.showToast) window.showToast(msg.error || "Streaming error occurred", "error");
+                            // 2. Request WebRTC Producer Transport
+                            sfuSocket.send(JSON.stringify({ action: "createWebRtcTransport", isBroadcaster: true }));
+                            break;
                         }
-                    } catch (_) { }
-                };
 
-                mediaSocket.onclose = (event) => {
-                    console.log("[Studio] Signaling channel closed:", event);
-                    if (!isManuallyStopped) {
-                        showReconnectingStatus();
-                        scheduleBroadcasterReconnect();
+                        case "webRtcTransportCreated": {
+                            // 3. Create Send Transport on Mediasoup Device
+                            const { id, iceParameters, iceCandidates, dtlsParameters } = msg.data;
+                            sendTransport = device.createSendTransport({ id, iceParameters, iceCandidates, dtlsParameters });
+
+                            sendTransport.on("connect", ({ dtlsParameters }, callback, errback) => {
+                                sfuSocket.send(JSON.stringify({
+                                    action: "connectTransport",
+                                    transportId: sendTransport.id,
+                                    dtlsParameters
+                                }));
+                                callback();
+                            });
+
+                            sendTransport.on("produce", ({ kind, rtpParameters }, callback, errback) => {
+                                sfuSocket.send(JSON.stringify({
+                                    action: "produce",
+                                    transportId: sendTransport.id,
+                                    kind,
+                                    rtpParameters
+                                }));
+
+                                const onProduced = (ev) => {
+                                    const res = JSON.parse(ev.data);
+                                    if (res.action === "produced" && res.kind === kind) {
+                                        sfuSocket.removeEventListener("message", onProduced);
+                                        callback({ id: res.id });
+                                    }
+                                };
+                                sfuSocket.addEventListener("message", onProduced);
+                            });
+
+                            // 4. Produce Video & Audio Tracks to Mediasoup SFU
+                            const videoTrack = mediaStream.getVideoTracks()[0];
+                            const audioTrack = mediaStream.getAudioTracks()[0];
+
+                            if (videoTrack) {
+                                videoProducer = await sendTransport.produce({
+                                    track: videoTrack,
+                                    encodings: [{ maxBitrate: 6000000 }], // 6.0 Mbps High Bitrate
+                                    codecOptions: { videoGoogleStartBitrate: 5000 }
+                                });
+                            }
+
+                            if (audioTrack) {
+                                audioProducer = await sendTransport.produce({ track: audioTrack });
+                            }
+
+                            isLive = true;
+                            isStreaming = true;
+                            streamStartTime = Date.now();
+                            startDurationTimer();
+                            startStatsMonitoring();
+                            updateUI();
+                            console.log("[Mediasoup Broadcaster] Successfully producing WebRTC SFU stream!");
+                            break;
+                        }
+
+                        case "error": {
+                            alert("SFU Error: " + msg.message);
+                            stopMediasoupBroadcaster();
+                            break;
+                        }
                     }
-                };
+                } catch (err) {
+                    console.error("[Mediasoup Broadcaster Message Exception]:", err);
+                }
+            };
 
-                mediaSocket.onerror = (err) => {
-                    console.error("[Studio] Signaling WebSocket error:", err);
-                };
-            } catch (err) {
-                console.error("[Studio] Failed to initialize live stream signaling:", err);
-                if (window.showToast) window.showToast("Failed to start live stream session.", "error");
+            sfuSocket.onclose = () => {
+                console.log("[Mediasoup Broadcaster] WebSocket closed.");
+                stopMediasoupBroadcaster();
+            };
+        }
+
+        /**
+         * Stop Mediasoup SFU Broadcaster Session
+         */
+        function stopMediasoupBroadcaster() {
+            isLive = false;
+            isStreaming = false;
+
+            if (videoProducer) { try { videoProducer.close(); } catch (_) {} videoProducer = null; }
+            if (audioProducer) { try { audioProducer.close(); } catch (_) {} audioProducer = null; }
+            if (sendTransport) { try { sendTransport.close(); } catch (_) {} sendTransport = null; }
+            if (sfuSocket) { try { sfuSocket.close(); } catch (_) {} sfuSocket = null; }
+
+            if (durationInterval) { clearInterval(durationInterval); durationInterval = null; }
+            if (statsInterval) { clearInterval(statsInterval); statsInterval = null; }
+
+            updateUI();
+        }
+
+        /**
+         * Start Duration Timer
+         */
+        function startDurationTimer() {
+            const badge = document.getElementById("duration-badge");
+            badge.style.display = "inline-flex";
+
+            durationInterval = setInterval(() => {
+                const elapsedSec = Math.floor((Date.now() - streamStartTime) / 1000);
+                const hrs = String(Math.floor(elapsedSec / 3600)).padStart(2, '0');
+                const mins = String(Math.floor((elapsedSec % 3600) / 60)).padStart(2, '0');
+                const secs = String(elapsedSec % 60).padStart(2, '0');
+                badge.textContent = `${hrs}:${mins}:${secs}`;
+            }, 1000);
+        }
+
+        /**
+         * Monitor Bitrate Stats
+         */
+        function startStatsMonitoring() {
+            let lastBytes = 0;
+            let lastTime = Date.now();
+
+            statsInterval = setInterval(async () => {
+                if (!sendTransport) return;
+                try {
+                    const stats = await sendTransport.getStats();
+                    let currentBytes = 0;
+                    stats.forEach(report => {
+                        if (report.type === 'outbound-rtp') {
+                            currentBytes += (report.bytesSent || 0);
+                        }
+                    });
+
+                    const now = Date.now();
+                    const deltaSec = (now - lastTime) / 1000;
+                    if (deltaSec > 0 && currentBytes >= lastBytes) {
+                        const kbps = Math.round(((currentBytes - lastBytes) * 8) / 1024 / deltaSec);
+                        document.getElementById("upload-speed-val").textContent = kbps;
+                    }
+                    lastBytes = currentBytes;
+                    lastTime = now;
+                } catch (_) {}
+            }, 1000);
+        }
+
+        /**
+         * Update UI Elements
+         */
+        function updateUI() {
+            const liveBadge = document.getElementById("live-badge");
+            const goLiveBtn = document.getElementById("go-live-btn");
+            const qualityBadge = document.getElementById("network-quality-badge");
+            const qualityIcon = document.getElementById("network-quality-icon");
+            const qualityText = document.getElementById("network-quality-text");
+
+            if (isLive) {
+                liveBadge.className = "badge bg-danger text-uppercase px-3 py-2 fw-bold animate-pulse";
+                liveBadge.textContent = "● LIVE (SFU)";
+
+                goLiveBtn.className = "btn btn-danger btn-lg px-4 d-flex align-items-center gap-2 fw-bold shadow";
+                goLiveBtn.querySelector("span").textContent = "Stop Stream";
+
+                qualityBadge.className = "badge bg-success bg-opacity-20 border border-success text-success px-3 py-2 d-flex align-items-center gap-2";
+                qualityIcon.className = "ti ti-wifi";
+                qualityText.textContent = "WebRTC SFU Active";
+            } else {
+                liveBadge.className = "badge bg-secondary text-uppercase px-3 py-2 fw-bold";
+                liveBadge.textContent = "Offline";
+
+                goLiveBtn.className = "btn btn-success btn-lg px-4 d-flex align-items-center gap-2 fw-bold shadow";
+                goLiveBtn.querySelector("span").textContent = "Go Live (WebRTC SFU)";
+
+                qualityBadge.className = "badge bg-secondary bg-opacity-20 border border-secondary text-secondary px-3 py-2 d-flex align-items-center gap-2";
+                qualityIcon.className = "ti ti-wifi-off";
+                qualityText.textContent = "Standby";
+
+                document.getElementById("duration-badge").style.display = "none";
+                document.getElementById("upload-speed-val").textContent = "0";
             }
         }
+    });
+</script>
 
-        function updateDuration() {
-            if (!streamStartTime) return;
-            const totalSecs = Math.floor((Date.now() - streamStartTime) / 1000);
-            const hrs = Math.floor(totalSecs / 3600).toString().padStart(2, '0');
-            const mins = Math.floor((totalSecs % 3600) / 60).toString().padStart(2, '0');
-            const secs = (totalSecs % 60).toString().padStart(2, '0');
-            document.getElementById('duration-badge').textContent = `${hrs}:${mins}:${secs}`;
-        }
-
-        function copyViewerLink() {
-            const link = window.location.origin + "/live/" + streamKey;
-            navigator.clipboard.writeText(link).then(() => {
-                if (window.showToast) window.showToast("Viewer link copied to clipboard!", "success");
-            }).catch(() => {
-                if (window.showToast) window.showToast("Failed to copy link.", "error");
-            });
-        }
-    </script>
-
-    <%- include('footer') %>
+<%- include('footer') %>
