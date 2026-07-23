@@ -84,12 +84,6 @@ app.use(cookieParser());
 // Serve static directories
 app.use(express.static(path.join(process.cwd(), "public")));
 
-// Setup routes
-app.use(authRoutes);
-app.use(streamRoutes);
-app.use(dashboardRoutes);
-app.use(liveRoutes);
-
 // Serve live streams media chunks
 // etag:false + lastModified:false prevents browsers from sending If-None-Match / If-Modified-Since
 // which would cause a 304 "Not Modified" response and serve a stale cached playlist to the player.

@@ -49,8 +49,15 @@ function getMasterPlaylistPath(streamKey: string) {
 }
 
 function getInputUrl(streamKey: string) {
-  const template = process.env.RTMP_INTERNAL_SOURCE || "rtmp://host.docker.internal:1935/live/{streamKey}";
+  const template =
+    process.env.STREAM_INTERNAL_SOURCE ||
+    process.env.RTMP_INTERNAL_SOURCE ||
+    "rtsp://host.docker.internal:8554/live/{streamKey}";
   return template.replaceAll("{streamKey}", streamKey);
+}
+
+function isRtspInput(streamKey: string) {
+  return getInputUrl(streamKey).toLowerCase().startsWith("rtsp://");
 }
 
 function buildRtmpPublicUrl(hostname: string) {
@@ -103,9 +110,19 @@ function buildFfmpegArgs(streamKey: string, hasAudio: boolean): string[] {
     "-fflags", "+genpts+discardcorrupt",
     "-err_detect", "ignore_err",
     "-thread_queue_size", "2048",
+  ];
+
+  if (isRtspInput(streamKey)) {
+    args.push(
+      "-rtsp_transport", "tcp",
+      "-timeout", process.env.STREAM_INPUT_TIMEOUT_US || "15000000",
+    );
+  }
+
+  args.push(
     "-i", inputUrl,
     "-filter_complex", getScaleFilter(hasAudio),
-  ];
+  );
 
   if (hasAudio) {
     args.push(
@@ -205,10 +222,20 @@ function runProbe(streamKey: string): Promise<ProbeResult> {
     const inputUrl = getInputUrl(streamKey);
     const args = [
       "-v", "error",
+    ];
+
+    if (isRtspInput(streamKey)) {
+      args.push(
+        "-rtsp_transport", "tcp",
+        "-timeout", process.env.STREAM_INPUT_TIMEOUT_US || "15000000",
+      );
+    }
+
+    args.push(
       "-show_entries", "stream=codec_type",
       "-of", "csv=p=0",
       inputUrl,
-    ];
+    );
     const probe = spawn("ffprobe", args);
     let stdout = "";
     let stderr = "";
