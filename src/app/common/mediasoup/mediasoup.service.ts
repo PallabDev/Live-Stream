@@ -130,7 +130,7 @@ export class MediasoupService {
     this.worker = await mediasoup.createWorker({
       logLevel: "warn",
       rtcMinPort: 40000,
-      rtcMaxPort: 49999,
+      rtcMaxPort: 40100,
     });
 
     this.worker.on("died", () => {

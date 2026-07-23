@@ -13,6 +13,9 @@ services:
     labels:
       caddy: watch.pallabdev.in
       caddy.reverse_proxy: "{{upstreams 5678}}"
+    ports:
+      - "40000-40100:40000-40100/udp"
+      - "40000-40100:40000-40100/tcp"
     networks:
       - default
       - caddy_net
