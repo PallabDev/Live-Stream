@@ -57,7 +57,7 @@ const MEDIA_CODECS: mediasoup.types.RtpCodecCapability[] = [
     kind: "video",
     mimeType: "video/H264",
     clockRate: 90000,
-    preferredPayloadType: 127,
+    preferredPayloadType: 102,
     parameters: {
       "packetization-mode": 1,
       "profile-level-id": "64002a", // H264 High Profile Level 4.2 (Crisp 1080p60)
@@ -71,7 +71,7 @@ const MEDIA_CODECS: mediasoup.types.RtpCodecCapability[] = [
     kind: "video",
     mimeType: "video/H264",
     clockRate: 90000,
-    preferredPayloadType: 126,
+    preferredPayloadType: 103,
     parameters: {
       "packetization-mode": 1,
       "profile-level-id": "4d001f", // H264 Main Profile
@@ -96,7 +96,7 @@ const MEDIA_CODECS: mediasoup.types.RtpCodecCapability[] = [
     kind: "video",
     mimeType: "video/H264",
     clockRate: 90000,
-    preferredPayloadType: 102,
+    preferredPayloadType: 104,
     parameters: {
       "packetization-mode": 1,
       "profile-level-id": "42e01f",
@@ -110,7 +110,7 @@ const MEDIA_CODECS: mediasoup.types.RtpCodecCapability[] = [
     kind: "video",
     mimeType: "video/H264",
     clockRate: 90000,
-    preferredPayloadType: 125,
+    preferredPayloadType: 105,
     parameters: {
       "packetization-mode": 1,
       "profile-level-id": "42001f",
