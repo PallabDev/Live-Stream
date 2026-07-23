@@ -344,7 +344,7 @@ html, body {
   const offlineScreen = document.getElementById('offline-screen');
 
   const streamKey = "<%= stream.streamKey %>";
-  let viewerId = null;
+  const viewerId = 'viewer_' + Math.random().toString(36).substring(2, 9);
   let pcInstance = null;
   let statusSocket = null;
   let playbackStarted = false;
@@ -638,16 +638,16 @@ html, body {
   }
 
   window.checkStreamStatus = function () {
-    if (!statusSocket || statusSocket.readyState !== WebSocket.OPEN) {
+    if (!sfuSocket || sfuSocket.readyState !== WebSocket.OPEN) {
       connectViewerSocket();
     } else {
-      statusSocket.send(JSON.stringify({ event: "viewer-ready" }));
+      sfuSocket.send(JSON.stringify({ action: "getRouterRtpCapabilities" }));
     }
   };
 
-  // Automatic offline poll: when broadcaster restarts, viewer automatically wakes up and replays!
+  // Automatic offline poll: when broadcaster starts streaming, viewer automatically wakes up and plays!
   setInterval(() => {
-    if (!pcInstance || pcInstance.connectionState !== 'connected') {
+    if (offlineScreen && offlineScreen.style.display !== 'none') {
       window.checkStreamStatus();
     }
   }, 3000);
