@@ -55,8 +55,8 @@
                         </div>
                     </div>
 
-                    <!-- Broadcaster Video Preview Player -->
-                    <video id="preview-player" style="display: none; width: 100%; height: 100%; object-fit: contain;" playsinline muted></video>
+                    <!-- Broadcaster Video Preview Player with Full Controls -->
+                    <video id="preview-player" style="display: none; width: 100%; height: 100%; object-fit: contain;" controls playsinline muted></video>
                     
                     <!-- Hidden Audio Player -->
                     <audio id="audio-player" style="display: none;"></audio>
@@ -168,6 +168,9 @@
         let durationInterval = null;
         let statsInterval = null;
         let streamStartTime = null;
+        let audioCtx = null;
+        let audioSourceNode = null;
+        let audioDestinationNode = null;
 
         // Mediasoup SFU WebRTC Client Variables
         let sfuSocket = null;
@@ -268,13 +271,47 @@
         async function startMediasoupBroadcaster() {
             if (isLive) return;
 
-            // Prepare MediaStream from active player or screen capture
+            // Prepare MediaStream from active player or screen capture with 5.1 Surround Sound downmixing
             if (currentSourceType === 'file') {
+                let capturedStream = null;
                 if (previewPlayer.captureStream) {
-                    mediaStream = previewPlayer.captureStream();
+                    capturedStream = previewPlayer.captureStream();
                 } else if (previewPlayer.mozCaptureStream) {
-                    mediaStream = previewPlayer.mozCaptureStream();
+                    capturedStream = previewPlayer.mozCaptureStream();
                 }
+
+                try {
+                    if (!audioCtx) {
+                        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+
+                    if (!audioSourceNode && previewPlayer) {
+                        audioSourceNode = audioCtx.createMediaElementSource(previewPlayer);
+                        audioDestinationNode = audioCtx.createMediaStreamDestination();
+
+                        // Downmix all 6 channels (5.1 Surround: FL, FR, Center dialogue, LFE, SL, SR) to Stereo
+                        audioSourceNode.channelInterpretation = 'speakers';
+                        audioSourceNode.channelCountMode = 'max';
+                        audioSourceNode.channelCount = 2;
+
+                        audioSourceNode.connect(audioDestinationNode);
+                        audioSourceNode.connect(audioCtx.destination);
+                    }
+
+                    const videoTrack = capturedStream ? capturedStream.getVideoTracks()[0] : null;
+                    const downmixedAudioTrack = (audioDestinationNode && audioDestinationNode.stream) ? audioDestinationNode.stream.getAudioTracks()[0] : (capturedStream ? capturedStream.getAudioTracks()[0] : null);
+
+                    mediaStream = new MediaStream();
+                    if (videoTrack) mediaStream.addTrack(videoTrack);
+                    if (downmixedAudioTrack) mediaStream.addTrack(downmixedAudioTrack);
+                } catch (audioErr) {
+                    console.warn("[Audio Downmix Exception, using raw captureStream]:", audioErr);
+                    mediaStream = capturedStream;
+                }
+
                 previewPlayer.play().catch(() => {});
             }
 
@@ -370,7 +407,23 @@
                             }
 
                             if (audioTrack) {
-                                audioProducer = await sendTransport.produce({ track: audioTrack });
+                                try {
+                                    audioTrack.applyConstraints({
+                                        autoGainControl: false,
+                                        echoCancellation: false,
+                                        noiseSuppression: false
+                                    }).catch(() => {});
+                                } catch (_) {}
+
+                                audioProducer = await sendTransport.produce({
+                                    track: audioTrack,
+                                    codecOptions: {
+                                        opusStereo: true,
+                                        opusFec: true,
+                                        opusDtx: false,
+                                        opusMaxAverageBitrate: 510000
+                                    }
+                                });
                             }
 
                             isLive = true;
@@ -380,6 +433,11 @@
                             startStatsMonitoring();
                             updateUI();
                             console.log("[Mediasoup Broadcaster] Successfully producing WebRTC SFU stream!");
+                            break;
+                        }
+
+                        case "viewerCount": {
+                            document.getElementById("viewers-count").textContent = `${msg.count} / ${msg.max} Max`;
                             break;
                         }
 
@@ -394,7 +452,15 @@
                 }
             };
 
+            // Start 5-second WebSocket ping interval to keep connection alive
+            const pingInterval = setInterval(() => {
+                if (sfuSocket && sfuSocket.readyState === 1) {
+                    sfuSocket.send(JSON.stringify({ action: "ping" }));
+                }
+            }, 5000);
+
             sfuSocket.onclose = () => {
+                clearInterval(pingInterval);
                 console.log("[Mediasoup Broadcaster] WebSocket closed.");
                 stopMediasoupBroadcaster();
             };
@@ -447,8 +513,8 @@
                     const stats = await sendTransport.getStats();
                     let currentBytes = 0;
                     stats.forEach(report => {
-                        if (report.type === 'outbound-rtp') {
-                            currentBytes += (report.bytesSent || 0);
+                        if (report.type === 'outbound-rtp' || report.bytesSent !== undefined) {
+                            if (report.bytesSent) currentBytes += report.bytesSent;
                         }
                     });
 
@@ -479,7 +545,7 @@
                 liveBadge.style.color = "#fff";
                 liveBadge.textContent = "● LIVE (SFU)";
 
-                goLiveBtn.style.background = "#ef4444";
+                goLiveBtn.style.background = "#991b1b";
                 goLiveBtn.querySelector("span").textContent = "Stop Stream";
 
                 qualityBadge.style.borderColor = "#10b981";
@@ -491,8 +557,8 @@
                 liveBadge.style.color = "var(--text-muted)";
                 liveBadge.textContent = "Offline";
 
-                goLiveBtn.style.background = "#10b981";
-                goLiveBtn.querySelector("span").textContent = "Go Live (WebRTC SFU)";
+                goLiveBtn.style.background = "#ef4444";
+                goLiveBtn.querySelector("span").textContent = "Go Live";
 
                 qualityBadge.style.borderColor = "var(--panel-border)";
                 qualityBadge.style.color = "var(--text-muted)";

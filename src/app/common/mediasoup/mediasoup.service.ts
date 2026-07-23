@@ -46,7 +46,11 @@ const MEDIA_CODECS: mediasoup.types.RtpCodecCapability[] = [
     parameters: {
       "sprop-stereo": 1,
       "stereo": 1,
-      "maxaveragebitrate": 256000,
+      "maxaveragebitrate": 510000,
+      "opusStereo": 1,
+      "usedtx": 0,
+      "useinbandfec": 1,
+      "maxplaybackrate": 48000,
     },
   },
   {

@@ -20,6 +20,30 @@ export class SFUController {
   }
 
   /**
+   * Broadcast current viewer count to broadcaster and all viewers in room
+   */
+  private static broadcastViewerCount(streamKey: string) {
+    const room = this.roomSockets.get(streamKey);
+    if (!room) return;
+
+    const count = MediasoupService.getViewerCount(streamKey);
+    const payload = JSON.stringify({
+      action: "viewerCount",
+      count,
+      max: MediasoupService.MAX_VIEWERS_PER_ROOM,
+    });
+
+    if (room.broadcaster && room.broadcaster.readyState === 1) { // OPEN
+      try { room.broadcaster.send(payload); } catch (_) {}
+    }
+    for (const [_, vWs] of room.viewers.entries()) {
+      if (vWs.readyState === 1) { // OPEN
+        try { vWs.send(payload); } catch (_) {}
+      }
+    }
+  }
+
+  /**
    * Handle Mediasoup WebRTC SFU WebSocket Connection
    */
   public static handleConnection(ws: WebSocket, streamKey: string, isBroadcaster: boolean, viewerId: string) {
@@ -30,6 +54,8 @@ export class SFUController {
       room.broadcaster = ws;
     } else {
       room.viewers.set(viewerId, ws);
+      // Immediately broadcast updated viewer count when a new viewer joins
+      setTimeout(() => this.broadcastViewerCount(streamKey), 200);
     }
 
     ws.on("message", async (rawMessage: string) => {
@@ -38,9 +64,15 @@ export class SFUController {
         const { action, transportId, dtlsParameters, kind, rtpParameters, rtpCapabilities } = msg;
 
         switch (action) {
+          case "ping": {
+            ws.send(JSON.stringify({ action: "pong" }));
+            break;
+          }
+
           case "getRouterRtpCapabilities": {
             const capabilities = await MediasoupService.getRouterRtpCapabilities(streamKey);
             ws.send(JSON.stringify({ action: "routerRtpCapabilities", rtpCapabilities: capabilities }));
+            this.broadcastViewerCount(streamKey);
             break;
           }
 
@@ -48,6 +80,7 @@ export class SFUController {
             try {
               const data = await MediasoupService.createWebRtcTransport(streamKey, isBroadcaster, viewerId);
               ws.send(JSON.stringify({ action: "webRtcTransportCreated", data }));
+              this.broadcastViewerCount(streamKey);
             } catch (err: any) {
               ws.send(JSON.stringify({ action: "error", message: err.message }));
             }
@@ -83,6 +116,7 @@ export class SFUController {
             try {
               const consumers = await MediasoupService.consume(streamKey, viewerId, transportId, rtpCapabilities);
               ws.send(JSON.stringify({ action: "consumed", consumers }));
+              this.broadcastViewerCount(streamKey);
             } catch (err: any) {
               ws.send(JSON.stringify({ action: "error", message: err.message }));
             }
@@ -107,6 +141,7 @@ export class SFUController {
       } else {
         MediasoupService.removeViewer(streamKey, viewerId);
         room.viewers.delete(viewerId);
+        this.broadcastViewerCount(streamKey);
       }
     });
   }
