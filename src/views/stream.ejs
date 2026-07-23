@@ -1,586 +1,305 @@
 <%- include('header') %>
 
-<!-- Self-Hosted Mediasoup Client JS Library -->
-<script src="/js/mediasoup-client.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
-<!-- Server-passed variables for JS -->
-<div id="studio-config" data-stream-key="<%= stream.streamKey %>" data-is-live="<%= stream.isLive %>" style="display: none;"></div>
+<div id="studio-config" data-stream-key="<%= stream.streamKey %>" style="display: none;"></div>
 
-<div class="studio-container" style="max-width: 1280px; margin: 2rem auto; padding: 0 1.5rem;">
-    <div style="display: grid; grid-template-columns: 1fr 340px; gap: 1.5rem;" class="studio-grid">
-        
-        <!-- Left Column: Main Stream Stage & Controls -->
-        <div style="display: flex; flex-direction: column; gap: 1rem;">
-            <div class="glass-panel" style="padding: 0; overflow: hidden; display: flex; flex-direction: column;">
-                
-                <!-- Stage Header -->
-                <div style="padding: 1rem 1.5rem; background: rgba(0, 0, 0, 0.4); border-bottom: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center;">
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <span id="live-badge" class="badge" style="background: rgba(255,255,255,0.1); color: var(--text-muted); font-weight: 700; text-transform: uppercase; padding: 0.4rem 0.8rem; letter-spacing: 1px; border-radius: 6px;">
-                            Offline
-                        </span>
-                        <span id="duration-badge" style="display: none; background: rgba(0, 0, 0, 0.6); border: 1px solid var(--panel-border); color: #fff; padding: 0.3rem 0.6rem; border-radius: 6px; font-family: monospace; font-size: 0.9rem;">
-                            00:00:00
-                        </span>
-                    </div>
-
-                    <div id="network-quality-badge" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(0, 0, 0, 0.4); border: 1px solid var(--panel-border); padding: 0.4rem 0.8rem; border-radius: 20px; font-size: 0.85rem; color: var(--text-muted);">
-                        <i id="network-quality-icon" class="ti ti-wifi-off"></i>
-                        <span id="network-quality-text">Standby</span>
-                    </div>
-                </div>
-
-                <!-- Video Stage Canvas / Player -->
-                <div style="position: relative; width: 100%; min-height: 480px; max-height: 600px; background: #000; display: flex; align-items: center; justify-content: center;">
-                    
-                    <!-- Media Selection Placeholder -->
-                    <div id="preview-placeholder" style="text-align: center; padding: 3rem 1.5rem;">
-                        <div style="width: 70px; height: 70px; background: rgba(130, 163, 161, 0.15); color: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem; font-size: 2rem;">
-                            <i class="ti ti-video-plus"></i>
-                        </div>
-                        <h3 style="color: #fff; font-size: 1.5rem; margin-bottom: 0.5rem;">No Active Media Selected</h3>
-                        <p style="color: var(--text-muted); font-size: 0.95rem; max-width: 420px; margin: 0 auto 1.75rem; line-height: 1.5;">
-                            Select a local video file or share your screen to begin streaming via WebRTC SFU.
-                        </p>
-                        
-                        <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
-                            <label class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; padding: 0.75rem 1.5rem;">
-                                <i class="ti ti-movie" style="font-size: 1.2rem;"></i> Choose Video File
-                                <input type="file" id="movie-file-input" accept="video/*" style="display: none;">
-                            </label>
-                            
-                            <button id="screenshare-btn" onclick="startScreenShare()" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem;">
-                                <i class="ti ti-screen-share" style="font-size: 1.2rem;"></i> Share Screen
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Broadcaster Video Preview Player with Full Controls -->
-                    <video id="preview-player" style="display: none; width: 100%; height: 100%; object-fit: contain;" controls playsinline muted></video>
-                    
-                    <!-- Hidden Audio Player -->
-                    <audio id="audio-player" style="display: none;"></audio>
-                </div>
-
-                <!-- Footer Control Bar -->
-                <div style="padding: 1.25rem 1.5rem; background: rgba(0, 0, 0, 0.4); border-top: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-                    <div style="display: flex; align-items: center; gap: 1.25rem;">
-                        <button id="go-live-btn" onclick="toggleLiveState()" class="btn" style="padding: 0.75rem 1.75rem; font-size: 1.05rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 10px; background: #ef4444; color: #fff; border: none; cursor: pointer; transition: all 0.2s ease;">
-                            <i class="ti ti-broadcast" style="font-size: 1.3rem;"></i>
-                            <span>Go Live</span>
-                        </button>
-
-                        <div style="width: 1px; height: 30px; background: var(--panel-border);"></div>
-                        <span id="active-source-text" style="color: var(--text-muted); font-size: 0.9rem; font-family: monospace;">Source: None</span>
-                    </div>
-
-                    <div style="display: flex; align-items: center; gap: 1.5rem; color: var(--text-muted); font-size: 0.9rem;">
-                        <div>
-                            <i class="ti ti-users" style="color: var(--primary); margin-right: 0.25rem;"></i>
-                            Viewers: <strong id="viewers-count" style="color: #fff; font-family: monospace;">0 / 5 Max</strong>
-                        </div>
-                        <div>
-                            <i class="ti ti-activity" style="color: var(--secondary); margin-right: 0.25rem;"></i>
-                            Bitrate: <strong id="upload-speed-val" style="color: #fff; font-family: monospace;">0</strong> Kbps
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Right Column: Stream Configuration & Room Limits -->
-        <div style="display: flex; flex-direction: column; gap: 1rem;">
-            <div class="glass-panel" style="padding: 1.5rem;">
-                <h3 style="font-size: 1.2rem; color: #fff; margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">
-                    <i class="ti ti-settings" style="color: var(--primary);"></i> Stream Information
-                </h3>
-
-                <div style="margin-bottom: 1.25rem;">
-                    <label style="display: block; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.4rem; font-weight: 600;">Stream Key</label>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <input type="text" id="stream-key-input" class="form-control" value="<%= stream.streamKey %>" readonly style="font-family: monospace; color: #ffffff !important; background: rgba(0, 0, 0, 0.6) !important; border: 1px solid var(--panel-border);">
-                        <button class="btn btn-secondary" id="copy-key-btn" title="Copy Stream Key">
-                            <i class="ti ti-copy"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <div style="margin-bottom: 1.5rem;">
-                    <label style="display: block; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.4rem; font-weight: 600;">Direct Viewer Link</label>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <input type="text" id="viewer-link-input" class="form-control" value="<%= stream.streamKey %>" readonly style="font-family: monospace; color: #ffffff !important; background: rgba(0, 0, 0, 0.6) !important; border: 1px solid var(--panel-border);">
-                        <button class="btn btn-secondary" id="copy-link-btn" title="Copy Link">
-                            <i class="ti ti-copy"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <div style="padding: 1rem; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: var(--radius-md);">
-                    <div style="display: flex; align-items: center; gap: 0.5rem; color: #f59e0b; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem;">
-                        <i class="ti ti-info-circle"></i> Room Limit Notice
-                    </div>
-                    <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
-                        Mediasoup SFU limits this stream to a maximum of <strong>5 concurrent viewers</strong> for ultra-high quality, sub-second WebRTC delivery.
-                    </p>
-                </div>
-            </div>
-        </div>
-
+<div class="stream-grid">
+  <section class="glass-panel" style="padding: 0; overflow: hidden;">
+    <div style="padding: 1rem 1.25rem; border-bottom: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;">
+      <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+        <span id="obs-status-badge" class="badge badge-primary">
+          <i class="ti ti-antenna-bars-off"></i> Waiting for OBS
+        </span>
+        <span id="public-status-badge" class="badge badge-primary">
+          Public Offline
+        </span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 0.75rem; color: var(--text-muted); font-size: 0.9rem;">
+        <i class="ti ti-activity"></i>
+        <span>FFmpeg speed: <strong id="pipeline-speed" style="color: #fff; font-family: monospace;">N/A</strong></span>
+      </div>
     </div>
+
+    <div class="video-container" style="border-radius: 0; border-left: 0; border-right: 0;">
+      <video id="preview-video" class="video-element" controls playsinline muted></video>
+      <div id="preview-empty" style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem; background: #050505;">
+        <i class="ti ti-broadcast" style="font-size: 4rem; color: var(--primary); margin-bottom: 1rem;"></i>
+        <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">OBS Preview</h2>
+        <p id="preview-message" style="color: var(--text-muted); max-width: 520px;">Start streaming from OBS. The preview appears here before viewers can watch.</p>
+      </div>
+    </div>
+
+    <div style="padding: 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; background: rgba(0,0,0,0.22);">
+      <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+        <button id="start-preview-btn" class="btn btn-secondary" type="button">
+          <i class="ti ti-refresh"></i> Start Preview
+        </button>
+        <button id="go-live-btn" class="btn btn-primary" type="button" disabled>
+          <i class="ti ti-player-play"></i> Go Live
+        </button>
+        <a id="viewer-link-btn" class="btn btn-secondary" href="/live/<%= stream.streamKey %>" target="_blank" rel="noreferrer">
+          <i class="ti ti-external-link"></i> Viewer Link
+        </a>
+      </div>
+      <span id="last-error" style="color: var(--warning); font-size: 0.9rem;"></span>
+    </div>
+  </section>
+
+  <aside style="display: flex; flex-direction: column; gap: 1rem;">
+    <section class="glass-panel">
+      <div class="card-header">
+        <h3 class="card-title"><i class="ti ti-router" style="color: var(--primary);"></i> OBS Ingest</h3>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">RTMP Server</label>
+        <div style="display: flex; gap: 0.5rem;">
+          <input id="rtmp-server" class="form-input" readonly value="Loading...">
+          <button class="btn btn-secondary btn-sm" type="button" onclick="copyField('rtmp-server')" title="Copy RTMP server">
+            <i class="ti ti-copy"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Stream Key</label>
+        <div style="display: flex; gap: 0.5rem;">
+          <input id="stream-key" class="form-input" readonly value="<%= stream.streamKey %>">
+          <button class="btn btn-secondary btn-sm" type="button" onclick="copyField('stream-key')" title="Copy stream key">
+            <i class="ti ti-copy"></i>
+          </button>
+        </div>
+      </div>
+
+      <div style="display: grid; gap: 0.65rem; color: var(--text-muted); font-size: 0.9rem;">
+        <div style="display: flex; justify-content: space-between; gap: 1rem;">
+          <span>Encoder</span>
+          <strong style="color: #fff;">H.264</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; gap: 1rem;">
+          <span>Audio</span>
+          <strong style="color: #fff;">AAC 48 kHz</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; gap: 1rem;">
+          <span>Keyframe</span>
+          <strong style="color: #fff;">2 seconds</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; gap: 1rem;">
+          <span>Bitrate</span>
+          <strong style="color: #fff;">6000-8000 Kbps</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="glass-panel">
+      <div class="card-header">
+        <h3 class="card-title"><i class="ti ti-stack-2" style="color: var(--secondary);"></i> Output Ladder</h3>
+      </div>
+      <div style="display: grid; gap: 0.75rem;">
+        <div class="obs-ladder-row">
+          <span>1080p</span>
+          <strong>Source copy</strong>
+        </div>
+        <div class="obs-ladder-row">
+          <span>720p</span>
+          <strong>3.5 Mbps</strong>
+        </div>
+        <div class="obs-ladder-row">
+          <span>480p</span>
+          <strong>1.4 Mbps</strong>
+        </div>
+      </div>
+    </section>
+  </aside>
 </div>
 
 <style>
-    @media (max-width: 992px) {
-        .studio-grid {
-            grid-template-columns: 1fr !important;
-        }
-    }
+  .obs-ladder-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    color: var(--text-muted);
+  }
+
+  .obs-ladder-row:last-child {
+    border-bottom: 0;
+  }
+
+  .obs-ladder-row strong {
+    color: #fff;
+    font-family: monospace;
+    font-size: 0.9rem;
+  }
 </style>
 
 <script>
-    document.addEventListener("DOMContentLoaded", () => {
-        // Read configuration from server-rendered dataset
-        const studioConfig = document.getElementById("studio-config");
-        const streamKey = studioConfig ? studioConfig.dataset.streamKey : "";
-
-        // Populate full direct viewer link in input box
-        const viewerLinkInput = document.getElementById("viewer-link-input");
-        if (viewerLinkInput && streamKey) {
-            viewerLinkInput.value = `${window.location.origin}/live/${streamKey}`;
-        }
-        // Copy Helper Event Listeners
-        document.getElementById("copy-key-btn")?.addEventListener("click", () => {
-            const val = document.getElementById("stream-key-input")?.value;
-            if (val) navigator.clipboard.writeText(val);
-        });
-        document.getElementById("copy-link-btn")?.addEventListener("click", () => {
-            const link = `${window.location.origin}/live/${streamKey}`;
-            navigator.clipboard.writeText(link);
-        });
-
-        // UI State Variables
-        let isLive = false;
-        let isStreaming = false;
-        let currentSourceType = null; // 'file' or 'screen'
-
-        // Media Stream & Player References
-        let mediaStream = null;
-        let durationInterval = null;
-        let statsInterval = null;
-        let streamStartTime = null;
-        let audioCtx = null;
-        let audioSourceNode = null;
-        let audioDestinationNode = null;
-
-        // Mediasoup SFU WebRTC Client Variables
-        let sfuSocket = null;
-        let device = null;
-        let sendTransport = null;
-        let videoProducer = null;
-        let audioProducer = null;
-
-        const movieFileInput = document.getElementById("movie-file-input");
-        const previewPlayer = document.getElementById("preview-player");
-        const audioPlayer = document.getElementById("audio-player");
-        const previewPlaceholder = document.getElementById("preview-placeholder");
-
-        /**
-         * Handle Video File Selection
-         */
-        movieFileInput.addEventListener("change", (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            if (isLive) stopMediasoupBroadcaster();
-            stopMediaTracks();
-
-            const fileUrl = URL.createObjectURL(file);
-            previewPlayer.srcObject = null;
-            previewPlayer.src = fileUrl;
-            previewPlayer.load();
-
-            audioPlayer.src = fileUrl;
-            audioPlayer.load();
-
-            previewPlayer.onplay = () => {
-                audioPlayer.currentTime = previewPlayer.currentTime;
-                audioPlayer.play().catch(() => {});
-            };
-            previewPlayer.onpause = () => audioPlayer.pause();
-            previewPlayer.onseeked = () => audioPlayer.currentTime = previewPlayer.currentTime;
-
-            currentSourceType = 'file';
-            document.getElementById("active-source-text").textContent = `Movie File: ${file.name}`;
-            previewPlayer.style.display = "block";
-            previewPlaceholder.style.display = "none";
-            updateUI();
-        });
-
-        /**
-         * Handle Screen Sharing Capture
-         */
-        window.startScreenShare = async function() {
-            try {
-                if (isLive) stopMediasoupBroadcaster();
-                stopMediaTracks();
-
-                const stream = await navigator.mediaDevices.getDisplayMedia({
-                    video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } },
-                    audio: true
-                });
-
-                mediaStream = stream;
-                previewPlayer.src = "";
-                previewPlayer.srcObject = stream;
-                previewPlayer.play().catch(() => {});
-
-                currentSourceType = 'screen';
-                document.getElementById("active-source-text").textContent = "Source: Screen Share";
-                previewPlayer.style.display = "block";
-                previewPlaceholder.style.display = "none";
-                updateUI();
-            } catch (err) {
-                console.error("[Screen Share Error]:", err);
-            }
-        };
-
-        /**
-         * Stop all active media tracks
-         */
-        function stopMediaTracks() {
-            if (mediaStream) {
-                mediaStream.getTracks().forEach(track => track.stop());
-                mediaStream = null;
-            }
-        }
-
-        /**
-         * Toggle Live State (Go Live / Stop Live)
-         */
-        window.toggleLiveState = function() {
-            if (isLive) {
-                stopMediasoupBroadcaster();
-            } else {
-                startMediasoupBroadcaster();
-            }
-        };
-
-        /**
-         * Start Mediasoup SFU WebRTC Broadcaster
-         */
-        async function startMediasoupBroadcaster() {
-            if (isLive) return;
-
-            // Prepare MediaStream from active player or screen capture with 5.1 Surround Sound downmixing
-            if (currentSourceType === 'file') {
-                let capturedStream = null;
-                if (previewPlayer.captureStream) {
-                    capturedStream = previewPlayer.captureStream();
-                } else if (previewPlayer.mozCaptureStream) {
-                    capturedStream = previewPlayer.mozCaptureStream();
-                }
-
-                try {
-                    if (!audioCtx) {
-                        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                    }
-                    if (audioCtx.state === 'suspended') {
-                        audioCtx.resume();
-                    }
-
-                    if (!audioSourceNode && previewPlayer) {
-                        audioSourceNode = audioCtx.createMediaElementSource(previewPlayer);
-                        audioDestinationNode = audioCtx.createMediaStreamDestination();
-
-                        // Downmix all 6 channels (5.1 Surround: FL, FR, Center dialogue, LFE, SL, SR) to Stereo
-                        audioSourceNode.channelInterpretation = 'speakers';
-                        audioSourceNode.channelCountMode = 'max';
-                        audioSourceNode.channelCount = 2;
-
-                        audioSourceNode.connect(audioDestinationNode);
-                        audioSourceNode.connect(audioCtx.destination);
-                    }
-
-                    const videoTrack = capturedStream ? capturedStream.getVideoTracks()[0] : null;
-                    const downmixedAudioTrack = (audioDestinationNode && audioDestinationNode.stream) ? audioDestinationNode.stream.getAudioTracks()[0] : (capturedStream ? capturedStream.getAudioTracks()[0] : null);
-
-                    mediaStream = new MediaStream();
-                    if (videoTrack) mediaStream.addTrack(videoTrack);
-                    if (downmixedAudioTrack) mediaStream.addTrack(downmixedAudioTrack);
-                } catch (audioErr) {
-                    console.warn("[Audio Downmix Exception, using raw captureStream]:", audioErr);
-                    mediaStream = capturedStream;
-                }
-
-                previewPlayer.play().catch(() => {});
-            }
-
-            if (!mediaStream || mediaStream.getTracks().length === 0) {
-                alert("Please select a video file or share your screen first!");
-                return;
-            }
-
-            console.log(`[Mediasoup Broadcaster] Connecting to SFU WebSocket for stream: ${streamKey}`);
-
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/api/sfu/ws?streamKey=${encodeURIComponent(streamKey)}&role=broadcaster`;
-
-            sfuSocket = new WebSocket(wsUrl);
-
-            sfuSocket.onopen = () => {
-                console.log("[Mediasoup Broadcaster] WebSocket connected! Requesting Router Capabilities...");
-                sfuSocket.send(JSON.stringify({ action: "getRouterRtpCapabilities" }));
-            };
-
-            sfuSocket.onmessage = async (event) => {
-                try {
-                    const msg = JSON.parse(event.data);
-
-                    switch (msg.action) {
-                        case "routerRtpCapabilities": {
-                            // 1. Load Mediasoup Device with Router Capabilities
-                            const clientLib = window.mediasoupClient || window.MediasoupClient || window.mediasoup;
-                            if (!clientLib) {
-                                alert("Mediasoup client library failed to initialize! Please refresh the page.");
-                                return;
-                            }
-                            device = new clientLib.Device();
-                            await device.load({ routerRtpCapabilities: msg.rtpCapabilities });
-
-                            // 2. Request WebRTC Producer Transport
-                            sfuSocket.send(JSON.stringify({ action: "createWebRtcTransport", isBroadcaster: true }));
-                            break;
-                        }
-
-                        case "webRtcTransportCreated": {
-                            // 3. Create Send Transport on Mediasoup Device
-                            const { id, iceParameters, iceCandidates, dtlsParameters } = msg.data;
-                            sendTransport = device.createSendTransport({
-                                id,
-                                iceParameters,
-                                iceCandidates,
-                                dtlsParameters,
-                                iceServers: [
-                                    { urls: 'stun:stun.l.google.com:19302' },
-                                    { urls: 'stun:stun1.l.google.com:19302' },
-                                    { urls: 'stun:stun2.l.google.com:19302' }
-                                ]
-                            });
-
-                            sendTransport.on("connect", ({ dtlsParameters }, callback, errback) => {
-                                sfuSocket.send(JSON.stringify({
-                                    action: "connectTransport",
-                                    transportId: sendTransport.id,
-                                    dtlsParameters
-                                }));
-                                callback();
-                            });
-
-                            sendTransport.on("produce", ({ kind, rtpParameters }, callback, errback) => {
-                                sfuSocket.send(JSON.stringify({
-                                    action: "produce",
-                                    transportId: sendTransport.id,
-                                    kind,
-                                    rtpParameters
-                                }));
-
-                                const onProduced = (ev) => {
-                                    const res = JSON.parse(ev.data);
-                                    if (res.action === "produced" && res.kind === kind) {
-                                        sfuSocket.removeEventListener("message", onProduced);
-                                        callback({ id: res.id });
-                                    }
-                                };
-                                sfuSocket.addEventListener("message", onProduced);
-                            });
-
-                            // 4. Produce Video & Audio Tracks to Mediasoup SFU
-                            const videoTrack = mediaStream.getVideoTracks()[0];
-                            const audioTrack = mediaStream.getAudioTracks()[0];
-
-                            if (videoTrack && videoTrack.readyState === 'live') {
-                                if ('contentHint' in videoTrack) {
-                                    videoTrack.contentHint = 'detail';
-                                }
-
-                                videoProducer = await sendTransport.produce({
-                                    track: videoTrack,
-                                    encodings: [
-                                        {
-                                            minBitrate: 5000000, // 5.0 Mbps Crisp 1080p Floor
-                                            maxBitrate: 12000000, // 12.0 Mbps Discord Quality Ceiling
-                                            priority: "high",
-                                            networkPriority: "high"
-                                        }
-                                    ],
-                                    codecOptions: {
-                                        videoGoogleStartBitrate: 8000,
-                                        videoGoogleMinBitrate: 5000,
-                                        videoGoogleMaxBitrate: 12000
-                                    }
-                                });
-                            }
-
-                            if (audioTrack && audioTrack.readyState === 'live') {
-                                audioProducer = await sendTransport.produce({
-                                    track: audioTrack,
-                                    codecOptions: {
-                                        opusStereo: true,
-                                        opusFec: true,
-                                        opusDtx: false,
-                                        opusMaxAverageBitrate: 510000
-                                    }
-                                });
-                            }
-
-                            isLive = true;
-                            isStreaming = true;
-                            streamStartTime = Date.now();
-                            startDurationTimer();
-                            startStatsMonitoring();
-                            updateUI();
-                            console.log("[Mediasoup Broadcaster] Successfully producing WebRTC SFU stream!");
-                            break;
-                        }
-
-                        case "viewerCount": {
-                            document.getElementById("viewers-count").textContent = `${msg.count} / ${msg.max} Max`;
-                            break;
-                        }
-
-                        case "error": {
-                            alert("SFU Error: " + msg.message);
-                            stopMediasoupBroadcaster();
-                            break;
-                        }
-                    }
-                } catch (err) {
-                    console.error("[Mediasoup Broadcaster Message Exception]:", err);
-                }
-            };
-
-            // Start 5-second WebSocket ping interval to keep connection alive
-            const pingInterval = setInterval(() => {
-                if (sfuSocket && sfuSocket.readyState === 1) {
-                    sfuSocket.send(JSON.stringify({ action: "ping" }));
-                }
-            }, 5000);
-
-            sfuSocket.onclose = () => {
-                clearInterval(pingInterval);
-                console.log("[Mediasoup Broadcaster] WebSocket closed.");
-                stopMediasoupBroadcaster();
-            };
-        }
-
-        /**
-         * Stop Mediasoup SFU Broadcaster Session
-         */
-        function stopMediasoupBroadcaster() {
-            isLive = false;
-            isStreaming = false;
-
-            if (sfuSocket && sfuSocket.readyState === 1) {
-                try { sfuSocket.send(JSON.stringify({ action: "stopStream" })); } catch (_) {}
-            }
-
-            if (videoProducer) { try { videoProducer.close(); } catch (_) {} videoProducer = null; }
-            if (audioProducer) { try { audioProducer.close(); } catch (_) {} audioProducer = null; }
-            if (sendTransport) { try { sendTransport.close(); } catch (_) {} sendTransport = null; }
-            if (sfuSocket) { try { sfuSocket.close(); } catch (_) {} sfuSocket = null; }
-
-            if (durationInterval) { clearInterval(durationInterval); durationInterval = null; }
-            if (statsInterval) { clearInterval(statsInterval); statsInterval = null; }
-
-            updateUI();
-        }
-
-        /**
-         * Start Duration Timer
-         */
-        function startDurationTimer() {
-            const badge = document.getElementById("duration-badge");
-            badge.style.display = "inline-flex";
-
-            durationInterval = setInterval(() => {
-                const elapsedSec = Math.floor((Date.now() - streamStartTime) / 1000);
-                const hrs = String(Math.floor(elapsedSec / 3600)).padStart(2, '0');
-                const mins = String(Math.floor((elapsedSec % 3600) / 60)).padStart(2, '0');
-                const secs = String(elapsedSec % 60).padStart(2, '0');
-                badge.textContent = `${hrs}:${mins}:${secs}`;
-            }, 1000);
-        }
-
-        /**
-         * Monitor Bitrate Stats
-         */
-        function startStatsMonitoring() {
-            let lastBytes = 0;
-            let lastTime = Date.now();
-
-            statsInterval = setInterval(async () => {
-                if (!sendTransport) return;
-                try {
-                    const stats = await sendTransport.getStats();
-                    let currentBytes = 0;
-                    stats.forEach(report => {
-                        if (report.type === 'outbound-rtp' || report.bytesSent !== undefined) {
-                            if (report.bytesSent) currentBytes += report.bytesSent;
-                        }
-                    });
-
-                    const now = Date.now();
-                    const deltaSec = (now - lastTime) / 1000;
-                    if (deltaSec > 0 && currentBytes >= lastBytes) {
-                        const kbps = Math.round(((currentBytes - lastBytes) * 8) / 1024 / deltaSec);
-                        document.getElementById("upload-speed-val").textContent = kbps;
-                    }
-                    lastBytes = currentBytes;
-                    lastTime = now;
-                } catch (_) {}
-            }, 1000);
-        }
-
-        /**
-         * Update UI Elements
-         */
-        function updateUI() {
-            const liveBadge = document.getElementById("live-badge");
-            const goLiveBtn = document.getElementById("go-live-btn");
-            const qualityBadge = document.getElementById("network-quality-badge");
-            const qualityIcon = document.getElementById("network-quality-icon");
-            const qualityText = document.getElementById("network-quality-text");
-
-            if (isLive) {
-                liveBadge.style.background = "#ef4444";
-                liveBadge.style.color = "#fff";
-                liveBadge.textContent = "● LIVE (SFU)";
-
-                goLiveBtn.style.background = "#991b1b";
-                goLiveBtn.querySelector("span").textContent = "Stop Stream";
-
-                qualityBadge.style.borderColor = "#10b981";
-                qualityBadge.style.color = "#10b981";
-                qualityIcon.className = "ti ti-wifi";
-                qualityText.textContent = "WebRTC SFU Active";
-            } else {
-                liveBadge.style.background = "rgba(255,255,255,0.1)";
-                liveBadge.style.color = "var(--text-muted)";
-                liveBadge.textContent = "Offline";
-
-                goLiveBtn.style.background = "#ef4444";
-                goLiveBtn.querySelector("span").textContent = "Go Live";
-
-                qualityBadge.style.borderColor = "var(--panel-border)";
-                qualityBadge.style.color = "var(--text-muted)";
-                qualityIcon.className = "ti ti-wifi-off";
-                qualityText.textContent = "Standby";
-
-                document.getElementById("duration-badge").style.display = "none";
-                document.getElementById("upload-speed-val").textContent = "0";
-            }
-        }
+  const configEl = document.getElementById('studio-config');
+  const streamKey = configEl ? configEl.dataset.streamKey : '';
+  const previewVideo = document.getElementById('preview-video');
+  const previewEmpty = document.getElementById('preview-empty');
+  const previewMessage = document.getElementById('preview-message');
+  const obsBadge = document.getElementById('obs-status-badge');
+  const publicBadge = document.getElementById('public-status-badge');
+  const speedEl = document.getElementById('pipeline-speed');
+  const errorEl = document.getElementById('last-error');
+  const goLiveBtn = document.getElementById('go-live-btn');
+  const startPreviewBtn = document.getElementById('start-preview-btn');
+  const rtmpServerInput = document.getElementById('rtmp-server');
+
+  let hls = null;
+  let previewAttached = false;
+
+  window.copyField = function(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    navigator.clipboard.writeText(el.value).then(() => {
+      if (window.showToast) window.showToast('Copied to clipboard.', 'success');
+    }).catch(() => {
+      if (window.showToast) window.showToast('Copy failed.', 'error');
     });
+  };
+
+  async function loadIngestDetails() {
+    const res = await fetch(`/api/stream/${encodeURIComponent(streamKey)}/ingest`);
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load ingest details.');
+    rtmpServerInput.value = data.data.ingest.rtmpServer;
+  }
+
+  async function startPreviewPipeline() {
+    startPreviewBtn.disabled = true;
+    startPreviewBtn.innerHTML = '<i class="ti ti-loader-2"></i> Starting';
+    try {
+      const res = await fetch(`/api/stream/${encodeURIComponent(streamKey)}/transcoder/start`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to start preview.');
+      if (window.showToast) window.showToast('Preview watcher is running.', 'success');
+    } catch (err) {
+      if (window.showToast) window.showToast(err.message, 'error');
+    } finally {
+      startPreviewBtn.disabled = false;
+      startPreviewBtn.innerHTML = '<i class="ti ti-refresh"></i> Start Preview';
+    }
+  }
+
+  async function setPublicLive(shouldLive) {
+    goLiveBtn.disabled = true;
+    try {
+      const endpoint = shouldLive ? 'golive' : 'stop';
+      const res = await fetch(`/api/stream/${encodeURIComponent(streamKey)}/${endpoint}`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update live state.');
+      if (window.showToast) window.showToast(data.message, 'success');
+      await refreshStatus();
+    } catch (err) {
+      if (window.showToast) window.showToast(err.message, 'error');
+    } finally {
+      goLiveBtn.disabled = false;
+    }
+  }
+
+  function attachPreview(url) {
+    if (previewAttached) return;
+    previewAttached = true;
+    previewEmpty.style.display = 'none';
+
+    if (hls) {
+      hls.destroy();
+      hls = null;
+    }
+
+    if (previewVideo.canPlayType('application/vnd.apple.mpegurl')) {
+      previewVideo.src = url;
+      previewVideo.play().catch(() => {});
+      return;
+    }
+
+    if (window.Hls && Hls.isSupported()) {
+      hls = new Hls({
+        lowLatencyMode: false,
+        liveSyncDurationCount: 4,
+        maxBufferLength: 45,
+        backBufferLength: 30,
+      });
+      hls.loadSource(url);
+      hls.attachMedia(previewVideo);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        previewVideo.play().catch(() => {});
+      });
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data && data.fatal) {
+          previewAttached = false;
+          previewEmpty.style.display = 'flex';
+          previewMessage.textContent = 'Preview stalled. Waiting for fresh HLS segments.';
+          hls.destroy();
+          hls = null;
+        }
+      });
+    }
+  }
+
+  function updateBadges(status) {
+    speedEl.textContent = status.speed || 'N/A';
+    errorEl.textContent = status.lastError || '';
+
+    if (status.isReady) {
+      obsBadge.className = 'badge badge-success';
+      obsBadge.innerHTML = '<i class="ti ti-point-filled"></i> OBS Preview Ready';
+      goLiveBtn.disabled = false;
+      attachPreview(status.previewUrl + '?v=' + Date.now());
+    } else if (status.status === 'waiting_for_obs') {
+      obsBadge.className = 'badge badge-primary';
+      obsBadge.innerHTML = '<i class="ti ti-antenna-bars-off"></i> Waiting for OBS';
+      goLiveBtn.disabled = true;
+      previewMessage.textContent = 'Start streaming from OBS. The preview appears here before viewers can watch.';
+    } else if (status.status === 'failed') {
+      obsBadge.className = 'badge badge-danger';
+      obsBadge.innerHTML = '<i class="ti ti-alert-triangle"></i> Pipeline Error';
+      goLiveBtn.disabled = true;
+    } else {
+      obsBadge.className = 'badge badge-primary';
+      obsBadge.innerHTML = '<i class="ti ti-loader-2"></i> Preview Starting';
+      goLiveBtn.disabled = true;
+    }
+
+    if (status.isLive) {
+      publicBadge.className = 'badge badge-success';
+      publicBadge.innerHTML = '<i class="ti ti-world"></i> Public Live';
+      goLiveBtn.innerHTML = '<i class="ti ti-player-stop"></i> End Public Live';
+      goLiveBtn.disabled = false;
+      goLiveBtn.onclick = () => setPublicLive(false);
+    } else {
+      publicBadge.className = 'badge badge-primary';
+      publicBadge.textContent = 'Public Offline';
+      goLiveBtn.innerHTML = '<i class="ti ti-player-play"></i> Go Live';
+      goLiveBtn.disabled = !status.isReady;
+      goLiveBtn.onclick = () => setPublicLive(true);
+    }
+  }
+
+  async function refreshStatus() {
+    const res = await fetch(`/api/stream/${encodeURIComponent(streamKey)}/transcoder/status`);
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load preview status.');
+    updateBadges(data.data);
+  }
+
+  startPreviewBtn.addEventListener('click', startPreviewPipeline);
+
+  loadIngestDetails()
+    .then(startPreviewPipeline)
+    .then(refreshStatus)
+    .catch((err) => {
+      if (window.showToast) window.showToast(err.message, 'error');
+    });
+
+  setInterval(() => {
+    refreshStatus().catch(() => {});
+  }, 3000);
 </script>
 
 <%- include('footer') %>

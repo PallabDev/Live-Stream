@@ -7,6 +7,7 @@ import url from "url";
 import { WebSocketServer } from "ws";
 import { StreamController } from "./app/module/stream/stream.controller.js";
 import { MonitorService } from "./app/common/monitor/monitor.service.js";
+import { StreamService } from "./app/module/stream/stream.service.js";
 
 // Import routes
 import authRoutes from "./app/module/auth/auth.routes.js";
@@ -175,6 +176,12 @@ MonitorService.preloadLogs().then(() => {
   console.log("[Studio Server] DB logs preloaded successfully.");
 }).catch(err => {
   console.error("[Studio Server] Failed to preload DB logs:", err);
+});
+
+StreamService.resetRuntimeStatuses().then(() => {
+  console.log("[Studio Server] Cleared stale stream runtime statuses.");
+}).catch(err => {
+  console.error("[Studio Server] Failed to clear stale stream runtime statuses:", err);
 });
 
 broadcasterWss.on("connection", (ws: any, request: any, key: any) => {

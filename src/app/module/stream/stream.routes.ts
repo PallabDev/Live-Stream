@@ -15,8 +15,14 @@ router.delete("/api/stream/:id", requireAuth, StreamController.deleteStream);
 // MediaMTX external authentication endpoint (public, validated internally)
 router.post("/api/stream/auth", StreamController.mediaMtxAuth);
 
+// OBS ingest details and preview transcode pipeline
+router.get("/api/stream/:key/ingest", requireAuth, requireAccess, StreamController.getIngestDetails);
+router.post("/api/stream/:key/transcoder/start", requireAuth, requireAccess, StreamController.startTranscoder);
+router.get("/api/stream/:key/transcoder/status", requireAuth, requireAccess, StreamController.getTranscoderStatus);
+router.get("/api/stream/:key/playback/status", StreamController.getPublicPlaybackStatus);
+
 // Stream control endpoints (require auth)
-router.post("/api/stream/:key/golive", requireAuth, StreamController.goLive);
+router.post("/api/stream/:key/golive", requireAuth, requireAccess, StreamController.goLive);
 router.post(
   "/api/stream/:key/video",
   requireAuth,

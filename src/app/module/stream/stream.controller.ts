@@ -7,6 +7,7 @@ import path from "path";
 import { WebSocket } from "ws";
 import { MonitorService } from "../../common/monitor/monitor.service.js";
 import { TelemetryService } from "./telemetry.service.js";
+import { TranscodeService } from "./transcode.service.js";
 
 interface StreamSession {
   streamKey: string;
@@ -21,6 +22,27 @@ interface StreamSession {
 export class StreamController {
   public static activeSessions = new Map<string, StreamSession>();
   public static waitingViewers = new Map<string, Set<WebSocket>>();
+
+  private static getRequestHostname(req: Request): string {
+    const forwardedHost = req.headers["x-forwarded-host"];
+    const rawHost = Array.isArray(forwardedHost)
+      ? forwardedHost[0]
+      : forwardedHost || req.get("host") || req.hostname;
+    return rawHost.split(",")[0].trim().replace(/:\d+$/, "");
+  }
+
+  private static async getOwnedStream(req: AuthenticatedRequest, key: string) {
+    const streamInfo = await StreamService.getStreamByKey(key);
+    if (!streamInfo) {
+      throw new Error("Stream not found.");
+    }
+    if (streamInfo.userId !== req.user.id && req.user.role !== "admin") {
+      const error = new Error("Unauthorized.");
+      (error as any).statusCode = 403;
+      throw error;
+    }
+    return streamInfo;
+  }
 
   static async handleWebSocket(ws: WebSocket, key: string) {
     try {
@@ -390,6 +412,10 @@ export class StreamController {
 
       const userId = req.user.id;
       const isAdmin = req.user.role === "admin";
+      const streamInfo = await StreamService.getStreamById(id);
+      if (streamInfo && (isAdmin || streamInfo.userId === userId)) {
+        await TranscodeService.stopPipeline(streamInfo.streamKey);
+      }
 
       await StreamService.deleteStream(userId, id, isAdmin);
 
@@ -403,8 +429,91 @@ export class StreamController {
     return res.sendStatus(200);
   }
 
-  static async goLive(req: Request, res: Response) {
-    return res.status(400).json({ success: false, error: "RTMP streaming is disabled. Please use the WebRTC studio streamer." });
+  static async getIngestDetails(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { key } = req.params;
+      const streamInfo = await StreamController.getOwnedStream(req, key);
+      const hostname = StreamController.getRequestHostname(req);
+      const ingest = TranscodeService.getPublicIngestDetails(streamInfo.streamKey, hostname);
+
+      return res.json({
+        success: true,
+        data: {
+          stream: streamInfo,
+          ingest,
+        },
+      });
+    } catch (error: any) {
+      return res.status(error.statusCode || 500).json({ success: false, error: error.message });
+    }
+  }
+
+  static async startTranscoder(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { key } = req.params;
+      const streamInfo = await StreamController.getOwnedStream(req, key);
+      const status = await TranscodeService.ensurePipeline(streamInfo.streamKey);
+
+      return res.json({ success: true, data: status });
+    } catch (error: any) {
+      return res.status(error.statusCode || 500).json({ success: false, error: error.message });
+    }
+  }
+
+  static async getTranscoderStatus(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { key } = req.params;
+      const streamInfo = await StreamController.getOwnedStream(req, key);
+      const status = TranscodeService.getPipelineStatus(streamInfo.streamKey);
+      const freshStream = await StreamService.getStreamByKey(streamInfo.streamKey);
+
+      return res.json({
+        success: true,
+        data: {
+          ...status,
+          isActive: !!freshStream?.isActive,
+          isLive: !!freshStream?.isLive,
+        },
+      });
+    } catch (error: any) {
+      return res.status(error.statusCode || 500).json({ success: false, error: error.message });
+    }
+  }
+
+  static async getPublicPlaybackStatus(req: Request, res: Response) {
+    try {
+      const { key } = req.params;
+      const streamInfo = await StreamService.getStreamByKey(key);
+      if (!streamInfo) {
+        return res.status(404).json({ success: false, error: "Stream not found." });
+      }
+
+      const pipeline = TranscodeService.getPipelineStatus(streamInfo.streamKey);
+      const canPlay = !!streamInfo.isLive && pipeline.isReady;
+
+      return res.json({
+        success: true,
+        data: {
+          isLive: !!streamInfo.isLive,
+          isActive: !!streamInfo.isActive,
+          canPlay,
+          hlsUrl: canPlay ? pipeline.previewUrl : null,
+        },
+      });
+    } catch (error: any) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  static async goLive(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { key } = req.params;
+      const streamInfo = await StreamController.getOwnedStream(req, key);
+      await TranscodeService.publish(streamInfo.streamKey);
+      return res.json({ success: true, message: "Public live playback enabled." });
+    } catch (error: any) {
+      return res.status(error.statusCode || 500).json({ success: false, error: error.message });
+    }
   }
 
   static async receiveVideo(req: Request, res: Response) {
@@ -414,18 +523,12 @@ export class StreamController {
   static async stopLive(req: AuthenticatedRequest, res: Response) {
     try {
       const { key } = req.params;
-      const streamInfo = await StreamService.getStreamByKey(key);
-      if (!streamInfo) {
-        return res.status(404).json({ success: false, error: "Stream not found." });
-      }
-      if (streamInfo.userId !== req.user.id && req.user.role !== "admin") {
-        return res.status(403).json({ success: false, error: "Unauthorized." });
-      }
+      const streamInfo = await StreamController.getOwnedStream(req, key);
 
-      await StreamController.stopStreamSession(key);
-      return res.json({ success: true, message: "Stream stopped successfully." });
+      await TranscodeService.unpublish(streamInfo.streamKey);
+      return res.json({ success: true, message: "Public live playback disabled." });
     } catch (error: any) {
-      return res.status(500).json({ success: false, error: error.message });
+      return res.status(error.statusCode || 500).json({ success: false, error: error.message });
     }
   }
 

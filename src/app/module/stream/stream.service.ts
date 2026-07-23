@@ -57,4 +57,8 @@ export class StreamService {
   static async getAllActiveStreams() {
     return await db.select().from(stream).where(eq(stream.isActive, true));
   }
+
+  static async resetRuntimeStatuses() {
+    return await db.update(stream).set({ isActive: false, isLive: false });
+  }
 }

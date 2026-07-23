@@ -7,8 +7,11 @@ services:
       - "host.docker.internal:host-gateway"
     env_file:
       - .env
+    environment:
+      - RTMP_INTERNAL_SOURCE=rtmp://host.docker.internal:1935/live/{streamKey}
     volumes:
       - ./data:/app/data
+      - ./media:/app/media
       - /proc/net/dev:/host_proc/net/dev:ro
     labels:
       caddy: watch.pallabdev.in
@@ -26,6 +29,11 @@ services:
     restart: always
     network_mode: host
     environment:
+      - MTX_RTMP=yes
+      - MTX_RTMPADDRESS=:1935
+      - MTX_RTSP=yes
+      - MTX_RTSPADDRESS=:8554
+      - MTX_RTSPTRANSPORTS=tcp
       - MTX_WEBRTC=yes
       - MTX_WEBRTCADDRESS=:8889
       - MTX_WEBRTCLOCALUDPADDRESS=:8889
