@@ -5,7 +5,14 @@ import path from "path";
 
 dotenv.config();
 
+export interface SftpUploadItem {
+  localFilePath: string;
+  remoteRelativePath: string;
+}
+
 export class SFTPService {
+  private static clientInstance: Client | null = null;
+  private static isConnecting = false;
   private static htaccessUploaded = false;
 
   private static getSftpConfig() {
@@ -37,7 +44,7 @@ export class SFTPService {
 
 <FilesMatch "\\.(m3u8)$">
     <IfModule mod_headers.c>
-        Header always set Cache-Control "no-cache, no-store, must-revalidate"
+        Header always set Cache-Control "no-cache, no-store, must-revalidate, max-age=0"
         Header always set Pragma "no-cache"
         Header always set Expires "0"
     </IfModule>
@@ -49,6 +56,33 @@ export class SFTPService {
     </IfModule>
 </FilesMatch>
 `;
+  }
+
+  private static async getConnectedClient(): Promise<Client> {
+    if (this.clientInstance) {
+      try {
+        await this.clientInstance.cwd();
+        return this.clientInstance;
+      } catch (_) {
+        this.clientInstance = null;
+      }
+    }
+
+    if (this.isConnecting) {
+      await new Promise((r) => setTimeout(r, 200));
+      return this.getConnectedClient();
+    }
+
+    this.isConnecting = true;
+    try {
+      const client = new Client();
+      await client.connect(this.getSftpConfig());
+      this.clientInstance = client;
+      await this.ensureHtaccess(client);
+      return client;
+    } finally {
+      this.isConnecting = false;
+    }
   }
 
   public static async ensureHtaccess(sftp: Client): Promise<void> {
@@ -67,11 +101,9 @@ export class SFTPService {
   }
 
   public static async clearRemoteStreamDir(streamKey: string): Promise<void> {
-    const sftp = new Client();
     const remoteStreamDir = `${this.getBasePath()}/media/${streamKey}`;
     try {
-      await sftp.connect(this.getSftpConfig());
-      await this.ensureHtaccess(sftp);
+      const sftp = await this.getConnectedClient();
       const exists = await sftp.exists(remoteStreamDir);
       if (exists) {
         console.log(`[SFTP] Cleaning up old remote stream directory: ${remoteStreamDir}`);
@@ -79,26 +111,28 @@ export class SFTPService {
       }
     } catch (err: any) {
       console.warn(`[SFTP] Clear remote directory notice for ${streamKey}:`, err?.message || err);
-    } finally {
-      try { await sftp.end(); } catch (_) {}
+      this.clientInstance = null;
+    }
+  }
+
+  public static async uploadMultipleFilesOrdered(items: SftpUploadItem[]): Promise<void> {
+    if (items.length === 0) return;
+    try {
+      const sftp = await this.getConnectedClient();
+      for (const item of items) {
+        if (!fs.existsSync(item.localFilePath)) continue;
+        const fullRemotePath = `${this.getBasePath()}/${item.remoteRelativePath.replace(/^\//, "")}`;
+        const remoteDir = path.dirname(fullRemotePath).replace(/\\/g, "/");
+        await sftp.mkdir(remoteDir, true);
+        await sftp.fastPut(item.localFilePath, fullRemotePath.replace(/\\/g, "/"));
+      }
+    } catch (err: any) {
+      console.warn("[SFTP] Sequential upload notice:", err?.message || err);
+      this.clientInstance = null;
     }
   }
 
   public static async uploadFile(localFilePath: string, remoteRelativePath: string): Promise<void> {
-    if (!fs.existsSync(localFilePath)) return;
-    const sftp = new Client();
-    const fullRemotePath = `${this.getBasePath()}/${remoteRelativePath.replace(/^\//, "")}`;
-    const remoteDir = path.dirname(fullRemotePath).replace(/\\/g, "/");
-
-    try {
-      await sftp.connect(this.getSftpConfig());
-      await this.ensureHtaccess(sftp);
-      await sftp.mkdir(remoteDir, true);
-      await sftp.fastPut(localFilePath, fullRemotePath.replace(/\\/g, "/"));
-    } catch (err: any) {
-      console.warn(`[SFTP] Upload warning for ${remoteRelativePath}:`, err?.message || err);
-    } finally {
-      try { await sftp.end(); } catch (_) {}
-    }
+    await this.uploadMultipleFilesOrdered([{ localFilePath, remoteRelativePath }]);
   }
 }

@@ -293,17 +293,49 @@ async function syncLocalToRemoteSftp(streamKey: string, uploadedMap: Map<string,
 
   try {
     const files = fs.readdirSync(variantDir);
+    const tsFiles: string[] = [];
+    let m3u8File: string | null = null;
+
     for (const fileName of files) {
-      if (!fileName.endsWith(".ts") && !fileName.endsWith(".m3u8")) continue;
+      if (fileName.endsWith(".ts")) {
+        tsFiles.push(fileName);
+      } else if (fileName.endsWith(".m3u8")) {
+        m3u8File = fileName;
+      }
+    }
+
+    tsFiles.sort();
+
+    const queue: { localFilePath: string; remoteRelativePath: string }[] = [];
+
+    for (const fileName of tsFiles) {
       const localFilePath = path.join(variantDir, fileName);
       const stats = fs.statSync(localFilePath);
       const lastUploaded = uploadedMap.get(fileName) || 0;
-
       if (stats.mtimeMs > lastUploaded) {
         uploadedMap.set(fileName, stats.mtimeMs);
-        const remoteRelPath = `media/${streamKey}/480p/${fileName}`;
-        SFTPService.uploadFile(localFilePath, remoteRelPath).catch(() => {});
+        queue.push({
+          localFilePath,
+          remoteRelativePath: `media/${streamKey}/480p/${fileName}`,
+        });
       }
+    }
+
+    if (m3u8File) {
+      const localFilePath = path.join(variantDir, m3u8File);
+      const stats = fs.statSync(localFilePath);
+      const lastUploaded = uploadedMap.get(m3u8File) || 0;
+      if (stats.mtimeMs > lastUploaded) {
+        uploadedMap.set(m3u8File, stats.mtimeMs);
+        queue.push({
+          localFilePath,
+          remoteRelativePath: `media/${streamKey}/480p/${m3u8File}`,
+        });
+      }
+    }
+
+    if (queue.length > 0) {
+      SFTPService.uploadMultipleFilesOrdered(queue).catch(() => {});
     }
   } catch (_) {}
 }
