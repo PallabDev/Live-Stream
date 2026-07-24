@@ -91,15 +91,21 @@ function cleanMediaDir(streamKey: string) {
   fs.mkdirSync(path.join(mediaDir, "480p"), { recursive: true });
 }
 
+function getVariantPlaylistPath(streamKey: string) {
+  return path.join(getStreamMediaDir(streamKey), "480p", "index.m3u8");
+}
+
 function playlistExists(streamKey: string) {
+  const variant = getVariantPlaylistPath(streamKey);
   const master = getMasterPlaylistPath(streamKey);
-  if (!fs.existsSync(master)) return false;
+  const target = fs.existsSync(variant) ? variant : master;
+  if (!fs.existsSync(target)) return false;
   try {
-    const stats = fs.statSync(master);
+    const stats = fs.statSync(target);
     const staleMs = Number(process.env.HLS_PLAYLIST_STALE_MS || DEFAULT_PLAYLIST_STALE_MS);
     if (Date.now() - stats.mtimeMs > staleMs) return false;
-    const content = fs.readFileSync(master, "utf8");
-    return content.includes("#EXT-X-STREAM-INF");
+    const content = fs.readFileSync(target, "utf8");
+    return content.includes("#EXTINF") || content.includes("#EXT-X-STREAM-INF");
   } catch (_) {
     return false;
   }
@@ -380,7 +386,9 @@ export class TranscodeService {
       lastExitCode: state?.lastExitCode ?? null,
       lastError: state?.lastError || null,
       speed: MonitorService.getSpeed(streamKey),
-      previewUrl: `/media/${streamKey}/master.m3u8`,
+      previewUrl: fs.existsSync(getVariantPlaylistPath(streamKey))
+        ? `/media/${streamKey}/480p/index.m3u8`
+        : `/media/${streamKey}/master.m3u8`,
     };
   }
 

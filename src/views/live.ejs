@@ -202,7 +202,9 @@
         video.play().then(() => {
           playIcon.className = 'fas fa-pause';
         }).catch((err) => {
-          console.warn("Playback error:", err);
+          console.warn("Playback error, retrying muted:", err);
+          video.muted = true;
+          video.play().catch(() => {});
         });
       }
 
@@ -377,12 +379,12 @@
         if (!window.Hls || !Hls.isSupported()) return;
 
         hls = new Hls({
+          enableWorker: true,
           lowLatencyMode: false,
-          liveSyncDurationCount: 2,
-          liveMaxLatencyDurationCount: 5,
-          maxLiveSyncPlaybackRate: 1.5,
-          maxBufferLength: 20,
-          backBufferLength: 10,
+          liveSyncDurationCount: 3,
+          liveMaxLatencyDurationCount: 6,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
           manifestLoadingMaxRetry: 10,
           levelLoadingMaxRetry: 10,
           fragLoadingMaxRetry: 10,
