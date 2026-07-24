@@ -55,8 +55,20 @@
         id="sh-video"
         preload="auto"
         playsinline
+        autoplay
+        muted
         style="image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;"
       ></video>
+
+      <!-- Click to Unmute Floating Prompt -->
+      <button
+        id="sh-unmute-badge"
+        class="absolute top-5 right-5 z-20 px-4 py-2 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full backdrop-blur-md shadow-lg flex items-center gap-2 transition-all duration-200 hover:scale-105"
+        style="display: none;"
+        type="button"
+      >
+        <i class="fas fa-volume-mute"></i> Tap to Unmute Sound
+      </button>
 
       <!-- Loading Spinner -->
       <div class="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none" id="sh-loading-wrap" style="display: none;">
@@ -66,7 +78,7 @@
         ></div>
       </div>
 
-      <!-- Controls Overlay -->
+      <!-- Controls Overlay (Commit 94733b7 Style) -->
       <div
         class="absolute left-0 right-0 bottom-0 p-4 sm:p-6 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex flex-col gap-3 transition-opacity duration-200 z-10"
         id="sh-controls"
@@ -102,7 +114,7 @@
             class="text-xs sm:text-sm font-medium text-[#aaaaaa] min-w-[42px] sm:min-w-[50px] font-mono tabular-nums"
             id="sh-duration"
           >
-            00:00
+            LIVE
           </span>
         </div>
 
@@ -127,7 +139,7 @@
               title="Mute/Unmute"
               type="button"
             >
-              <i class="fas fa-volume-up" id="sh-volume-icon"></i>
+              <i class="fas fa-volume-mute" id="sh-volume-icon"></i>
             </button>
 
             <!-- Fullscreen -->
@@ -163,6 +175,7 @@
       const fullscreenIcon = document.getElementById('sh-fullscreen-icon');
       const loadingWrap = document.getElementById('sh-loading-wrap');
       const controls = document.getElementById('sh-controls');
+      const unmuteBadge = document.getElementById('sh-unmute-badge');
 
       let hls = null;
       let currentUrl = null;
@@ -197,19 +210,43 @@
 
       function togglePlay() {
         if (video.paused) {
+          if (video.muted) {
+            video.muted = false;
+            volumeIcon.className = 'fas fa-volume-up';
+            unmuteBadge.style.display = 'none';
+          }
           video.play().catch(() => {});
         } else {
           video.pause();
         }
       }
 
+      function unmuteSound() {
+        video.muted = false;
+        volumeIcon.className = 'fas fa-volume-up';
+        unmuteBadge.style.display = 'none';
+        video.play().catch(() => {});
+      }
+
+      unmuteBadge.addEventListener('click', unmuteSound);
       playBtn.addEventListener('click', togglePlay);
       video.addEventListener('click', (e) => {
-        if (e.target === video) togglePlay();
+        if (e.target === video) {
+          if (video.muted) {
+            unmuteSound();
+          } else {
+            togglePlay();
+          }
+        }
       });
 
       video.addEventListener('play', () => {
         playIcon.className = 'fas fa-pause';
+        if (video.muted) {
+          unmuteBadge.style.display = 'inline-flex';
+        } else {
+          unmuteBadge.style.display = 'none';
+        }
         resetControlsTimer();
       });
 
@@ -251,6 +288,7 @@
       volumeBtn.addEventListener('click', () => {
         video.muted = !video.muted;
         volumeIcon.className = video.muted ? 'fas fa-volume-mute' : 'fas fa-volume-up';
+        if (!video.muted) unmuteBadge.style.display = 'none';
         resetControlsTimer();
       });
 
@@ -357,6 +395,9 @@
           hls = null;
         }
 
+        // Ensure video is muted initially so Chrome/Safari never block autoplay
+        video.muted = true;
+
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
           video.src = freshUrl;
           video.addEventListener('loadedmetadata', seekToLiveEdge, { once: true });
@@ -382,7 +423,13 @@
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           hls.startLoad(-1);
           seekToLiveEdge();
-          video.play().catch(() => {});
+          const promise = video.play();
+          if (promise !== undefined) {
+            promise.catch(() => {
+              video.muted = true;
+              video.play().catch(() => {});
+            });
+          }
         });
         hls.on(Hls.Events.LEVEL_UPDATED, () => {
           if (!video.paused) seekToLiveEdge();
