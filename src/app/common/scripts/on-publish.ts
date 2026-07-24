@@ -129,14 +129,18 @@ async function main() {
     }
 
     ffmpegArgs.push(
+      "-vf", "scale=w=854:h=-2:flags=fast_bilinear",
       "-c:v:0", "libx264",
       "-r:v:0", fpsParam.toString(),
       "-g:v:0", keyInterval.toString(),
       "-keyint_min:v:0", keyInterval.toString(),
       "-force_key_frames:v:0", `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,
       "-sc_threshold:v:0", "0",
-      "-preset:v:0", "ultrafast",
+      "-preset:v:0", "superfast",
       "-tune:v:0", "zerolatency",
+      "-b:v:0", "800k",
+      "-maxrate:v:0", "1000k",
+      "-bufsize:v:0", "1600k",
       "-pix_fmt:v:0", "yuv420p"
     );
   }

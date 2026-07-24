@@ -88,8 +88,6 @@ function cleanMediaDir(streamKey: string) {
   if (fs.existsSync(mediaDir)) {
     fs.rmSync(mediaDir, { recursive: true, force: true });
   }
-  fs.mkdirSync(path.join(mediaDir, "1080p"), { recursive: true });
-  fs.mkdirSync(path.join(mediaDir, "720p"), { recursive: true });
   fs.mkdirSync(path.join(mediaDir, "480p"), { recursive: true });
 }
 
@@ -108,10 +106,7 @@ function playlistExists(streamKey: string) {
 }
 
 function getScaleFilter(hasAudio: boolean) {
-  if (hasAudio) {
-    return "[0:v:0]split=2[v720src][v480src];[v720src]scale=w=1280:h=-2:flags=fast_bilinear[v720];[v480src]scale=w=854:h=-2:flags=fast_bilinear[v480]";
-  }
-  return "[0:v:0]split=2[v720src][v480src];[v720src]scale=w=1280:h=-2:flags=fast_bilinear[v720];[v480src]scale=w=854:h=-2:flags=fast_bilinear[v480]";
+  return "[0:v:0]scale=w=854:h=-2:flags=fast_bilinear[v480]";
 }
 
 function buildFfmpegArgs(streamKey: string, inputUrl: string, hasAudio: boolean): string[] {
@@ -121,6 +116,7 @@ function buildFfmpegArgs(streamKey: string, inputUrl: string, hasAudio: boolean)
   const keyframeSeconds = Number(process.env.HLS_KEYFRAME_SECONDS || "2");
   const fps = Number(process.env.HLS_OUTPUT_FPS || "30");
   const keyframeInterval = Math.max(1, Math.round(fps * keyframeSeconds));
+  const preset = process.env.X264_PRESET_480 || process.env.X264_PRESET || "superfast";
 
   const args = [
     "-hide_banner",
@@ -145,69 +141,40 @@ function buildFfmpegArgs(streamKey: string, inputUrl: string, hasAudio: boolean)
 
   if (hasAudio) {
     args.push(
-      "-map", "[v720]",
-      "-map", "0:a:0",
       "-map", "[v480]",
       "-map", "0:a:0",
       "-c:v:0", "libx264",
-      "-preset:v:0", process.env.X264_PRESET_720 || "veryfast",
+      "-preset:v:0", preset,
       "-tune:v:0", "zerolatency",
       "-r:v:0", fps.toString(),
       "-g:v:0", keyframeInterval.toString(),
       "-keyint_min:v:0", keyframeInterval.toString(),
       "-sc_threshold:v:0", "0",
-      "-b:v:0", process.env.HLS_720_VIDEO_BITRATE || "1800k",
-      "-maxrate:v:0", process.env.HLS_720_VIDEO_MAXRATE || "2200k",
-      "-bufsize:v:0", process.env.HLS_720_VIDEO_BUFSIZE || "3600k",
+      "-b:v:0", process.env.HLS_480_VIDEO_BITRATE || "800k",
+      "-maxrate:v:0", process.env.HLS_480_VIDEO_MAXRATE || "1000k",
+      "-bufsize:v:0", process.env.HLS_480_VIDEO_BUFSIZE || "1600k",
       "-pix_fmt:v:0", "yuv420p",
       "-c:a:0", "aac",
-      "-b:a:0", "128k",
+      "-b:a:0", "112k",
       "-ac:a:0", "2",
       "-ar:a:0", "48000",
-      "-c:v:1", "libx264",
-      "-preset:v:1", process.env.X264_PRESET_480 || "veryfast",
-      "-tune:v:1", "zerolatency",
-      "-r:v:1", fps.toString(),
-      "-g:v:1", keyframeInterval.toString(),
-      "-keyint_min:v:1", keyframeInterval.toString(),
-      "-sc_threshold:v:1", "0",
-      "-b:v:1", process.env.HLS_480_VIDEO_BITRATE || "800k",
-      "-maxrate:v:1", process.env.HLS_480_VIDEO_MAXRATE || "1000k",
-      "-bufsize:v:1", process.env.HLS_480_VIDEO_BUFSIZE || "1600k",
-      "-pix_fmt:v:1", "yuv420p",
-      "-c:a:1", "aac",
-      "-b:a:1", "112k",
-      "-ac:a:1", "2",
-      "-ar:a:1", "48000",
-      "-var_stream_map", "v:0,a:0,name:720p v:1,a:1,name:480p",
+      "-var_stream_map", "v:0,a:0,name:480p",
     );
   } else {
     args.push(
-      "-map", "[v720]",
       "-map", "[v480]",
       "-c:v:0", "libx264",
-      "-preset:v:0", process.env.X264_PRESET_720 || "veryfast",
+      "-preset:v:0", preset,
       "-tune:v:0", "zerolatency",
       "-r:v:0", fps.toString(),
       "-g:v:0", keyframeInterval.toString(),
       "-keyint_min:v:0", keyframeInterval.toString(),
       "-sc_threshold:v:0", "0",
-      "-b:v:0", process.env.HLS_720_VIDEO_BITRATE || "1800k",
-      "-maxrate:v:0", process.env.HLS_720_VIDEO_MAXRATE || "2200k",
-      "-bufsize:v:0", process.env.HLS_720_VIDEO_BUFSIZE || "3600k",
+      "-b:v:0", process.env.HLS_480_VIDEO_BITRATE || "800k",
+      "-maxrate:v:0", process.env.HLS_480_VIDEO_MAXRATE || "1000k",
+      "-bufsize:v:0", process.env.HLS_480_VIDEO_BUFSIZE || "1600k",
       "-pix_fmt:v:0", "yuv420p",
-      "-c:v:1", "libx264",
-      "-preset:v:1", process.env.X264_PRESET_480 || "veryfast",
-      "-tune:v:1", "zerolatency",
-      "-r:v:1", fps.toString(),
-      "-g:v:1", keyframeInterval.toString(),
-      "-keyint_min:v:1", keyframeInterval.toString(),
-      "-sc_threshold:v:1", "0",
-      "-b:v:1", process.env.HLS_480_VIDEO_BITRATE || "800k",
-      "-maxrate:v:1", process.env.HLS_480_VIDEO_MAXRATE || "1000k",
-      "-bufsize:v:1", process.env.HLS_480_VIDEO_BUFSIZE || "1600k",
-      "-pix_fmt:v:1", "yuv420p",
-      "-var_stream_map", "v:0,name:720p v:1,name:480p",
+      "-var_stream_map", "v:0,name:480p",
     );
   }
 
