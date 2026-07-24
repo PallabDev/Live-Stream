@@ -32,10 +32,21 @@ export class StreamController {
     return rawHost.split(",")[0].trim().replace(/:\d+$/, "");
   }
 
-  private static async getOwnedStream(req: AuthenticatedRequest, key: string) {
-    const streamInfo = await StreamService.getStreamByKey(key);
+  private static getParamKey(req: Request): string {
+    const raw = req.params.key || req.params.streamKey || req.params.id || "";
+    return String(raw).trim();
+  }
+
+  private static async getOwnedStream(req: AuthenticatedRequest, keyParam: string) {
+    const key = keyParam || StreamController.getParamKey(req);
+    let streamInfo = await StreamService.getStreamByKey(key);
     if (!streamInfo) {
-      throw new Error("Stream not found.");
+      streamInfo = await StreamService.getStreamById(key);
+    }
+    if (!streamInfo) {
+      const error = new Error("Stream not found.");
+      (error as any).statusCode = 404;
+      throw error;
     }
     if (streamInfo.userId !== req.user.id && req.user.role !== "admin") {
       const error = new Error("Unauthorized.");
@@ -46,6 +57,7 @@ export class StreamController {
   }
 
   public static broadcastStreamState(streamKey: string) {
+    if (!streamKey) return;
     const session = StreamController.activeSessions.get(streamKey);
     const status = TranscodeService.getPipelineStatus(streamKey);
     const viewersCount = session ? session.viewers.size : 0;
@@ -110,7 +122,7 @@ export class StreamController {
 
   static async deleteStream(req: AuthenticatedRequest, res: Response) {
     try {
-      const { id } = req.params;
+      const id = StreamController.getParamKey(req);
       if (!id) {
         return res.status(400).json({ success: false, error: "Stream ID is required." });
       }
@@ -135,8 +147,8 @@ export class StreamController {
 
   static async getIngestDetails(req: AuthenticatedRequest, res: Response) {
     try {
-      const { key } = req.params;
-      const streamInfo = await StreamController.getOwnedStream(req, key);
+      const paramKey = StreamController.getParamKey(req);
+      const streamInfo = await StreamController.getOwnedStream(req, paramKey);
       const hostname = StreamController.getRequestHostname(req);
       const ingest = TranscodeService.getIngestDetails(streamInfo.streamKey, hostname);
 
@@ -158,8 +170,8 @@ export class StreamController {
 
   static async updateSettings(req: AuthenticatedRequest, res: Response) {
     try {
-      const { key } = req.params;
-      const streamInfo = await StreamService.getStreamByKey(key);
+      const paramKey = StreamController.getParamKey(req);
+      const streamInfo = await StreamService.getStreamByKey(paramKey);
       if (!streamInfo) {
         return res.status(404).json({ success: false, error: "Stream not found." });
       }
@@ -453,7 +465,7 @@ export class StreamController {
   }
 
   static async getPublicPlaybackStatus(req: Request, res: Response) {
-    const key = String(req.params.streamKey || "");
+    const key = StreamController.getParamKey(req);
     const status = TranscodeService.getPipelineStatus(key);
     const session = StreamController.activeSessions.get(key);
     const viewersCount = session ? session.viewers.size : 0;
@@ -469,7 +481,7 @@ export class StreamController {
   }
 
   static async getTranscoderStatus(req: Request, res: Response) {
-    const key = String(req.params.streamKey || "");
+    const key = StreamController.getParamKey(req);
     const status = TranscodeService.getPipelineStatus(key);
     const session = StreamController.activeSessions.get(key);
     const viewersCount = session ? session.viewers.size : 0;
@@ -484,7 +496,7 @@ export class StreamController {
 
   static async startTranscoder(req: Request, res: Response) {
     try {
-      const key = String(req.params.streamKey || "");
+      const key = StreamController.getParamKey(req);
       const status = await TranscodeService.startPipeline(key);
       StreamController.broadcastStreamState(key);
       return res.json({ success: true, data: status });
@@ -495,7 +507,7 @@ export class StreamController {
 
   static async stopTranscoder(req: Request, res: Response) {
     try {
-      const key = String(req.params.streamKey || "");
+      const key = StreamController.getParamKey(req);
       await TranscodeService.stopPipeline(key);
       StreamController.broadcastStreamState(key);
       return res.json({ success: true, message: "Transcoder stopped." });
@@ -506,7 +518,7 @@ export class StreamController {
 
   static async goLive(req: Request, res: Response) {
     try {
-      const key = String(req.params.streamKey || "");
+      const key = StreamController.getParamKey(req);
       await TranscodeService.publish(key);
       StreamController.broadcastStreamState(key);
       return res.json({ success: true, message: "Public live streaming active." });
@@ -517,7 +529,7 @@ export class StreamController {
 
   static async stopLive(req: Request, res: Response) {
     try {
-      const key = String(req.params.streamKey || "");
+      const key = StreamController.getParamKey(req);
       await TranscodeService.unpublish(key);
       StreamController.broadcastStreamState(key);
       return res.json({ success: true, message: "Public live streaming stopped." });
@@ -528,7 +540,7 @@ export class StreamController {
 
   static async getIngest(req: Request, res: Response) {
     try {
-      const key = String(req.params.streamKey || "");
+      const key = StreamController.getParamKey(req);
       const hostname = StreamController.getRequestHostname(req);
       const ingest = TranscodeService.getIngestDetails(key, hostname);
       return res.json({ success: true, data: { ingest } });
