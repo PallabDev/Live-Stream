@@ -140,15 +140,22 @@ function buildFfmpegArgs(streamKey: string, inputUrl: string, hasAudio: boolean)
     "-hide_banner",
     "-loglevel", "warning",
     "-stats_period", "5",
-    "-fflags", "+genpts+discardcorrupt",
+    "-analyzeduration", "2000000",
+    "-probesize", "2000000",
+    "-fflags", "+genpts+discardcorrupt+nobuffer",
     "-err_detect", "ignore_err",
-    "-thread_queue_size", "2048",
+    "-thread_queue_size", "4096",
   ];
 
   if (isRtspInput(inputUrl)) {
     args.push(
       "-rtsp_transport", "tcp",
-      "-timeout", process.env.STREAM_INPUT_TIMEOUT_US || "15000000",
+      "-stimeout", process.env.STREAM_INPUT_TIMEOUT_US || "15000000",
+    );
+  } else if (inputUrl.toLowerCase().startsWith("rtmp://")) {
+    args.push(
+      "-rtmp_live", "live",
+      "-rw_timeout", process.env.STREAM_INPUT_TIMEOUT_US || "15000000",
     );
   }
 
@@ -529,11 +536,11 @@ export class TranscodeService {
       StreamService.setStreamActive(streamKey, false).catch(() => {});
       StreamService.setStreamLive(streamKey, false).catch(() => {});
       MonitorService.removeSpeed(streamKey);
-      SFTPService.clearRemoteStreamDir(streamKey).catch(() => {});
 
       if (!current.wantsRun) {
         current.status = "stopped";
         log(streamKey, `HLS pipeline stopped with code ${code}.`);
+        SFTPService.clearRemoteStreamDir(streamKey).catch(() => {});
         return;
       }
 
