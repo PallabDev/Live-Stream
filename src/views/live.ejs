@@ -1,347 +1,414 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title><%= stream.title %> | CoWatch</title>
+  <title><%= stream.title %> | CoWatch Player</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" href="/favicon.png">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            accent: '#82A3A1',
+            'accent-dark': '#465362',
+            secondary: '#9FC490',
+            'control-bg': 'rgba(18, 22, 26, 0.95)',
+          }
+        }
+      }
+    }
+  </script>
   <style>
-    * {
-      box-sizing: border-box;
-    }
-
-    html,
-    body {
+    html, body {
       margin: 0;
-      min-height: 100%;
-      background: #050505;
-      color: #fff;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      overflow: hidden;
-    }
-
-    .watch-shell {
-      width: 100vw;
-      height: 100dvh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #000;
-      position: relative;
-    }
-
-    .watch-player {
+      padding: 0;
       width: 100%;
       height: 100%;
-      background: #000;
-      display: block;
-      object-fit: contain;
-    }
-
-    .watch-topbar {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 5;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      padding: 1rem;
-      background: linear-gradient(180deg, rgba(0,0,0,0.78), rgba(0,0,0,0));
-      pointer-events: none;
-    }
-
-    .watch-title {
-      min-width: 0;
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      font-weight: 700;
-      text-shadow: 0 1px 12px rgba(0,0,0,0.7);
-    }
-
-    .watch-title span {
-      white-space: nowrap;
       overflow: hidden;
-      text-overflow: ellipsis;
+      background: #000000;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
-    .status-pill {
-      flex: 0 0 auto;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      padding: 0.35rem 0.7rem;
-      border-radius: 999px;
-      background: rgba(15, 23, 42, 0.78);
-      border: 1px solid rgba(255,255,255,0.12);
-      color: #cbd5e1;
-      font-size: 0.82rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
+    .sh-player {
+      width: 100%;
+      height: 100dvh;
+      background: #000;
+      position: relative;
+      overflow: hidden;
     }
 
-    .status-pill.live {
-      color: #86efac;
-      border-color: rgba(134,239,172,0.35);
-      background: rgba(20,83,45,0.35);
-    }
-
-    .watch-overlay {
-      position: absolute;
-      inset: 0;
-      z-index: 4;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 1.5rem;
-      background: #070707;
-    }
-
-    .watch-message {
-      width: min(460px, 100%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0.9rem;
-      color: #cbd5e1;
-    }
-
-    .watch-message i {
-      color: #82A3A1;
-      font-size: 4rem;
-    }
-
-    .watch-message h1 {
-      margin: 0;
-      font-size: clamp(1.5rem, 4vw, 2.25rem);
-      color: #fff;
-      letter-spacing: 0;
-    }
-
-    .watch-message p {
-      margin: 0;
-      line-height: 1.6;
-    }
-
-    .watch-action {
-      margin-top: 0.4rem;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      border: 0;
-      border-radius: 999px;
-      padding: 0.75rem 1.2rem;
-      background: #82A3A1;
-      color: #fff;
-      font-weight: 800;
-      cursor: pointer;
-    }
-
-    @media (max-width: 640px) {
-      .watch-topbar {
-        padding: 0.8rem;
-      }
-
-      .watch-title {
-        font-size: 0.95rem;
-      }
-
-      .status-pill {
-        font-size: 0.72rem;
-      }
+    .sh-progress-bar {
+      background: linear-gradient(90deg, #6366f1, #4f46e5);
     }
   </style>
 </head>
-<body>
-  <main class="watch-shell">
-    <video id="watch-video" class="watch-player" controls playsinline></video>
+<body class="bg-black m-0 p-0 text-white">
+  <!-- Full-screen Player Container (No Overlays) -->
+  <div class="w-screen h-[100dvh] flex items-center justify-center bg-black relative overflow-hidden">
+    <div class="sh-player" id="sh-player">
+      <video
+        class="w-full h-full object-contain bg-black block cursor-pointer"
+        id="sh-video"
+        preload="auto"
+        playsinline
+        style="image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;"
+      ></video>
 
-    <div class="watch-topbar">
-      <div class="watch-title">
-        <i class="ti ti-movie"></i>
-        <span><%= stream.title %></span>
+      <!-- Loading Spinner -->
+      <div class="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none" id="sh-loading-wrap" style="display: none;">
+        <div
+          class="w-10 h-10 sm:w-[60px] sm:h-[60px] border-4 border-solid border-white/10 border-t-accent rounded-full animate-spin pointer-events-auto"
+          id="sh-loading"
+        ></div>
       </div>
-      <div id="status-pill" class="status-pill">
-        Offline
+
+      <!-- Controls Overlay -->
+      <div
+        class="absolute left-0 right-0 bottom-0 p-4 sm:p-6 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex flex-col gap-3 transition-opacity duration-200 z-10"
+        id="sh-controls"
+      >
+        <!-- Row 1: Progress & Time -->
+        <div class="flex items-center w-full gap-3 min-w-0">
+          <span
+            class="text-xs sm:text-sm font-medium text-[#aaaaaa] min-w-[42px] sm:min-w-[50px] font-mono tabular-nums"
+            id="sh-current-time"
+          >
+            00:00
+          </span>
+
+          <div
+            class="sh-progress relative flex-1 h-1.5 sm:h-2 rounded-full bg-[#3a3a3a] cursor-pointer overflow-hidden transition-all duration-150 hover:h-2.5"
+            id="sh-progress"
+          >
+            <div
+              class="sh-progress-buffer absolute top-0 left-0 bottom-0 w-0 rounded-full bg-white/20"
+              id="sh-progress-buffer"
+            ></div>
+            <div
+              class="sh-progress-bar absolute top-0 left-0 bottom-0 w-0 rounded-full"
+              id="sh-progress-bar"
+            ></div>
+            <div
+              class="sh-progress-handle absolute top-1/2 -translate-y-1/2 w-0 h-0 rounded-full bg-white shadow-none transition-all duration-150 pointer-events-none"
+              id="sh-progress-handle"
+            ></div>
+          </div>
+
+          <span
+            class="text-xs sm:text-sm font-medium text-[#aaaaaa] min-w-[42px] sm:min-w-[50px] font-mono tabular-nums"
+            id="sh-duration"
+          >
+            00:00
+          </span>
+        </div>
+
+        <!-- Row 2: Control Buttons -->
+        <div class="flex items-center justify-between w-full">
+          <!-- Play / Pause (Left) -->
+          <button
+            class="sh-play-btn w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-accent text-white flex items-center justify-center text-lg transition-all duration-150 shadow-[0_4px_12px_rgba(99,102,241,0.4)] hover:bg-accent-dark hover:scale-105"
+            id="sh-play-btn"
+            aria-label="Play/Pause"
+            type="button"
+          >
+            <i class="fas fa-play" id="sh-play-icon"></i>
+          </button>
+
+          <!-- Right Action Controls -->
+          <div class="sh-controls-right flex items-center gap-1.5 sm:gap-2">
+            <!-- Volume Button -->
+            <button
+              class="sh-btn w-8 h-8 sm:w-10 sm:h-10 bg-transparent text-[#aaaaaa] flex items-center justify-center text-lg p-2 rounded-lg transition-all duration-150 hover:text-white hover:bg-white/10"
+              id="sh-volume-btn"
+              title="Mute/Unmute"
+              type="button"
+            >
+              <i class="fas fa-volume-up" id="sh-volume-icon"></i>
+            </button>
+
+            <!-- Fullscreen -->
+            <button
+              class="sh-btn sh-full-btn w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-white/10 flex items-center justify-center text-lg transition-all duration-150 hover:bg-white/20 hover:scale-105"
+              id="sh-full-btn"
+              title="Fullscreen"
+              type="button"
+            >
+              <i class="fas fa-expand" id="sh-fullscreen-icon"></i>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
-
-    <div id="watch-overlay" class="watch-overlay">
-      <div class="watch-message">
-        <i class="ti ti-broadcast-off"></i>
-        <h1 id="overlay-title">Stream is offline</h1>
-        <p id="overlay-copy">The host has not opened the movie room yet. This page will start checking automatically.</p>
-        <button id="manual-play-btn" class="watch-action" style="display: none;" type="button">
-          <i class="ti ti-player-play"></i> Play Movie
-        </button>
-      </div>
-    </div>
-  </main>
+  </div>
 
   <script>
-    const streamKey = "<%= stream.streamKey %>";
-    const video = document.getElementById('watch-video');
-    const overlay = document.getElementById('watch-overlay');
-    const overlayTitle = document.getElementById('overlay-title');
-    const overlayCopy = document.getElementById('overlay-copy');
-    const manualPlayBtn = document.getElementById('manual-play-btn');
-    const statusPill = document.getElementById('status-pill');
+    (function () {
+      const streamKey = "<%= stream.streamKey %>";
+      const video = document.getElementById('sh-video');
+      const player = document.getElementById('sh-player');
+      const playBtn = document.getElementById('sh-play-btn');
+      const playIcon = document.getElementById('sh-play-icon');
+      const currentTimeEl = document.getElementById('sh-current-time');
+      const durationEl = document.getElementById('sh-duration');
+      const progress = document.getElementById('sh-progress');
+      const progressBar = document.getElementById('sh-progress-bar');
+      const progressBuffer = document.getElementById('sh-progress-buffer');
+      const volumeBtn = document.getElementById('sh-volume-btn');
+      const volumeIcon = document.getElementById('sh-volume-icon');
+      const fullBtn = document.getElementById('sh-full-btn');
+      const fullscreenIcon = document.getElementById('sh-fullscreen-icon');
+      const loadingWrap = document.getElementById('sh-loading-wrap');
+      const controls = document.getElementById('sh-controls');
 
-    let hls = null;
-    let currentUrl = null;
-    let playRequested = false;
-    let lastAttachAt = 0;
+      let hls = null;
+      let currentUrl = null;
+      let lastAttachAt = 0;
+      let scrubbing = false;
+      let controlsTimeout = null;
 
-    function withCacheBust(url) {
-      const separator = url.includes('?') ? '&' : '?';
-      return `${url}${separator}v=${Date.now()}`;
-    }
-
-    function seekToLiveEdge() {
-      try {
-        const ranges = video.seekable;
-        if (ranges && ranges.length > 0) {
-          video.currentTime = Math.max(ranges.end(ranges.length - 1) - 1.5, 0);
+      function formatTime(seconds) {
+        if (isNaN(seconds) || seconds < 0) return '00:00';
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        if (h > 0) {
+          return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
         }
-      } catch (_) {}
-    }
-
-    function setOffline(message) {
-      statusPill.className = 'status-pill';
-      statusPill.textContent = 'Offline';
-      overlay.style.display = 'flex';
-      overlayTitle.textContent = 'Stream is offline';
-      overlayCopy.textContent = message || 'The host has not opened the movie room yet. This page will start checking automatically.';
-      manualPlayBtn.style.display = 'none';
-      currentUrl = null;
-      lastAttachAt = 0;
-      if (hls) {
-        hls.destroy();
-        hls = null;
-      }
-      video.removeAttribute('src');
-      video.load();
-    }
-
-    function showLiveReady() {
-      statusPill.className = 'status-pill live';
-      statusPill.innerHTML = '<i class="ti ti-point-filled"></i> Live';
-      overlay.style.display = 'none';
-    }
-
-    function showPlayPrompt() {
-      statusPill.className = 'status-pill live';
-      statusPill.innerHTML = '<i class="ti ti-point-filled"></i> Live';
-      overlay.style.display = 'flex';
-      overlayTitle.textContent = 'Movie is ready';
-      overlayCopy.textContent = 'Press play to start watching.';
-      manualPlayBtn.style.display = 'inline-flex';
-    }
-
-    function attemptPlay() {
-      playRequested = true;
-      seekToLiveEdge();
-      video.play().then(showLiveReady).catch(showPlayPrompt);
-    }
-
-    function attachHls(url) {
-      const shouldReload = currentUrl !== url || !hls || (Date.now() - lastAttachAt) > 30000;
-      if (!shouldReload) {
-        if (hls) hls.startLoad(-1);
-        if (!video.paused) seekToLiveEdge();
-        return;
-      }
-      currentUrl = url;
-      lastAttachAt = Date.now();
-      const freshUrl = withCacheBust(url);
-
-      if (hls) {
-        hls.destroy();
-        hls = null;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
       }
 
-      if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = freshUrl;
-        video.addEventListener('loadedmetadata', seekToLiveEdge, { once: true });
-        attemptPlay();
-        return;
+      function withCacheBust(url) {
+        const separator = url.includes('?') ? '&' : '?';
+        return `${url}${separator}v=${Date.now()}`;
       }
 
-      if (!window.Hls || !Hls.isSupported()) {
-        overlay.style.display = 'flex';
-        overlayTitle.textContent = 'Playback unsupported';
-        overlayCopy.textContent = 'This browser cannot play HLS streams.';
-        manualPlayBtn.style.display = 'none';
-        return;
+      function seekToLiveEdge() {
+        try {
+          const ranges = video.seekable;
+          if (ranges && ranges.length > 0) {
+            video.currentTime = Math.max(ranges.end(ranges.length - 1) - 1.5, 0);
+          }
+        } catch (_) {}
       }
 
-      hls = new Hls({
-        lowLatencyMode: false,
-        liveSyncDurationCount: 2,
-        liveMaxLatencyDurationCount: 5,
-        maxLiveSyncPlaybackRate: 1.5,
-        maxBufferLength: 20,
-        backBufferLength: 10,
-        manifestLoadingMaxRetry: 6,
-        levelLoadingMaxRetry: 6,
-        fragLoadingMaxRetry: 6,
+      function togglePlay() {
+        if (video.paused) {
+          video.play().catch(() => {});
+        } else {
+          video.pause();
+        }
+      }
+
+      playBtn.addEventListener('click', togglePlay);
+      video.addEventListener('click', (e) => {
+        if (e.target === video) togglePlay();
       });
-      hls.loadSource(freshUrl);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        hls.startLoad(-1);
-        attemptPlay();
+
+      video.addEventListener('play', () => {
+        playIcon.className = 'fas fa-pause';
+        resetControlsTimer();
       });
-      hls.on(Hls.Events.LEVEL_UPDATED, () => {
-        if (!video.paused) seekToLiveEdge();
+
+      video.addEventListener('pause', () => {
+        playIcon.className = 'fas fa-play';
+        resetControlsTimer();
       });
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (!data) return;
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          hls.startLoad(-1);
+
+      video.addEventListener('timeupdate', () => {
+        if (!video.duration || !isFinite(video.duration)) {
+          currentTimeEl.textContent = formatTime(video.currentTime);
+          durationEl.textContent = 'LIVE';
+          progressBar.style.width = '100%';
           return;
         }
-        if (!data.fatal) return;
-        setOffline('Playback stalled. Waiting for the host feed to recover.');
+        currentTimeEl.textContent = formatTime(video.currentTime);
+        durationEl.textContent = formatTime(video.duration);
+        const percent = (video.currentTime / video.duration) * 100;
+        progressBar.style.width = percent + '%';
       });
-    }
 
-    async function checkStatus() {
-      try {
-        const res = await fetch(`/api/stream/${encodeURIComponent(streamKey)}/playback/status`, { cache: 'no-store' });
-        const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.error || 'Unable to check stream status.');
-
-        if (data.data.canPlay && data.data.hlsUrl) {
-          attachHls(data.data.hlsUrl);
-        } else if (!data.data.isLive) {
-          setOffline('The host has not opened the movie room yet. This page will start checking automatically.');
-        } else {
-          setOffline('The host is live, but the video feed is still warming up.');
+      video.addEventListener('progress', () => {
+        if (video.buffered && video.buffered.length > 0 && video.duration > 0) {
+          const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+          const percent = (bufferedEnd / video.duration) * 100;
+          progressBuffer.style.width = percent + '%';
         }
-      } catch (_) {
-        setOffline('Connection lost while checking the movie room. Retrying automatically.');
-      }
-    }
+      });
 
-    manualPlayBtn.addEventListener('click', attemptPlay);
-    video.addEventListener('playing', showLiveReady);
-    video.addEventListener('waiting', () => {
-      if (playRequested) {
-        statusPill.className = 'status-pill';
-        statusPill.textContent = 'Buffering';
-      }
-    });
+      video.addEventListener('waiting', () => {
+        loadingWrap.style.display = 'flex';
+      });
 
-    checkStatus();
-    setInterval(checkStatus, 5000);
+      video.addEventListener('playing', () => {
+        loadingWrap.style.display = 'none';
+      });
+
+      // Volume control
+      volumeBtn.addEventListener('click', () => {
+        video.muted = !video.muted;
+        volumeIcon.className = video.muted ? 'fas fa-volume-mute' : 'fas fa-volume-up';
+        resetControlsTimer();
+      });
+
+      // Seek
+      function seekByClientX(clientX) {
+        const rect = progress.getBoundingClientRect();
+        const ratio = Math.min(Math.max(0, clientX - rect.left), rect.width) / rect.width;
+        if (video.duration && isFinite(video.duration)) {
+          video.currentTime = ratio * video.duration;
+        } else if (video.seekable && video.seekable.length > 0) {
+          const start = video.seekable.start(0);
+          const end = video.seekable.end(video.seekable.length - 1);
+          video.currentTime = start + ratio * (end - start);
+        }
+      }
+
+      progress.addEventListener('mousedown', (e) => {
+        scrubbing = true;
+        seekByClientX(e.clientX);
+        resetControlsTimer();
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (scrubbing) {
+          seekByClientX(e.clientX);
+          resetControlsTimer();
+        }
+      });
+
+      window.addEventListener('mouseup', () => {
+        scrubbing = false;
+        resetControlsTimer();
+      });
+
+      progress.addEventListener('click', (e) => {
+        seekByClientX(e.clientX);
+        resetControlsTimer();
+      });
+
+      // Fullscreen
+      function toggleFullscreen() {
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+          if (document.exitFullscreen) document.exitFullscreen();
+          else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+          fullscreenIcon.className = 'fas fa-expand';
+        } else {
+          if (player.requestFullscreen) player.requestFullscreen();
+          else if (player.webkitRequestFullscreen) player.webkitRequestFullscreen();
+          fullscreenIcon.className = 'fas fa-compress';
+        }
+        resetControlsTimer();
+      }
+
+      fullBtn.addEventListener('click', toggleFullscreen);
+
+      // Auto-hide controls
+      function resetControlsTimer() {
+        clearTimeout(controlsTimeout);
+        controls.style.opacity = '1';
+        controls.style.pointerEvents = 'auto';
+
+        if (!video.paused) {
+          controlsTimeout = setTimeout(() => {
+            if (!scrubbing && !video.paused) {
+              controls.style.opacity = '0';
+              controls.style.pointerEvents = 'none';
+            }
+          }, 3000);
+        }
+      }
+
+      player.addEventListener('mousemove', resetControlsTimer);
+
+      // Keyboard shortcuts
+      window.addEventListener('keydown', (e) => {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+
+        if (e.key === ' ' || e.key === 'k' || e.key === 'K') {
+          e.preventDefault();
+          togglePlay();
+        } else if (e.key === 'f' || e.key === 'F') {
+          e.preventDefault();
+          toggleFullscreen();
+        } else if (e.key === 'm' || e.key === 'M') {
+          e.preventDefault();
+          volumeBtn.click();
+        }
+      });
+
+      function attachHls(url) {
+        const shouldReload = currentUrl !== url || !hls || (Date.now() - lastAttachAt) > 30000;
+        if (!shouldReload) {
+          if (hls) hls.startLoad(-1);
+          if (!video.paused) seekToLiveEdge();
+          return;
+        }
+        currentUrl = url;
+        lastAttachAt = Date.now();
+        const freshUrl = withCacheBust(url);
+
+        if (hls) {
+          hls.destroy();
+          hls = null;
+        }
+
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = freshUrl;
+          video.addEventListener('loadedmetadata', seekToLiveEdge, { once: true });
+          video.play().catch(() => {});
+          return;
+        }
+
+        if (!window.Hls || !Hls.isSupported()) return;
+
+        hls = new Hls({
+          lowLatencyMode: false,
+          liveSyncDurationCount: 2,
+          liveMaxLatencyDurationCount: 5,
+          maxLiveSyncPlaybackRate: 1.5,
+          maxBufferLength: 20,
+          backBufferLength: 10,
+          manifestLoadingMaxRetry: 6,
+          levelLoadingMaxRetry: 6,
+          fragLoadingMaxRetry: 6,
+        });
+        hls.loadSource(freshUrl);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          hls.startLoad(-1);
+          seekToLiveEdge();
+          video.play().catch(() => {});
+        });
+        hls.on(Hls.Events.LEVEL_UPDATED, () => {
+          if (!video.paused) seekToLiveEdge();
+        });
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (!data) return;
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            hls.startLoad(-1);
+          }
+        });
+      }
+
+      async function checkStatus() {
+        try {
+          const res = await fetch(`/api/stream/${encodeURIComponent(streamKey)}/playback/status`, { cache: 'no-store' });
+          const data = await res.json();
+          if (res.ok && data.success && data.data.canPlay && data.data.hlsUrl) {
+            attachHls(data.data.hlsUrl);
+          }
+        } catch (_) {}
+      }
+
+      checkStatus();
+      setInterval(checkStatus, 4000);
+      resetControlsTimer();
+    })();
   </script>
 </body>
 </html>
