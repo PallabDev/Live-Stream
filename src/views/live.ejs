@@ -55,27 +55,22 @@
         id="sh-video"
         preload="auto"
         playsinline
-        autoplay
-        muted
         style="image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;"
       ></video>
 
-      <!-- Click to Unmute Floating Prompt -->
-      <button
-        id="sh-unmute-badge"
-        class="absolute top-5 right-5 z-20 px-4 py-2 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full backdrop-blur-md shadow-lg flex items-center gap-2 transition-all duration-200 hover:scale-105"
-        style="display: none;"
-        type="button"
-      >
-        <i class="fas fa-volume-mute"></i> Tap to Unmute Sound
-      </button>
+      <!-- Center Big Play Button Overlay (One-Click Play & Unmute) -->
+      <div id="sh-center-play" class="absolute inset-0 flex flex-col items-center justify-center z-20 bg-black/40 backdrop-blur-[2px] transition-all duration-200 cursor-pointer">
+        <button type="button" class="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-indigo-600/90 hover:bg-indigo-500 text-white flex items-center justify-center text-3xl sm:text-4xl shadow-2xl transition-all duration-200 hover:scale-110">
+          <i class="fas fa-play ml-1"></i>
+        </button>
+        <span class="mt-4 px-4 py-1.5 rounded-full bg-black/60 text-white text-xs sm:text-sm font-semibold tracking-wide border border-white/10">
+          Click to Play & Unmute Stream
+        </span>
+      </div>
 
       <!-- Loading Spinner -->
       <div class="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none" id="sh-loading-wrap" style="display: none;">
-        <div
-          class="w-10 h-10 sm:w-[60px] sm:h-[60px] border-4 border-solid border-white/10 border-t-accent rounded-full animate-spin pointer-events-auto"
-          id="sh-loading"
-        ></div>
+        <div class="w-10 h-10 sm:w-[60px] sm:h-[60px] border-4 border-solid border-white/10 border-t-accent rounded-full animate-spin pointer-events-auto"></div>
       </div>
 
       <!-- Controls Overlay (Commit 94733b7 Style) -->
@@ -139,7 +134,7 @@
               title="Mute/Unmute"
               type="button"
             >
-              <i class="fas fa-volume-mute" id="sh-volume-icon"></i>
+              <i class="fas fa-volume-up" id="sh-volume-icon"></i>
             </button>
 
             <!-- Fullscreen -->
@@ -164,6 +159,7 @@
       const player = document.getElementById('sh-player');
       const playBtn = document.getElementById('sh-play-btn');
       const playIcon = document.getElementById('sh-play-icon');
+      const centerPlay = document.getElementById('sh-center-play');
       const currentTimeEl = document.getElementById('sh-current-time');
       const durationEl = document.getElementById('sh-duration');
       const progress = document.getElementById('sh-progress');
@@ -175,13 +171,11 @@
       const fullscreenIcon = document.getElementById('sh-fullscreen-icon');
       const loadingWrap = document.getElementById('sh-loading-wrap');
       const controls = document.getElementById('sh-controls');
-      const unmuteBadge = document.getElementById('sh-unmute-badge');
 
       let hls = null;
       let currentUrl = null;
       let scrubbing = false;
       let controlsTimeout = null;
-      let userInteracted = false;
 
       function formatTime(seconds) {
         if (isNaN(seconds) || seconds < 0) return '00:00';
@@ -194,66 +188,59 @@
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
       }
 
-      function withCacheBust(url) {
-        const separator = url.includes('?') ? '&' : '?';
-        return `${url}${separator}v=${Date.now()}`;
-      }
-
-      function seekToLiveEdge() {
+      function jumpToLiveEdge() {
         try {
-          const ranges = video.seekable;
-          if (ranges && ranges.length > 0) {
-            video.currentTime = Math.max(ranges.end(ranges.length - 1) - 1.5, 0);
+          if (hls && hls.liveSyncPosition) {
+            video.currentTime = hls.liveSyncPosition;
+            return;
+          }
+          const b = video.buffered;
+          if (b && b.length > 0) {
+            const start = b.start(0);
+            const end = b.end(b.length - 1);
+            if (video.currentTime < start || video.currentTime === 0) {
+              video.currentTime = Math.max(end - 1.5, start);
+            }
           }
         } catch (_) {}
       }
 
+      // One-click Play & Unmute Function
+      function playAndUnmute() {
+        video.muted = false;
+        volumeIcon.className = 'fas fa-volume-up';
+        jumpToLiveEdge();
+        video.play().then(() => {
+          centerPlay.style.display = 'none';
+          playIcon.className = 'fas fa-pause';
+        }).catch((err) => {
+          console.warn("Playback error:", err);
+        });
+      }
+
       function togglePlay() {
-        userInteracted = true;
         if (video.paused) {
-          if (video.muted) {
-            video.muted = false;
-            volumeIcon.className = 'fas fa-volume-up';
-            unmuteBadge.style.display = 'none';
-          }
-          video.play().catch(() => {});
+          playAndUnmute();
         } else {
           video.pause();
         }
       }
 
-      function unmuteSound() {
-        userInteracted = true;
-        video.muted = false;
-        volumeIcon.className = 'fas fa-volume-up';
-        unmuteBadge.style.display = 'none';
-        video.play().catch(() => {});
-      }
-
-      unmuteBadge.addEventListener('click', unmuteSound);
+      centerPlay.addEventListener('click', playAndUnmute);
       playBtn.addEventListener('click', togglePlay);
       video.addEventListener('click', (e) => {
-        if (e.target === video) {
-          if (video.muted) {
-            unmuteSound();
-          } else {
-            togglePlay();
-          }
-        }
+        if (e.target === video) togglePlay();
       });
 
       video.addEventListener('play', () => {
         playIcon.className = 'fas fa-pause';
-        if (video.muted && !userInteracted) {
-          unmuteBadge.style.display = 'inline-flex';
-        } else {
-          unmuteBadge.style.display = 'none';
-        }
+        centerPlay.style.display = 'none';
         resetControlsTimer();
       });
 
       video.addEventListener('pause', () => {
         playIcon.className = 'fas fa-play';
+        centerPlay.style.display = 'flex';
         resetControlsTimer();
       });
 
@@ -271,10 +258,14 @@
       });
 
       video.addEventListener('progress', () => {
-        if (video.buffered && video.buffered.length > 0 && video.duration > 0) {
+        if (video.buffered && video.buffered.length > 0) {
           const bufferedEnd = video.buffered.end(video.buffered.length - 1);
-          const percent = (bufferedEnd / video.duration) * 100;
-          progressBuffer.style.width = percent + '%';
+          if (video.duration && isFinite(video.duration)) {
+            const percent = (bufferedEnd / video.duration) * 100;
+            progressBuffer.style.width = percent + '%';
+          } else {
+            progressBuffer.style.width = '100%';
+          }
         }
       });
 
@@ -288,10 +279,8 @@
 
       // Volume control
       volumeBtn.addEventListener('click', () => {
-        userInteracted = true;
         video.muted = !video.muted;
         volumeIcon.className = video.muted ? 'fas fa-volume-mute' : 'fas fa-volume-up';
-        if (!video.muted) unmuteBadge.style.display = 'none';
         resetControlsTimer();
       });
 
@@ -383,13 +372,11 @@
       });
 
       function attachHls(url) {
-        // DO NOT DESTROY HLS if already attached to this URL!
         if (currentUrl === url && hls) {
           return;
         }
 
         currentUrl = url;
-        const freshUrl = withCacheBust(url);
 
         if (hls) {
           hls.destroy();
@@ -397,9 +384,8 @@
         }
 
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
-          video.src = freshUrl;
-          video.addEventListener('loadedmetadata', seekToLiveEdge, { once: true });
-          video.play().catch(() => {});
+          video.src = url;
+          video.addEventListener('loadedmetadata', jumpToLiveEdge, { once: true });
           return;
         }
 
@@ -416,19 +402,15 @@
           levelLoadingMaxRetry: 10,
           fragLoadingMaxRetry: 10,
         });
-        hls.loadSource(freshUrl);
+        hls.loadSource(url);
         hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          hls.startLoad(-1);
-          seekToLiveEdge();
-          const promise = video.play();
-          if (promise !== undefined) {
-            promise.catch(() => {
-              video.muted = true;
-              video.play().catch(() => {});
-            });
+
+        hls.on(Hls.Events.FRAG_BUFFERED, () => {
+          if (video.currentTime === 0 && video.buffered.length > 0) {
+            jumpToLiveEdge();
           }
         });
+
         hls.on(Hls.Events.ERROR, (_, data) => {
           if (!data) return;
           if (data.fatal) {
@@ -457,7 +439,7 @@
       }
 
       checkStatus();
-      setInterval(checkStatus, 5000);
+      setInterval(checkStatus, 4000);
       resetControlsTimer();
     })();
   </script>
