@@ -2,6 +2,7 @@ import { spawn, ChildProcessWithoutNullStreams } from "child_process";
 import fs from "fs";
 import path from "path";
 import { MonitorService } from "../../common/monitor/monitor.service.js";
+import { SFTPService } from "../../common/sftp/sftp.service.js";
 import { StreamService } from "./stream.service.js";
 
 type PipelineStatus = "idle" | "waiting_for_obs" | "starting" | "active" | "failed" | "stopped";
@@ -27,6 +28,7 @@ interface PipelineState {
   lastError?: string;
   retryTimer?: NodeJS.Timeout;
   playlistTimer?: NodeJS.Timeout;
+  sftpUploadedMap?: Map<string, number>;
 }
 
 const SAFE_STREAM_KEY_RE = /^[a-zA-Z0-9_-]+$/;
@@ -50,6 +52,10 @@ function getStreamMediaDir(streamKey: string) {
 
 function getMasterPlaylistPath(streamKey: string) {
   return path.join(getStreamMediaDir(streamKey), "master.m3u8");
+}
+
+function getVariantPlaylistPath(streamKey: string) {
+  return path.join(getStreamMediaDir(streamKey), "480p", "index.m3u8");
 }
 
 function expandInputTemplate(template: string, streamKey: string) {
@@ -89,10 +95,16 @@ function cleanMediaDir(streamKey: string) {
     fs.rmSync(mediaDir, { recursive: true, force: true });
   }
   fs.mkdirSync(path.join(mediaDir, "480p"), { recursive: true });
+  SFTPService.clearRemoteStreamDir(streamKey).catch(() => {});
 }
 
-function getVariantPlaylistPath(streamKey: string) {
-  return path.join(getStreamMediaDir(streamKey), "480p", "index.m3u8");
+function writeMasterPlaylist(streamKey: string) {
+  const masterPath = getMasterPlaylistPath(streamKey);
+  const cdnUrl = SFTPService.getPublicCdnUrl(streamKey);
+  const content = `#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-STREAM-INF:BANDWIDTH=912000,RESOLUTION=854x480,CODECS="avc1.42e01f,mp4a.40.2"\n${cdnUrl}\n`;
+  try {
+    fs.writeFileSync(masterPath, content, "utf8");
+  } catch (_) {}
 }
 
 function playlistExists(streamKey: string) {
@@ -228,81 +240,91 @@ function runProbe(inputUrl: string): Promise<ProbeResult> {
       settled = true;
       try { probe.kill("SIGKILL"); } catch (_) {}
       resolve({ ready: false, hasAudio: false, error: "Timed out waiting for OBS feed." });
-    }, Number(process.env.FFPROBE_TIMEOUT_MS || "7000"));
+    }, Number(process.env.STREAM_PROBE_TIMEOUT_MS || "8000"));
 
-    probe.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+    probe.stdout?.on("data", (chunk) => { stdout += chunk.toString(); });
+    probe.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
+
+    probe.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (code !== 0) {
+        resolve({ ready: false, hasAudio: false, error: stderr.trim() || `ffprobe exited with code ${code}` });
+        return;
+      }
+      const lines = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const hasVideo = lines.includes("video");
+      const hasAudio = lines.includes("audio");
+
+      if (!hasVideo) {
+        resolve({ ready: false, hasAudio: false, error: "Input found, but no video stream detected." });
+        return;
+      }
+
+      resolve({ ready: true, hasAudio, inputUrl });
     });
-    probe.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
+
     probe.on("error", (err) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
       resolve({ ready: false, hasAudio: false, error: err.message });
     });
-    probe.on("close", (code) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      const types = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-      const hasVideo = types.includes("video");
-      const hasAudio = types.includes("audio");
-      if (code === 0 && hasVideo) {
-        resolve({ ready: true, hasAudio, inputUrl });
-      } else {
-        resolve({
-          ready: false,
-          hasAudio: false,
-          inputUrl,
-          error: stderr.trim() || `ffprobe exited with code ${code}`,
-        });
-      }
-    });
   });
 }
 
 async function findReadyInput(streamKey: string): Promise<ProbeResult> {
-  const failures: string[] = [];
+  const candidates = getInputCandidates(streamKey);
+  const errors: string[] = [];
 
-  for (const inputUrl of getInputCandidates(streamKey)) {
-    const probe = await runProbe(inputUrl);
+  for (const candidate of candidates) {
+    const probe = await runProbe(candidate);
     if (probe.ready) return probe;
-    failures.push(`${inputUrl}: ${probe.error || "not ready"}`);
+    if (probe.error) errors.push(`${candidate}: ${probe.error}`);
   }
 
-  return {
-    ready: false,
-    hasAudio: false,
-    error: failures.join("\n"),
-  };
+  return { ready: false, hasAudio: false, error: errors.join("\n") || "No internal input available." };
+}
+
+async function syncLocalToRemoteSftp(streamKey: string, uploadedMap: Map<string, number>) {
+  const variantDir = path.join(getStreamMediaDir(streamKey), "480p");
+  if (!fs.existsSync(variantDir)) return;
+
+  try {
+    const files = fs.readdirSync(variantDir);
+    for (const fileName of files) {
+      if (!fileName.endsWith(".ts") && !fileName.endsWith(".m3u8")) continue;
+      const localFilePath = path.join(variantDir, fileName);
+      const stats = fs.statSync(localFilePath);
+      const lastUploaded = uploadedMap.get(fileName) || 0;
+
+      if (stats.mtimeMs > lastUploaded) {
+        uploadedMap.set(fileName, stats.mtimeMs);
+        const remoteRelPath = `media/${streamKey}/480p/${fileName}`;
+        SFTPService.uploadFile(localFilePath, remoteRelPath).catch(() => {});
+      }
+    }
+  } catch (_) {}
 }
 
 export class TranscodeService {
   private static pipelines = new Map<string, PipelineState>();
 
-  static getPublicIngestDetails(streamKey: string, hostname: string) {
+  static getIngestDetails(streamKey: string, requestHostname: string) {
+    this.assertSafeStreamKey(streamKey);
     return {
-      rtmpServer: buildRtmpPublicUrl(hostname),
+      rtmpServer: buildRtmpPublicUrl(requestHostname),
       streamKey,
-      previewUrl: `/media/${streamKey}/master.m3u8`,
-      liveUrl: `/live/${streamKey}`,
-      recommendedObs: {
-        encoder: "H.264",
-        rateControl: "CBR",
-        bitrate: "1200-1800 Kbps for 720p, 700-1000 Kbps for 480p",
-        keyframeInterval: "2 seconds",
-        audio: "AAC, 96-128 Kbps, 48 kHz stereo",
-      },
+      internalSources: getInputCandidates(streamKey),
     };
   }
 
-  static async ensurePipeline(streamKey: string) {
+  static async startPipeline(streamKey: string) {
     this.assertSafeStreamKey(streamKey);
-
     let state = this.pipelines.get(streamKey);
-    if (state?.process && !state.process.killed) {
+
+    if (state?.status === "active" && state.process && !state.process.killed) {
       state.wantsRun = true;
       return this.getPipelineStatus(streamKey);
     }
@@ -319,6 +341,7 @@ export class TranscodeService {
         wantsRun: true,
         attemptInFlight: false,
         hasAudio: false,
+        sftpUploadedMap: new Map(),
       };
       this.pipelines.set(streamKey, state);
     }
@@ -356,6 +379,7 @@ export class TranscodeService {
     await StreamService.setStreamActive(streamKey, false).catch(() => {});
     await StreamService.setStreamLive(streamKey, false).catch(() => {});
     MonitorService.removeSpeed(streamKey);
+    SFTPService.clearRemoteStreamDir(streamKey).catch(() => {});
   }
 
   static async publish(streamKey: string) {
@@ -386,9 +410,8 @@ export class TranscodeService {
       lastExitCode: state?.lastExitCode ?? null,
       lastError: state?.lastError || null,
       speed: MonitorService.getSpeed(streamKey),
-      previewUrl: fs.existsSync(getVariantPlaylistPath(streamKey))
-        ? `/media/${streamKey}/480p/index.m3u8`
-        : `/media/${streamKey}/master.m3u8`,
+      previewUrl: SFTPService.getPublicCdnUrl(streamKey),
+      masterUrl: `/media/${streamKey}/master.m3u8`,
     };
   }
 
@@ -415,6 +438,7 @@ export class TranscodeService {
     state.inputUrl = probe.inputUrl;
     state.startedAt = Date.now();
     state.lastExitCode = undefined;
+    state.sftpUploadedMap = new Map();
     cleanMediaDir(streamKey);
     await StreamService.setStreamActive(streamKey, false).catch(() => {});
 
@@ -427,12 +451,17 @@ export class TranscodeService {
     let stderrBuffer = "";
 
     state.playlistTimer = setInterval(() => {
+      writeMasterPlaylist(streamKey);
+      if (state.sftpUploadedMap) {
+        syncLocalToRemoteSftp(streamKey, state.sftpUploadedMap);
+      }
+
       if (!playlistExists(streamKey)) return;
       if (state.status !== "active") {
         state.status = "active";
         state.lastReadyAt = Date.now();
         StreamService.setStreamActive(streamKey, true).catch(() => {});
-        log(streamKey, "Preview playlist is ready.");
+        log(streamKey, "Preview playlist is ready & synced via SFTP.");
       }
     }, PLAYLIST_CHECK_MS);
 
@@ -468,6 +497,7 @@ export class TranscodeService {
       StreamService.setStreamActive(streamKey, false).catch(() => {});
       StreamService.setStreamLive(streamKey, false).catch(() => {});
       MonitorService.removeSpeed(streamKey);
+      SFTPService.clearRemoteStreamDir(streamKey).catch(() => {});
 
       if (!current.wantsRun) {
         current.status = "stopped";

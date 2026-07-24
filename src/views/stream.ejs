@@ -48,6 +48,9 @@
         <span id="public-status-badge" class="badge badge-primary">
           Public Offline
         </span>
+        <span id="viewer-count-badge" class="badge badge-secondary" style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.3); color: #a5b4fc;">
+          <i class="ti ti-users"></i> <strong id="viewer-count" style="font-family: monospace;">0</strong> Viewers Connected
+        </span>
       </div>
       <div style="display: flex; align-items: center; gap: 0.75rem; color: var(--text-muted); font-size: 0.9rem;">
         <i class="ti ti-activity"></i>
@@ -172,7 +175,7 @@
       <div style="display: grid; gap: 0.75rem;">
         <div class="obs-ladder-row">
           <span>480p Superfast</span>
-          <strong>800 Kbps (Zero-Buffer)</strong>
+          <strong>800 Kbps (Hostinger SFTP CDN)</strong>
         </div>
       </div>
     </section>
@@ -188,6 +191,7 @@
   const previewMessage = document.getElementById('preview-message');
   const obsBadge = document.getElementById('obs-status-badge');
   const publicBadge = document.getElementById('public-status-badge');
+  const viewerCountEl = document.getElementById('viewer-count');
   const speedEl = document.getElementById('pipeline-speed');
   const errorEl = document.getElementById('last-error');
   const goLiveBtn = document.getElementById('go-live-btn');
@@ -213,7 +217,7 @@
   let previewAttached = false;
   let previewUrl = null;
   let scrubbing = false;
-  let controlsTimeout = null;
+  let socket = null;
 
   window.copyField = function(id) {
     const el = document.getElementById(id);
@@ -256,7 +260,6 @@
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update live state.');
       if (window.showToast) window.showToast(data.message, 'success');
-      await refreshStatus();
     } catch (err) {
       if (window.showToast) window.showToast(err.message, 'error');
     } finally {
@@ -389,12 +392,12 @@
 
     if (window.Hls && Hls.isSupported()) {
       hls = new Hls({
+        enableWorker: true,
         lowLatencyMode: false,
-        liveSyncDurationCount: 2,
-        liveMaxLatencyDurationCount: 5,
-        maxLiveSyncPlaybackRate: 1.5,
-        maxBufferLength: 20,
-        backBufferLength: 10,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 6,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
         manifestLoadingMaxRetry: 10,
         levelLoadingMaxRetry: 10,
         fragLoadingMaxRetry: 10,
@@ -435,12 +438,15 @@
   function updateBadges(status) {
     speedEl.textContent = status.speed || 'N/A';
     errorEl.textContent = status.lastError || '';
+    if (typeof status.viewersCount === 'number') {
+      viewerCountEl.textContent = status.viewersCount;
+    }
 
     if (status.isReady) {
       obsBadge.className = 'badge badge-success';
       obsBadge.innerHTML = '<i class="ti ti-point-filled"></i> OBS Preview Ready';
       goLiveBtn.disabled = false;
-      attachPreview(status.previewUrl);
+      if (status.hlsUrl) attachPreview(status.hlsUrl);
     } else if (status.status === 'waiting_for_obs') {
       obsBadge.className = 'badge badge-primary';
       obsBadge.innerHTML = '<i class="ti ti-antenna-bars-off"></i> Waiting for OBS';
@@ -471,25 +477,45 @@
     }
   }
 
-  async function refreshStatus() {
-    const res = await fetch(`/api/stream/${encodeURIComponent(streamKey)}/transcoder/status`);
-    const data = await res.json();
-    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load preview status.');
-    updateBadges(data.data);
+  // Real-time WebSocket connection for Studio & Viewer Telemetry (No HTTP Polling)
+  function initBroadcasterWebSocket() {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/api/stream/${encodeURIComponent(streamKey)}/ws`;
+
+    try {
+      socket = new WebSocket(wsUrl);
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.event === 'viewer-count') {
+            viewerCountEl.textContent = data.count;
+          } else if (data.event === 'telemetry' || data.event === 'pipeline-status') {
+            updateBadges(data);
+          }
+        } catch (_) {}
+      };
+
+      socket.onclose = () => {
+        setTimeout(initBroadcasterWebSocket, 3000);
+      };
+
+      socket.onerror = () => {
+        try { socket.close(); } catch (_) {}
+      };
+    } catch (_) {
+      setTimeout(initBroadcasterWebSocket, 3000);
+    }
   }
 
   startPreviewBtn.addEventListener('click', startPreviewPipeline);
 
   loadIngestDetails()
     .then(startPreviewPipeline)
-    .then(refreshStatus)
+    .then(initBroadcasterWebSocket)
     .catch((err) => {
       if (window.showToast) window.showToast(err.message, 'error');
     });
-
-  setInterval(() => {
-    refreshStatus().catch(() => {});
-  }, 3000);
 </script>
 
 <%- include('footer') %>

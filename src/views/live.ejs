@@ -165,6 +165,7 @@
       let currentUrl = null;
       let scrubbing = false;
       let controlsTimeout = null;
+      let socket = null;
 
       function formatTime(seconds) {
         if (isNaN(seconds) || seconds < 0) return '00:00';
@@ -194,7 +195,6 @@
         } catch (_) {}
       }
 
-      // Existing Play Button: One-click Play & Unmute Function
       function playAndUnmute() {
         video.muted = false;
         volumeIcon.className = 'fas fa-volume-up';
@@ -264,14 +264,12 @@
         loadingWrap.style.display = 'none';
       });
 
-      // Volume control
       volumeBtn.addEventListener('click', () => {
         video.muted = !video.muted;
         volumeIcon.className = video.muted ? 'fas fa-volume-mute' : 'fas fa-volume-up';
         resetControlsTimer();
       });
 
-      // Seek
       function seekByClientX(clientX) {
         const rect = progress.getBoundingClientRect();
         const ratio = Math.min(Math.max(0, clientX - rect.left), rect.width) / rect.width;
@@ -307,7 +305,6 @@
         resetControlsTimer();
       });
 
-      // Fullscreen
       function toggleFullscreen() {
         if (document.fullscreenElement || document.webkitFullscreenElement) {
           if (document.exitFullscreen) document.exitFullscreen();
@@ -323,7 +320,6 @@
 
       fullBtn.addEventListener('click', toggleFullscreen);
 
-      // Auto-hide controls
       function resetControlsTimer() {
         clearTimeout(controlsTimeout);
         controls.style.opacity = '1';
@@ -341,7 +337,6 @@
 
       player.addEventListener('mousemove', resetControlsTimer);
 
-      // Keyboard shortcuts
       window.addEventListener('keydown', (e) => {
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
@@ -415,18 +410,42 @@
         });
       }
 
-      async function checkStatus() {
+      // Connect WebSocket for real-time telemetry & viewer counting (No HTTP Polling)
+      function initViewerWebSocket() {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/api/stream/${encodeURIComponent(streamKey)}/viewer`;
+
         try {
-          const res = await fetch(`/api/stream/${encodeURIComponent(streamKey)}/playback/status`, { cache: 'no-store' });
-          const data = await res.json();
-          if (res.ok && data.success && data.data.canPlay && data.data.hlsUrl) {
-            attachHls(data.data.hlsUrl);
-          }
-        } catch (_) {}
+          socket = new WebSocket(wsUrl);
+
+          socket.onopen = () => {
+            socket.send(JSON.stringify({ event: 'viewer-ready' }));
+          };
+
+          socket.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              if ((data.event === 'status' || data.event === 'telemetry') && data.hlsUrl) {
+                if (data.status === 'live' || data.isReady) {
+                  attachHls(data.hlsUrl);
+                }
+              }
+            } catch (_) {}
+          };
+
+          socket.onclose = () => {
+            setTimeout(initViewerWebSocket, 3000);
+          };
+
+          socket.onerror = () => {
+            try { socket.close(); } catch (_) {}
+          };
+        } catch (_) {
+          setTimeout(initViewerWebSocket, 3000);
+        }
       }
 
-      checkStatus();
-      setInterval(checkStatus, 4000);
+      initViewerWebSocket();
       resetControlsTimer();
     })();
   </script>
