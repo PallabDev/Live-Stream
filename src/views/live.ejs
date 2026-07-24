@@ -47,7 +47,7 @@
   </style>
 </head>
 <body class="bg-black m-0 p-0 text-white">
-  <!-- Full-screen Player Container (No Overlays) -->
+  <!-- Full-screen Player Container -->
   <div class="w-screen h-[100dvh] flex items-center justify-center bg-black relative overflow-hidden">
     <div class="sh-player" id="sh-player">
       <video
@@ -179,9 +179,9 @@
 
       let hls = null;
       let currentUrl = null;
-      let lastAttachAt = 0;
       let scrubbing = false;
       let controlsTimeout = null;
+      let userInteracted = false;
 
       function formatTime(seconds) {
         if (isNaN(seconds) || seconds < 0) return '00:00';
@@ -209,6 +209,7 @@
       }
 
       function togglePlay() {
+        userInteracted = true;
         if (video.paused) {
           if (video.muted) {
             video.muted = false;
@@ -222,6 +223,7 @@
       }
 
       function unmuteSound() {
+        userInteracted = true;
         video.muted = false;
         volumeIcon.className = 'fas fa-volume-up';
         unmuteBadge.style.display = 'none';
@@ -242,7 +244,7 @@
 
       video.addEventListener('play', () => {
         playIcon.className = 'fas fa-pause';
-        if (video.muted) {
+        if (video.muted && !userInteracted) {
           unmuteBadge.style.display = 'inline-flex';
         } else {
           unmuteBadge.style.display = 'none';
@@ -286,6 +288,7 @@
 
       // Volume control
       volumeBtn.addEventListener('click', () => {
+        userInteracted = true;
         video.muted = !video.muted;
         volumeIcon.className = video.muted ? 'fas fa-volume-mute' : 'fas fa-volume-up';
         if (!video.muted) unmuteBadge.style.display = 'none';
@@ -380,23 +383,18 @@
       });
 
       function attachHls(url) {
-        const shouldReload = currentUrl !== url || !hls || (Date.now() - lastAttachAt) > 30000;
-        if (!shouldReload) {
-          if (hls) hls.startLoad(-1);
-          if (!video.paused) seekToLiveEdge();
+        // DO NOT DESTROY HLS if already attached to this URL!
+        if (currentUrl === url && hls) {
           return;
         }
+
         currentUrl = url;
-        lastAttachAt = Date.now();
         const freshUrl = withCacheBust(url);
 
         if (hls) {
           hls.destroy();
           hls = null;
         }
-
-        // Ensure video is muted initially so Chrome/Safari never block autoplay
-        video.muted = true;
 
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
           video.src = freshUrl;
@@ -414,9 +412,9 @@
           maxLiveSyncPlaybackRate: 1.5,
           maxBufferLength: 20,
           backBufferLength: 10,
-          manifestLoadingMaxRetry: 6,
-          levelLoadingMaxRetry: 6,
-          fragLoadingMaxRetry: 6,
+          manifestLoadingMaxRetry: 10,
+          levelLoadingMaxRetry: 10,
+          fragLoadingMaxRetry: 10,
         });
         hls.loadSource(freshUrl);
         hls.attachMedia(video);
@@ -431,13 +429,19 @@
             });
           }
         });
-        hls.on(Hls.Events.LEVEL_UPDATED, () => {
-          if (!video.paused) seekToLiveEdge();
-        });
         hls.on(Hls.Events.ERROR, (_, data) => {
           if (!data) return;
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            hls.startLoad(-1);
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                hls.startLoad(-1);
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                hls.recoverMediaError();
+                break;
+              default:
+                break;
+            }
           }
         });
       }
@@ -453,7 +457,7 @@
       }
 
       checkStatus();
-      setInterval(checkStatus, 4000);
+      setInterval(checkStatus, 5000);
       resetControlsTimer();
     })();
   </script>

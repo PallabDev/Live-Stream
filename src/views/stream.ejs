@@ -1,23 +1,10 @@
 <%- include('header') %>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
 <div id="studio-config" data-stream-key="<%= stream.streamKey %>" style="display: none;"></div>
 
 <style>
-  .sh-player-studio {
-    width: 100%;
-    aspect-ratio: 16/9;
-    background: #000;
-    position: relative;
-    overflow: hidden;
-    border-radius: var(--radius);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.8);
-  }
-  .sh-progress-bar {
-    background: linear-gradient(90deg, #6366f1, #4f46e5);
-  }
   .obs-ladder-row {
     display: flex;
     justify-content: space-between;
@@ -54,49 +41,15 @@
       </div>
     </div>
 
-    <!-- Commit 94733b7 Custom Player UI for Studio Preview -->
-    <div class="sh-player-studio" id="sh-player">
-      <video id="preview-video" class="w-full h-full object-contain bg-black block cursor-pointer" autoplay muted playsinline style="image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;"></video>
+    <!-- Studio Preview Video Container -->
+    <div class="video-container" style="position: relative; aspect-ratio: 16/9; background: #000; overflow: hidden; border-radius: 0; border-left: 0; border-right: 0;">
+      <video id="preview-video" class="video-element" controls playsinline muted style="width: 100%; height: 100%; object-fit: contain; display: block;"></video>
 
       <!-- Empty State / Placeholder -->
       <div id="preview-empty" style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem; background: #050505; z-index: 4;">
         <i class="ti ti-broadcast" style="font-size: 4rem; color: var(--primary); margin-bottom: 1rem;"></i>
         <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem; color: #fff;">OBS Preview</h2>
         <p id="preview-message" style="color: var(--text-muted); max-width: 520px;">Start streaming from OBS. The preview appears here before viewers can watch.</p>
-      </div>
-
-      <!-- Loading Spinner -->
-      <div class="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none" id="sh-loading-wrap" style="display: none;">
-        <div class="w-10 h-10 sm:w-[50px] sm:h-[50px] border-4 border-solid border-white/10 border-t-indigo-500 rounded-full animate-spin pointer-events-auto"></div>
-      </div>
-
-      <!-- Controls Overlay (Commit 94733b7 Style) -->
-      <div class="absolute left-0 right-0 bottom-0 p-4 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex flex-col gap-2.5 transition-opacity duration-200 z-10" id="sh-controls">
-        <!-- Row 1: Progress & Time -->
-        <div class="flex items-center w-full gap-3 min-w-0">
-          <span class="text-xs font-medium text-[#aaaaaa] min-w-[42px] font-mono tabular-nums" id="sh-current-time">00:00</span>
-          <div class="sh-progress relative flex-1 h-1.5 rounded-full bg-[#3a3a3a] cursor-pointer overflow-hidden transition-all duration-150 hover:h-2" id="sh-progress">
-            <div class="sh-progress-buffer absolute top-0 left-0 bottom-0 w-0 rounded-full bg-white/20" id="sh-progress-buffer"></div>
-            <div class="sh-progress-bar absolute top-0 left-0 bottom-0 w-0 rounded-full" id="sh-progress-bar"></div>
-          </div>
-          <span class="text-xs font-medium text-[#aaaaaa] min-w-[42px] font-mono tabular-nums" id="sh-duration">LIVE</span>
-        </div>
-
-        <!-- Row 2: Control Buttons -->
-        <div class="flex items-center justify-between w-full">
-          <button class="sh-play-btn w-9 h-9 rounded-full bg-indigo-600 text-white flex items-center justify-center text-sm transition-all duration-150 shadow-md hover:bg-indigo-500 hover:scale-105" id="sh-play-btn" type="button" aria-label="Play/Pause">
-            <i class="fas fa-play" id="sh-play-icon"></i>
-          </button>
-
-          <div class="flex items-center gap-2">
-            <button class="w-8 h-8 bg-transparent text-[#aaaaaa] flex items-center justify-center text-sm rounded-lg hover:text-white hover:bg-white/10" id="sh-volume-btn" type="button" title="Mute/Unmute">
-              <i class="fas fa-volume-mute" id="sh-volume-icon"></i>
-            </button>
-            <button class="w-8 h-8 rounded-lg bg-white/10 text-white flex items-center justify-center text-sm hover:bg-white/20 hover:scale-105" id="sh-full-btn" type="button" title="Fullscreen">
-              <i class="fas fa-expand" id="sh-fullscreen-icon"></i>
-            </button>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -182,7 +135,6 @@
   const configEl = document.getElementById('studio-config');
   const streamKey = configEl ? configEl.dataset.streamKey : '';
   const previewVideo = document.getElementById('preview-video');
-  const previewPlayer = document.getElementById('sh-player');
   const previewEmpty = document.getElementById('preview-empty');
   const previewMessage = document.getElementById('preview-message');
   const obsBadge = document.getElementById('obs-status-badge');
@@ -193,26 +145,9 @@
   const startPreviewBtn = document.getElementById('start-preview-btn');
   const rtmpServerInput = document.getElementById('rtmp-server');
 
-  // Player elements
-  const playBtn = document.getElementById('sh-play-btn');
-  const playIcon = document.getElementById('sh-play-icon');
-  const currentTimeEl = document.getElementById('sh-current-time');
-  const durationEl = document.getElementById('sh-duration');
-  const progress = document.getElementById('sh-progress');
-  const progressBar = document.getElementById('sh-progress-bar');
-  const progressBuffer = document.getElementById('sh-progress-buffer');
-  const volumeBtn = document.getElementById('sh-volume-btn');
-  const volumeIcon = document.getElementById('sh-volume-icon');
-  const fullBtn = document.getElementById('sh-full-btn');
-  const fullscreenIcon = document.getElementById('sh-fullscreen-icon');
-  const loadingWrap = document.getElementById('sh-loading-wrap');
-  const controls = document.getElementById('sh-controls');
-
   let hls = null;
   let previewAttached = false;
   let previewUrl = null;
-  let scrubbing = false;
-  let controlsTimeout = null;
 
   window.copyField = function(id) {
     const el = document.getElementById(id);
@@ -277,86 +212,9 @@
     } catch (_) {}
   }
 
-  function formatTime(seconds) {
-    if (isNaN(seconds) || seconds < 0) return '00:00';
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
-
-  function togglePlay() {
-    if (previewVideo.paused) {
-      previewVideo.play().catch(() => {});
-    } else {
-      previewVideo.pause();
-    }
-  }
-
-  playBtn.addEventListener('click', togglePlay);
-  previewVideo.addEventListener('click', togglePlay);
-
-  previewVideo.addEventListener('play', () => {
-    playIcon.className = 'fas fa-pause';
-  });
-
-  previewVideo.addEventListener('pause', () => {
-    playIcon.className = 'fas fa-play';
-  });
-
-  previewVideo.addEventListener('timeupdate', () => {
-    if (!previewVideo.duration || !isFinite(previewVideo.duration)) {
-      currentTimeEl.textContent = formatTime(previewVideo.currentTime);
-      durationEl.textContent = 'LIVE';
-      progressBar.style.width = '100%';
-      return;
-    }
-    currentTimeEl.textContent = formatTime(previewVideo.currentTime);
-    durationEl.textContent = formatTime(previewVideo.duration);
-    const percent = (previewVideo.currentTime / previewVideo.duration) * 100;
-    progressBar.style.width = percent + '%';
-  });
-
-  previewVideo.addEventListener('progress', () => {
-    if (previewVideo.buffered && previewVideo.buffered.length > 0 && previewVideo.duration > 0) {
-      const bufferedEnd = previewVideo.buffered.end(previewVideo.buffered.length - 1);
-      const percent = (bufferedEnd / previewVideo.duration) * 100;
-      progressBuffer.style.width = percent + '%';
-    }
-  });
-
-  previewVideo.addEventListener('waiting', () => {
-    if (loadingWrap) loadingWrap.style.display = 'flex';
-  });
-
-  previewVideo.addEventListener('playing', () => {
-    if (loadingWrap) loadingWrap.style.display = 'none';
-  });
-
-  volumeBtn.addEventListener('click', () => {
-    previewVideo.muted = !previewVideo.muted;
-    volumeIcon.className = previewVideo.muted ? 'fas fa-volume-mute' : 'fas fa-volume-up';
-  });
-
-  function toggleFullscreen() {
-    if (document.fullscreenElement || document.webkitFullscreenElement) {
-      if (document.exitFullscreen) document.exitFullscreen();
-      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-      fullscreenIcon.className = 'fas fa-expand';
-    } else {
-      if (previewPlayer.requestFullscreen) previewPlayer.requestFullscreen();
-      else if (previewPlayer.webkitRequestFullscreen) previewPlayer.webkitRequestFullscreen();
-      fullscreenIcon.className = 'fas fa-compress';
-    }
-  }
-
-  fullBtn.addEventListener('click', toggleFullscreen);
-
   function attachPreview(url) {
-    const freshUrl = withCacheBust(url);
     if (previewAttached && previewUrl === url && hls) {
-      hls.startLoad(-1);
-      seekPreviewToLiveEdge();
-      previewVideo.play().catch(() => {});
+      if (!previewVideo.paused) seekPreviewToLiveEdge();
       return;
     }
     previewAttached = true;
@@ -368,7 +226,8 @@
       hls = null;
     }
 
-    previewVideo.muted = true; // Always start muted in preview to guarantee instant autoplay
+    const freshUrl = withCacheBust(url);
+    previewVideo.muted = true;
     previewVideo.autoplay = true;
 
     if (previewVideo.canPlayType('application/vnd.apple.mpegurl')) {
@@ -386,37 +245,39 @@
         maxLiveSyncPlaybackRate: 1.5,
         maxBufferLength: 20,
         backBufferLength: 10,
-        manifestLoadingMaxRetry: 6,
-        levelLoadingMaxRetry: 6,
-        fragLoadingMaxRetry: 6,
+        manifestLoadingMaxRetry: 10,
+        levelLoadingMaxRetry: 10,
+        fragLoadingMaxRetry: 10,
       });
       hls.loadSource(freshUrl);
       hls.attachMedia(previewVideo);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         hls.startLoad(-1);
         seekPreviewToLiveEdge();
-        const promise = previewVideo.play();
-        if (promise !== undefined) {
-          promise.catch(() => {
-            previewVideo.muted = true;
-            previewVideo.play().catch(() => {});
-          });
-        }
+        previewVideo.play().catch(() => {});
       });
-      hls.on(Hls.Events.LEVEL_UPDATED, seekPreviewToLiveEdge);
+      hls.on(Hls.Events.LEVEL_UPDATED, () => {
+        if (!previewVideo.paused) seekPreviewToLiveEdge();
+      });
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (!data) return;
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          hls.startLoad(-1);
-          return;
-        }
         if (data.fatal) {
-          previewAttached = false;
-          previewUrl = null;
-          previewEmpty.style.display = 'flex';
-          previewMessage.textContent = 'Preview stalled. Waiting for fresh HLS segments.';
-          hls.destroy();
-          hls = null;
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              hls.startLoad(-1);
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              hls.recoverMediaError();
+              break;
+            default:
+              previewAttached = false;
+              previewUrl = null;
+              previewEmpty.style.display = 'flex';
+              previewMessage.textContent = 'Preview stalled. Waiting for fresh HLS segments.';
+              hls.destroy();
+              hls = null;
+              break;
+          }
         }
       });
     }
